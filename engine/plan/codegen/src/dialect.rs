@@ -25,7 +25,7 @@ pub struct Text {
 pub const BYTES: &str = "f_const(u8)";
 
 /// A helper's buffer parameter: a pointer to `ty`.
-pub fn pointer(ty: &str, name: &str) -> String {
+pub(crate) fn pointer(ty: &str, name: &str) -> String {
     format!("f_const({ty}) {name}")
 }
 
