@@ -32,7 +32,7 @@ fn widen(
     load = widen_load,
     accepts = widen_accepts,
 )]
-pub(crate) struct Widen {
+pub struct Widen {
     pub len: usize,
     pub form: &'static dyn Stored,
 }

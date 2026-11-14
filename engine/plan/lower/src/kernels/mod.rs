@@ -8,4 +8,4 @@ mod widen;
 pub use map::{Map, MapStage, add_operands, finish, operands};
 pub(crate) use moves::Move;
 pub(crate) use scatter::Scatter;
-pub(crate) use widen::Widen;
+pub use widen::Widen;
