@@ -55,7 +55,7 @@ impl Emit {
         let (len, form) = (self.len(v), self.out.values[v.0 as usize].form);
         let write = self.value(len, Home::Temp, zone, form);
         self.out.ops.push(Op {
-            kernel: KernelRef::new(Move { len }),
+            kernel: KernelRef::new(Move),
             rule: "move",
             reads: vec![v],
             write,

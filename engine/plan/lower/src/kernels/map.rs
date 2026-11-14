@@ -92,7 +92,7 @@ fn act_expr(a: Act) -> Expr {
 }
 
 /// Statements running `stages` on `v`. `operand` gives each read.
-pub fn stage_stmts(stages: &[MapStage], operand: &dyn Fn(usize) -> Expr) -> Vec<Stmt> {
+fn stage_stmts(stages: &[MapStage], operand: &dyn Fn(usize) -> Expr) -> Vec<Stmt> {
     let mut taken = 0;
     let assign = |value| Stmt::Assign {
         target: Expr::var("v"),
