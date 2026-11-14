@@ -78,23 +78,13 @@ reason = "gemm's test helper asks settings for a GPU"
 
 [[layer_allow]]
 from = "lower"
-to = "kernels"
-reason = "lower tests run kernels"
-
-[[layer_allow]]
-from = "lower"
-to = "linear"
-reason = "lower tests use linear's schedules"
-
-[[layer_allow]]
-from = "lower"
-to = "models"
-reason = "lower tests build model graphs"
-
-[[layer_allow]]
-from = "lower"
 to = "settings"
 reason = "lower tests read settings"
+
+[[layer_allow]]
+from = "kernels"
+to = "settings"
+reason = "kernels tests read settings"
 
 [[layer_allow]]
 from = "linear"

@@ -845,8 +845,13 @@ dependencies = [
  "codegen",
  "gemm",
  "graph",
+ "interp",
  "lower",
+ "run",
+ "settings",
  "sim",
+ "testkit",
+ "trace",
 ]
 
 [[package]]
@@ -917,16 +922,14 @@ dependencies = [
  "graph",
  "interp",
  "kernel-macro",
- "kernels",
- "linear",
  "mem",
- "models",
  "run",
  "scattered-collect",
  "serde",
  "serde_json",
  "settings",
  "sim",
+ "testkit",
  "trace",
 ]
 
