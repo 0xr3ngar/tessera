@@ -1,6 +1,5 @@
 //! Plans for small graphs, with lower's own kernels.
 
-use gpukit::testing::{Noise, max_abs_diff, scratch};
 use graph::DimName::{self, Context, Hidden, Rows, Seqs};
 use graph::{Act, DType, Dim, Graph, TensorType};
 use interp::{Tensor, run};
@@ -15,6 +14,7 @@ use lower::{assign, lower, peak, rules, schedule, select};
 use run::{Held, open};
 use settings::read as settings;
 use sim::Chip;
+use testkit::{Noise, fill, max_abs_diff, scratch};
 use trace::{EntryKind, Model, Port, Role, Vector, Weights, declare};
 
 // Lowering needs one rule from outside lower.
@@ -98,24 +98,18 @@ fn gate() -> Map {
     Map::plain(vec![MapStage::Act(Act::Silu), MapStage::Mul])
 }
 
-/// Random floats shaped like `ty`, at the sizes of `SIZES`.
-fn fill(g: &Graph, ty: &TensorType, noise: &mut Noise) -> Tensor {
-    let size = |name| SIZES.iter().find(|(n, _)| *n == name).map(|(_, s)| *s);
-    let dim = |e: &graph::DimExpr| e.poly(&g.dims).unwrap().eval(&size).unwrap() as usize;
-    let shape: Vec<usize> = ty.shape.0.iter().map(dim).collect();
-    let values = (0..shape.iter().product()).map(|_| noise.draw());
-    Tensor::f32(shape, values.collect())
-}
-
 #[test]
 fn maps_match_cpu() {
     let g = ladder();
     let mut noise = Noise(5);
     let weights: Vec<Tensor> = (g.weights.iter())
-        .map(|w| fill(&g, &w.ty, &mut noise))
+        .map(|w| fill(&g, &w.ty, &SIZES, &mut noise).unwrap())
         .collect();
     let ports = &g.entries[0].inputs;
-    let inputs: Vec<Tensor> = ports.iter().map(|p| fill(&g, &p.ty, &mut noise)).collect();
+    let inputs: Vec<Tensor> = ports
+        .iter()
+        .map(|p| fill(&g, &p.ty, &SIZES, &mut noise).unwrap())
+        .collect();
     for form in [F32_FORM, BF16_FORM] {
         // The reference sees the weights as the plan stores them.
         let kept: Vec<Tensor> = (weights.iter())

@@ -2,13 +2,13 @@
 
 use kernels as _;
 
-use gpukit::testing::{Noise, max_abs_diff};
 use graph::DimName::{Context, HeadDim, Heads, KvHeads, Rows, Segments, Seqs};
 use graph::{DType, Dim, Graph, Size, TensorType};
 use interp::{Store, Tensor, run, run_kept};
 use lower::{Device, lower};
 use run::{Run, open};
 use settings::read as settings;
+use testkit::{Noise, max_abs_diff};
 use trace::{EntryKind, Mask, Model, Port, Role};
 
 /// Attention under `mask` over `heads` query heads of `width`.

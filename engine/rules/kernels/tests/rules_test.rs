@@ -2,7 +2,6 @@
 
 use kernels as _;
 
-use gpukit::testing::{Noise, max_abs_diff};
 use graph::DimName::{Context, HeadDim, Heads, Hidden, Rows, Seqs, Vocab};
 use graph::{DType, Dim, DimName, Graph, NodeId, TensorType, verify};
 use interp::{Tensor, run};
@@ -10,6 +9,7 @@ use lower::form::{BF16_FORM, F32_FORM};
 use lower::{Device, Limits, Pins, Plan, Platform, View, cut, lower, rules};
 use run::open;
 use settings::read as settings;
+use testkit::{Noise, fill, max_abs_diff};
 use trace::{Act, Embed, EntryKind, Mask, Model, Norm, Pairs, Port, Role, Weights, declare};
 
 const SIZES: [(DimName, u64); 3] = [(Seqs, 2), (Rows, 3), (Context, 5)];
@@ -106,18 +106,6 @@ fn table() -> Graph {
     m.finish([(Role::Logits, &m.embed(&tokens, &w.embed))])
 }
 
-/// Random floats, or ids below 8, shaped like `ty`.
-fn fill(g: &Graph, ty: &TensorType, noise: &mut Noise) -> Tensor {
-    let size = |name| SIZES.iter().find(|(n, _)| *n == name).map(|(_, s)| *s);
-    let dim = |e: &graph::DimExpr| e.poly(&g.dims).unwrap().eval(&size).unwrap() as usize;
-    let shape: Vec<usize> = ty.shape.0.iter().map(dim).collect();
-    let mut values = (0..shape.iter().product()).map(|_| noise.draw());
-    match ty.dtype {
-        DType::U32 => Tensor::u32(shape, values.map(|v| ((v + 1.0) * 4.0) as u32).collect()),
-        _ => Tensor::f32(shape, values.by_ref().collect()),
-    }
-}
-
 /// Runs entry 0 both ways. Returns the largest difference.
 fn gap(g: &Graph, inputs: &[Tensor], device: &Device) -> f32 {
     let want = run(g, &[], 0, inputs).unwrap();
@@ -157,7 +145,7 @@ fn each_rule_matches_cpu() {
             let ports = &sub.entries[0].inputs;
             let inputs: Vec<Tensor> = ports
                 .iter()
-                .map(|p| fill(&sub, &p.ty, &mut noise))
+                .map(|p| fill(&sub, &p.ty, &SIZES, &mut noise).unwrap())
                 .collect();
             let off = gap(&sub, &inputs, &device);
             assert!(off < 1e-4, "{:?} is off by {off:e}", step.kernel);

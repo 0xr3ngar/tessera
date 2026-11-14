@@ -1,6 +1,5 @@
 //! Plans over a GPU zone and a host zone.
 
-use gpukit::testing::scratch;
 use graph::DimName::{Rows, Seqs, Vocab};
 use graph::{DType, Dim, Graph, TensorType};
 use lower::kernels::Map;
@@ -11,6 +10,7 @@ use lower::{
 use run::open;
 use settings::read as settings;
 use sim::Tag;
+use testkit::scratch;
 use trace::{EntryKind, Model, Port, Role};
 
 /// Picks each row's largest entry on the host.

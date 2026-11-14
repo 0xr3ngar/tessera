@@ -844,13 +844,13 @@ version = "0.1.0"
 dependencies = [
  "codegen",
  "gemm",
- "gpukit",
  "graph",
  "interp",
  "lower",
  "run",
  "settings",
  "sim",
+ "testkit",
  "trace",
 ]
 
@@ -929,6 +929,7 @@ dependencies = [
  "serde_json",
  "settings",
  "sim",
+ "testkit",
  "trace",
 ]
 
