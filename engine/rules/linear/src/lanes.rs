@@ -78,7 +78,7 @@ fn linear<const WIDE: u32, const AHEAD: u32>(
     load = lanes_load,
     unproven,
 )]
-pub struct Lanes {
+pub(crate) struct Lanes {
     pub product: Product,
 }
 

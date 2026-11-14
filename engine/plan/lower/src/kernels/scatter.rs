@@ -35,7 +35,7 @@ fn scatter(
     source = scatter_source,
     launches = scatter_launches,
 )]
-pub struct Scatter {
+pub(crate) struct Scatter {
     pub rows: usize,
     pub width: usize,
     pub slots: usize,

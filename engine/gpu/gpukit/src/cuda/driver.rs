@@ -7,31 +7,31 @@ use std::ffi::{c_char, c_int, c_void};
 use std::sync::OnceLock;
 
 pub type CUresult = c_int;
-pub type CUdevice = c_int;
-pub type CUdeviceptr = u64;
+pub(crate) type CUdevice = c_int;
+pub(crate) type CUdeviceptr = u64;
 pub type CUcontext = *mut c_void;
-pub type CUmodule = *mut c_void;
-pub type CUfunction = *mut c_void;
-pub type CUstream = *mut c_void;
-pub type CUgraph = *mut c_void;
-pub type CUgraphExec = *mut c_void;
+pub(crate) type CUmodule = *mut c_void;
+pub(crate) type CUfunction = *mut c_void;
+pub(crate) type CUstream = *mut c_void;
+pub(crate) type CUgraph = *mut c_void;
+pub(crate) type CUgraphExec = *mut c_void;
 
-pub const CUDA_SUCCESS: CUresult = 0;
-pub const CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK: c_int = 1;
-pub const CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK: c_int = 8;
-pub const CU_DEVICE_ATTRIBUTE_WARP_SIZE: c_int = 10;
-pub const CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR: c_int = 75;
-pub const CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR: c_int = 76;
-pub const CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT: c_int = 16;
-pub const CU_DEVICE_ATTRIBUTE_INTEGRATED: c_int = 18;
-pub const CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE: c_int = 36;
-pub const CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH: c_int = 37;
-pub const CU_STREAM_NON_BLOCKING: u32 = 1;
-pub const CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION: u32 = 1;
+pub(crate) const CUDA_SUCCESS: CUresult = 0;
+pub(crate) const CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK: c_int = 1;
+pub(crate) const CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK: c_int = 8;
+pub(crate) const CU_DEVICE_ATTRIBUTE_WARP_SIZE: c_int = 10;
+pub(crate) const CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR: c_int = 75;
+pub(crate) const CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR: c_int = 76;
+pub(crate) const CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT: c_int = 16;
+pub(crate) const CU_DEVICE_ATTRIBUTE_INTEGRATED: c_int = 18;
+pub(crate) const CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE: c_int = 36;
+pub(crate) const CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH: c_int = 37;
+pub(crate) const CU_STREAM_NON_BLOCKING: u32 = 1;
+pub(crate) const CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION: u32 = 1;
 
 /// `CUlaunchAttribute`: an id, then a 64-byte value.
 #[repr(C)]
-pub struct LaunchAttribute {
+pub(crate) struct LaunchAttribute {
     pub id: u32,
     pub pad: u32,
     pub value: [u64; 8],
@@ -39,7 +39,7 @@ pub struct LaunchAttribute {
 
 /// `CUlaunchConfig`, as the driver lays it out.
 #[repr(C)]
-pub struct LaunchConfig {
+pub(crate) struct LaunchConfig {
     pub grid: [u32; 3],
     pub block: [u32; 3],
     pub shared_bytes: u32,
@@ -50,7 +50,7 @@ pub struct LaunchConfig {
     pub pad2: u32,
 }
 /// Other threads may still synchronize while a capture is open.
-pub const CU_STREAM_CAPTURE_MODE_RELAXED: c_int = 2;
+pub(crate) const CU_STREAM_CAPTURE_MODE_RELAXED: c_int = 2;
 
 type CuInit = unsafe extern "C" fn(u32) -> CUresult;
 type CuDriverGetVersion = unsafe extern "C" fn(*mut c_int) -> CUresult;
@@ -104,34 +104,34 @@ type CuGetErrorString = unsafe extern "C" fn(CUresult, *mut *const c_char) -> CU
 crate::dl::library! {
     /// Resolved driver entry points. The dlopen handle stays open.
     pub struct Driver as "CUDA driver" in ["libcuda.so.1"] {
-        pub cu_init: CuInit = "cuInit",
-        pub cu_driver_get_version: CuDriverGetVersion = "cuDriverGetVersion",
-        pub cu_device_get_count: CuDeviceGetCount = "cuDeviceGetCount",
-        pub cu_device_get: CuDeviceGet = "cuDeviceGet",
-        pub cu_device_get_name: CuDeviceGetName = "cuDeviceGetName",
-        pub cu_device_get_attribute: CuDeviceGetAttribute = "cuDeviceGetAttribute",
-        pub cu_ctx_create: CuCtxCreate = "cuCtxCreate_v2",
-        pub cu_ctx_destroy: CuCtxDestroy = "cuCtxDestroy_v2",
-        pub cu_ctx_set_current: CuCtxSetCurrent = "cuCtxSetCurrent",
-        pub cu_module_load_data: CuModuleLoadData = "cuModuleLoadData",
-        pub cu_module_unload: CuModuleUnload = "cuModuleUnload",
-        pub cu_module_get_function: CuModuleGetFunction = "cuModuleGetFunction",
-        pub cu_mem_alloc: CuMemAlloc = "cuMemAlloc_v2",
-        pub cu_mem_free: CuMemFree = "cuMemFree_v2",
-        pub cu_memcpy_htod: CuMemcpyHtoD = "cuMemcpyHtoD_v2",
-        pub cu_memcpy_dtoh: CuMemcpyDtoH = "cuMemcpyDtoH_v2",
-        pub cu_memset_d8: CuMemsetD8 = "cuMemsetD8_v2",
-        pub cu_launch_kernel: CuLaunchKernel = "cuLaunchKernel",
-        pub cu_launch_kernel_ex: CuLaunchKernelEx = "cuLaunchKernelEx",
-        pub cu_stream_create: CuStreamCreate = "cuStreamCreate",
-        pub cu_stream_destroy: CuStreamDestroy = "cuStreamDestroy_v2",
-        pub cu_stream_synchronize: CuStreamSynchronize = "cuStreamSynchronize",
-        pub cu_stream_begin_capture: CuStreamBeginCapture = "cuStreamBeginCapture_v2",
-        pub cu_stream_end_capture: CuStreamEndCapture = "cuStreamEndCapture",
-        pub cu_graph_instantiate: CuGraphInstantiate = "cuGraphInstantiateWithFlags",
-        pub cu_graph_launch: CuGraphLaunch = "cuGraphLaunch",
-        pub cu_graph_exec_destroy: CuGraphExecDestroy = "cuGraphExecDestroy",
-        pub cu_graph_destroy: CuGraphDestroy = "cuGraphDestroy",
+        pub(crate) cu_init: CuInit = "cuInit",
+        pub(crate) cu_driver_get_version: CuDriverGetVersion = "cuDriverGetVersion",
+        pub(crate) cu_device_get_count: CuDeviceGetCount = "cuDeviceGetCount",
+        pub(crate) cu_device_get: CuDeviceGet = "cuDeviceGet",
+        pub(crate) cu_device_get_name: CuDeviceGetName = "cuDeviceGetName",
+        pub(crate) cu_device_get_attribute: CuDeviceGetAttribute = "cuDeviceGetAttribute",
+        pub(crate) cu_ctx_create: CuCtxCreate = "cuCtxCreate_v2",
+        pub(crate) cu_ctx_destroy: CuCtxDestroy = "cuCtxDestroy_v2",
+        pub(crate) cu_ctx_set_current: CuCtxSetCurrent = "cuCtxSetCurrent",
+        pub(crate) cu_module_load_data: CuModuleLoadData = "cuModuleLoadData",
+        pub(crate) cu_module_unload: CuModuleUnload = "cuModuleUnload",
+        pub(crate) cu_module_get_function: CuModuleGetFunction = "cuModuleGetFunction",
+        pub(crate) cu_mem_alloc: CuMemAlloc = "cuMemAlloc_v2",
+        pub(crate) cu_mem_free: CuMemFree = "cuMemFree_v2",
+        pub(crate) cu_memcpy_htod: CuMemcpyHtoD = "cuMemcpyHtoD_v2",
+        pub(crate) cu_memcpy_dtoh: CuMemcpyDtoH = "cuMemcpyDtoH_v2",
+        pub(crate) cu_memset_d8: CuMemsetD8 = "cuMemsetD8_v2",
+        pub(crate) cu_launch_kernel: CuLaunchKernel = "cuLaunchKernel",
+        pub(crate) cu_launch_kernel_ex: CuLaunchKernelEx = "cuLaunchKernelEx",
+        pub(crate) cu_stream_create: CuStreamCreate = "cuStreamCreate",
+        pub(crate) cu_stream_destroy: CuStreamDestroy = "cuStreamDestroy_v2",
+        pub(crate) cu_stream_synchronize: CuStreamSynchronize = "cuStreamSynchronize",
+        pub(crate) cu_stream_begin_capture: CuStreamBeginCapture = "cuStreamBeginCapture_v2",
+        pub(crate) cu_stream_end_capture: CuStreamEndCapture = "cuStreamEndCapture",
+        pub(crate) cu_graph_instantiate: CuGraphInstantiate = "cuGraphInstantiateWithFlags",
+        pub(crate) cu_graph_launch: CuGraphLaunch = "cuGraphLaunch",
+        pub(crate) cu_graph_exec_destroy: CuGraphExecDestroy = "cuGraphExecDestroy",
+        pub(crate) cu_graph_destroy: CuGraphDestroy = "cuGraphDestroy",
         cu_get_error_name: CuGetErrorName = "cuGetErrorName",
         cu_get_error_string: CuGetErrorString = "cuGetErrorString",
     }

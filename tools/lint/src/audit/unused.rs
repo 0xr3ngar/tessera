@@ -17,6 +17,8 @@ struct Item {
     name: String,
     what: &'static str,
     refs: BTreeSet<String>,
+    /// Names that also count as a use: a trait's methods.
+    via: BTreeSet<String>,
 }
 
 /// One crate's items and the names its files use.
@@ -123,6 +125,7 @@ impl Crate {
             name: ident.to_string(),
             what,
             refs: names(refs),
+            via: BTreeSet::new(),
         });
     }
 
@@ -130,6 +133,16 @@ impl Crate {
         for item in list {
             if let Some((ident, what, refs)) = declared(item) {
                 self.push(path, ident, what, refs);
+            }
+            if let Syn::Trait(t) = item
+                && let Some(last) = self.items.last_mut()
+                && t.ident == last.name
+            {
+                for member in &t.items {
+                    if let syn::TraitItem::Fn(f) = member {
+                        last.via.insert(f.sig.ident.to_string());
+                    }
+                }
             }
             match item {
                 Syn::Use(u) if is_pub(&u.vis) => {
@@ -231,6 +244,11 @@ fn reached<'a>(c: &'a Crate, outside: &BTreeSet<&str>) -> BTreeSet<&'a str> {
         .chain(called)
         .filter(|n| outside.contains(n))
         .collect();
+    for item in &c.items {
+        if item.via.iter().any(|n| outside.contains(n.as_str())) {
+            todo.push(&item.name);
+        }
+    }
     let mut used = BTreeSet::new();
     while let Some(name) = todo.pop() {
         if !used.insert(name) {

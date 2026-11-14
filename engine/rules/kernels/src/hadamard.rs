@@ -9,7 +9,7 @@ use lower::{Draft, Kernel, Needs, T, Tree};
 const PER_LANE: u32 = 4;
 
 /// The block this kernel transforms.
-pub const BLOCK: u32 = LANES as u32 * PER_LANE;
+pub(crate) const BLOCK: u32 = LANES as u32 * PER_LANE;
 
 /// Lower keeps the sum, upper the difference.
 #[kernel]

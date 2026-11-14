@@ -72,3 +72,10 @@ fn bounds_reach_traits() {
     let user = ("b/src/lib.rs", "fn f() { let _ = a::Block::new(1); }\n");
     assert!(flagged(&[("a/src/lib.rs", lib), user]).is_empty());
 }
+
+#[test]
+fn methods_use_traits() {
+    let lib = "pub trait Bits { fn bits(self) -> u32; }\npub trait Idle { fn idle(self); }\n";
+    let user = ("b/src/lib.rs", "fn f(x: u32) { x.bits(); }\n");
+    assert_eq!(flagged(&[("a/src/lib.rs", lib), user]), ["Idle"]);
+}

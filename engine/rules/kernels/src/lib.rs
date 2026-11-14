@@ -13,16 +13,13 @@ mod rms_norm;
 mod rope;
 mod softmax;
 
-pub use argmax::{Argmax, Peaks};
 pub use attend::Attend;
-pub use dense::{Causal, DENSE_SCORES, Part, PerHead};
+pub use dense::Causal;
 pub use gather::Gather;
 pub use hadamard::Hadamard;
-pub use join::Join;
-pub use lane_norm::LaneNorm;
 pub use mean::Mean;
 pub use rms_norm::RmsNorm;
-pub use rope::{Angles, Rope};
+pub use rope::Rope;
 pub use softmax::Softmax;
 
 use sim::{Load, Ops};

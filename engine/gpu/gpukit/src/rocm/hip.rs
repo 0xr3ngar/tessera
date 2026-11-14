@@ -7,27 +7,27 @@ use std::ffi::{c_char, c_int, c_void};
 use std::sync::OnceLock;
 
 pub type HipError = c_int;
-pub type HipDeviceptr = u64;
-pub type HipModule = *mut c_void;
-pub type HipFunction = *mut c_void;
-pub type HipStream = *mut c_void;
-pub type HipGraph = *mut c_void;
-pub type HipGraphExec = *mut c_void;
-pub type HipGraphNode = *mut c_void;
+pub(crate) type HipDeviceptr = u64;
+pub(crate) type HipModule = *mut c_void;
+pub(crate) type HipFunction = *mut c_void;
+pub(crate) type HipStream = *mut c_void;
+pub(crate) type HipGraph = *mut c_void;
+pub(crate) type HipGraphExec = *mut c_void;
+pub(crate) type HipGraphNode = *mut c_void;
 
-pub const HIP_SUCCESS: HipError = 0;
-pub const MEMCPY_HOST_TO_DEVICE: c_int = 1;
-pub const MEMCPY_DEVICE_TO_HOST: c_int = 2;
+pub(crate) const HIP_SUCCESS: HipError = 0;
+pub(crate) const MEMCPY_HOST_TO_DEVICE: c_int = 1;
+pub(crate) const MEMCPY_DEVICE_TO_HOST: c_int = 2;
 /// `hipDeviceAttribute_t`, as HIP 6 and 7 number it.
-pub const ATTR_INTEGRATED: c_int = 16;
-pub const ATTR_COMPUTE_CAPABILITY_MAJOR: c_int = 23;
-pub const ATTR_MEMORY_BUS_WIDTH: c_int = 59;
-pub const ATTR_MEMORY_CLOCK_RATE: c_int = 60;
-pub const ATTR_COMPUTE_CAPABILITY_MINOR: c_int = 61;
-pub const ATTR_MULTIPROCESSOR_COUNT: c_int = 63;
-pub const HIP_STREAM_NON_BLOCKING: u32 = 1;
+pub(crate) const ATTR_INTEGRATED: c_int = 16;
+pub(crate) const ATTR_COMPUTE_CAPABILITY_MAJOR: c_int = 23;
+pub(crate) const ATTR_MEMORY_BUS_WIDTH: c_int = 59;
+pub(crate) const ATTR_MEMORY_CLOCK_RATE: c_int = 60;
+pub(crate) const ATTR_COMPUTE_CAPABILITY_MINOR: c_int = 61;
+pub(crate) const ATTR_MULTIPROCESSOR_COUNT: c_int = 63;
+pub(crate) const HIP_STREAM_NON_BLOCKING: u32 = 1;
 /// Other threads may still synchronize while a capture is open.
-pub const HIP_STREAM_CAPTURE_MODE_RELAXED: c_int = 2;
+pub(crate) const HIP_STREAM_CAPTURE_MODE_RELAXED: c_int = 2;
 
 type HipInit = unsafe extern "C" fn(u32) -> HipError;
 type HipRuntimeGetVersion = unsafe extern "C" fn(*mut c_int) -> HipError;

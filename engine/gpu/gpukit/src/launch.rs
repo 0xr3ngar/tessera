@@ -7,7 +7,7 @@ pub fn div_up(value: usize, group: usize) -> usize {
 }
 
 /// Threads per block for the 1D helpers, as on Metal.
-pub const THREADS_PER_BLOCK: u32 = 256;
+const THREADS_PER_BLOCK: u32 = 256;
 
 /// A device context that can enqueue a kernel.
 pub trait Launch {

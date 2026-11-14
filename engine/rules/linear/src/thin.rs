@@ -7,7 +7,7 @@ use graph::Order;
 use lower::{Draft, Form as Stored, Kernel, Launch, Load, Shape, Step, T, Tree};
 
 /// Its row limit: each thread keeps one sum per row.
-pub const THIN_ROWS: usize = 32;
+pub(crate) const THIN_ROWS: usize = 32;
 
 /// The same product as `Matmul`, for few rows.
 #[derive(Clone, Debug, Kernel)]
@@ -23,7 +23,7 @@ pub const THIN_ROWS: usize = 32;
     load = thin_load,
     unproven,
 )]
-pub struct Thin {
+pub(crate) struct Thin {
     pub product: Product,
 }
 
