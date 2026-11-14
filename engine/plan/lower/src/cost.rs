@@ -170,16 +170,16 @@ impl Device {
         }
     }
 
-    /// Where this machine keeps the samples for `device`.
-    pub fn path(settings: &Settings, device: &str) -> Option<PathBuf> {
+    /// Where this machine keeps the samples for `platform`.
+    pub fn path(settings: &Settings, platform: &Platform) -> Option<PathBuf> {
         let plain = |c: char| if c.is_ascii_alphanumeric() { c } else { '-' };
-        let file: String = device.chars().map(plain).collect();
+        let file: String = platform.id().chars().map(plain).collect();
         Some(settings.costs.as_ref()?.join(format!("{file}.json")))
     }
 
     /// The samples stored for `platform`, or a guess.
     pub fn stored(platform: Platform, settings: &Settings) -> Result<Self, Error> {
-        let loaded = Self::path(settings, &platform.id()).map(|p| Self::load(&p));
+        let loaded = Self::path(settings, &platform).map(|p| Self::load(&p));
         let device = match loaded {
             Some(Err(e)) if e.kind() == ErrorKind::NotFound => Self::guess(settings),
             Some(loaded) => loaded?,

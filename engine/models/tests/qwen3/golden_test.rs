@@ -180,7 +180,7 @@ impl<'a> Gpu<'a> {
     }
 
     fn save(&self) {
-        let file = Device::path(&self.c.settings, &self.device.name).unwrap();
+        let file = Device::path(&self.c.settings, &self.device.platform).unwrap();
         let (learned, all) = (self.learned, self.device.samples());
         eprintln!("timed {learned} launches; {all} samples known");
         let (kept, hits) = (self.plans.len(), self.plans.hits);

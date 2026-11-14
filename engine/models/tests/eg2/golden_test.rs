@@ -83,7 +83,7 @@ fn check_device(settings: &Settings, g: &Graph, w: &[Tensor], cases: &[Case]) ->
         table(r.plan(), &steps);
         embeddings.push(out);
     }
-    if let Some(path) = Device::path(settings, &device.name) {
+    if let Some(path) = Device::path(settings, &device.platform) {
         device.save(&path).unwrap();
         eprintln!(
             "  timed {learned} launches; samples stored in {}",

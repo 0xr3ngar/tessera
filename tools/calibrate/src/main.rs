@@ -68,7 +68,7 @@ fn run(settings: &Settings) -> Result<(), Box<dyn Error>> {
     hops(&cluster);
     // The stored device carries the fit, for unmeasured kernels.
     let device = device.fitted(fit).zoned(cluster);
-    let path = Device::path(settings, &device.name).ok_or("no home: set TESSERA_COSTS")?;
+    let path = Device::path(settings, &device.platform).ok_or("no home: set TESSERA_COSTS")?;
     device.save(&path)?;
     println!("{} samples in {}", device.samples(), path.display());
     Ok(())
