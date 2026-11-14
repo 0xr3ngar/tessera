@@ -13,6 +13,7 @@ members = [
     "tools/check",
     "tools/findings",
     "tools/lint",
+    "tools/load",
     "tools/shape",
     "tools/style",
 ]
