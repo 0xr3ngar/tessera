@@ -1,5 +1,6 @@
-//! Probes this GPU, times the grid and stores the samples.
+//! Probes this GPU, times the grid, or times model plans.
 
+use calibrate::plans;
 use calibrate::probe::{fit, links, read, suite};
 use calibrate::{Grid, headroom, judge};
 use lower::{Cluster, Device, Settings, Step};
@@ -88,13 +89,28 @@ fn probe(settings: &Settings) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Times whole plans. Fails if a check misses.
+fn plans(settings: &Settings) -> Result<(), Box<dyn Error>> {
+    if settings.gpu().is_none() {
+        return Err("no GPU here; plans are timed on one".into());
+    }
+    let misses = plans::check(settings)?;
+    for miss in &misses {
+        println!("miss: {miss}");
+    }
+    match misses.is_empty() {
+        true => Ok(()),
+        false => Err(format!("{} checks missed", misses.len()).into()),
+    }
+}
+
 fn main() -> ExitCode {
-    let probing = std::env::args().nth(1).as_deref() == Some("probe");
     let settings = settings::read();
-    match if probing {
-        probe(&settings)
-    } else {
-        run(&settings)
+    let arg = std::env::args().nth(1);
+    match match arg.as_deref() {
+        Some("probe") => probe(&settings),
+        Some("plans") => plans(&settings),
+        _ => run(&settings),
     } {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

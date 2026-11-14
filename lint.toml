@@ -110,8 +110,3 @@ reason = "model tests load bundles"
 from = "models"
 to = "checkpoint"
 reason = "model tests read checkpoints"
-
-[[layer_allow]]
-from = "models"
-to = "calibrate"
-reason = "golden tests call calibrate::measure"
