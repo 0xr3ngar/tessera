@@ -1,20 +1,17 @@
 //! Plans over a GPU zone and a host zone.
 
-// Linking the crates registers their rules.
-use kernels as _;
-use linear as _;
-
-use gpukit::testing::scratch;
-use graph::DimName::{Context, Rows, Seqs};
+use graph::DimName::{Rows, Seqs, Vocab};
+use graph::{DType, Dim, Graph, TensorType};
 use lower::kernels::Map;
 use lower::sites;
 use lower::{
     Cluster, Device, Draft, Error, Kernel, Link, Plan, Step, T, Tree, Zone, ZoneKind, lower,
 };
-use models::qwen3::{Config, stepper};
 use run::open;
 use settings::read as settings;
 use sim::Tag;
+use testkit::scratch;
+use trace::{EntryKind, Model, Port, Role};
 
 /// Picks each row's largest entry on the host.
 #[derive(Clone, Copy, Debug, Kernel)]
@@ -31,14 +28,49 @@ struct HostTop {
     rows: usize,
 }
 
-fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
+/// Picks each row's largest entry on the GPU, dearly.
+#[derive(Clone, Copy, Debug, Kernel)]
+#[launch(
+    name = "device_top",
+    sizes = [],
+    source = Map::plain(Vec::new()).source(),
+    launches = Vec::new(),
+    work = self.rows * 600,
+    guess = 1e-8,
+)]
+struct DeviceTop {
+    rows: usize,
+}
+
+fn host_top(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let sites::Top { x, rows, k: 1, .. } = tree.site(at)? else {
         return None;
     };
     Some(vec![Draft::new(HostTop { rows }, [x], rows)])
 }
 
-lower::rule!("host_top", propose);
+fn device_top(tree: &Tree, at: T) -> Option<Vec<Draft>> {
+    let sites::Top { x, rows, k: 1, .. } = tree.site(at)? else {
+        return None;
+    };
+    Some(vec![Draft::new(DeviceTop { rows }, [x], rows)])
+}
+
+lower::rule!("host_top", host_top);
+lower::rule!("device_top", device_top);
+
+/// Each row's likeliest entry.
+fn likeliest() -> Graph {
+    let m = Model::new(vec![
+        Dim::bounded(Seqs, 4),
+        Dim::bounded(Rows, 8),
+        Dim::fixed(Vocab, 600),
+    ]);
+    let ty = TensorType::new([Seqs, Rows, Vocab], DType::F32);
+    let role = Role::Logits;
+    let [logits] = m.entry(EntryKind::Forward, [Port { role, ty }]);
+    m.finish([(Role::Tokens, &logits.top_k(1u64))])
+}
 
 /// A GPU and a host, linked both ways at `latency`.
 fn two(latency: f64) -> Cluster {
@@ -61,8 +93,7 @@ fn two(latency: f64) -> Cluster {
 }
 
 fn step(device: &Device) -> Plan {
-    let sizes = [(Seqs, 1), (Rows, 2), (Context, 5)];
-    lower(&stepper(&Config::toy(4, 16)), 0, &sizes, device).unwrap()
+    lower(&likeliest(), 0, &[(Seqs, 1), (Rows, 2)], device).unwrap()
 }
 
 fn named<'a>(plan: &'a Plan, kernel: &'a str) -> impl Iterator<Item = &'a Step> {
@@ -78,7 +109,7 @@ fn cheap_links_place_work() {
         panic!("one top on the host");
     };
     assert_eq!((top.zone, plan.zone(top.write.buffer)), (1, 1));
-    assert!(named(&plan, "argmax").next().is_none());
+    assert!(named(&plan, "device_top").next().is_none());
     // The logits move over, and the ids move back.
     let moves: Vec<&Step> = named(&plan, "move").collect();
     assert_eq!(moves.len(), 2);
@@ -109,7 +140,7 @@ fn cheap_links_place_work() {
 #[test]
 fn slow_links_stay() {
     let home = step(&Device::guess(&settings()));
-    assert!(!home.zoned() && named(&home, "argmax").count() == 1);
+    assert!(!home.zoned() && named(&home, "device_top").count() == 1);
     assert_eq!(step(&Device::guess(&settings()).zoned(two(1.0))), home);
     // Unlinked zones cannot be reached at all.
     let mut apart = two(0.0);

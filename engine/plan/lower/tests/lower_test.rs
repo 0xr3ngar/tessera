@@ -1,35 +1,88 @@
-//! Plans for a toy model, without a GPU.
+//! Plans for small graphs, with lower's own kernels.
 
-use gpukit::testing::scratch;
-use graph::DimName::{self, Context, Rows, Seqs};
-use graph::{Act, Composite, Graph};
-use linear::{Product, SCHEDULES, Thin};
-use lower::Platform;
+use graph::DimName::{self, Context, Hidden, Rows, Seqs};
+use graph::{Act, DType, Dim, Graph, TensorType};
+use interp::{Tensor, run};
 use lower::form::{BF16_FORM, F32_FORM};
-use lower::kernels::{Map, MapStage};
+use lower::kernels::{Map, MapStage, Widen};
 use lower::sites;
 use lower::{
-    Arg, Buffer, Device, Dialect, Error, Fit, Kernel, KernelRef, Pins, Plan, Slot, Source, Step, T,
-    Tree,
+    Arg, Buffer, Device, Dialect, Draft, Error, Fit, Kernel, KernelRef, Pins, Plan, Slot, Source,
+    Step, T, Tree,
 };
 use lower::{assign, lower, peak, rules, schedule, select};
-use models::qwen3::{Config, program, stepper};
-use run::Held;
+use run::{Held, open};
 use settings::read as settings;
 use sim::Chip;
+use testkit::{Noise, fill, max_abs_diff, scratch};
+use trace::{EntryKind, Model, Port, Role, Vector, Weights, declare};
 
-const SIZES: [(DimName, u64); 2] = [(Seqs, 2), (Context, 5)];
-
-fn toy(device: &Device) -> (Graph, Plan) {
-    let g = program(&Config::toy(4, 16));
-    let plan = lower(&g, 0, &SIZES, device).unwrap();
-    (g, plan)
+// Lowering needs one rule from outside lower.
+fn nothing(_: &Tree, _: T) -> Option<Vec<Draft>> {
+    None
 }
 
-/// The device with every tiled schedule barred.
-fn untiled(device: Device) -> Device {
-    let names = SCHEDULES.iter().map(|s| s.name);
-    names.fold(device, Device::without)
+lower::rule!("nothing", nothing);
+
+const SIZES: [(DimName, u64); 2] = [(Seqs, 2), (Rows, 3)];
+
+#[derive(Weights)]
+struct Gains {
+    #[shape(Hidden)]
+    a: Vector,
+    #[shape(Hidden)]
+    b: Vector,
+}
+
+fn floats<const N: usize>(shape: [DimName; N]) -> Port {
+    let ty = TensorType::new(shape, DType::F32);
+    let role = Role::Logits;
+    Port { role, ty }
+}
+
+fn ids<const N: usize>(shape: [DimName; N]) -> Port {
+    let ty = TensorType::new(shape, DType::U32);
+    let role = Role::Slots;
+    Port { role, ty }
+}
+
+/// Maps over rows, where two values have two readers each.
+fn ladder() -> Graph {
+    let m = Model::new(vec![
+        Dim::bounded(Seqs, 4),
+        Dim::bounded(Rows, 8),
+        Dim::fixed(Hidden, 16),
+    ]);
+    let w: Gains = declare(&m);
+    let port = || floats([Seqs, Rows, Hidden]);
+    let [x, y] = m.entry(EntryKind::Forward, [port(), port()]);
+    let h1 = x.add(&y);
+    let h2 = h1.act(Act::Silu).mul(&y.mul_vector(&w.a)).mul(&x);
+    let out = h2.mul_vector(&w.b).act(Act::Silu).add(&h1).add(&h2);
+    m.finish([(Role::Logits, &out)])
+}
+
+/// New rows into kept keys and values, summed.
+fn appended() -> Graph {
+    let m = Model::new(vec![
+        Dim::bounded(Seqs, 4),
+        Dim::bounded(Rows, 16),
+        Dim::bounded(Context, 16),
+        Dim::fixed(Hidden, 16),
+    ]);
+    let w: Gains = declare(&m);
+    let ports = [
+        floats([Rows, Hidden]),
+        floats([Rows, Hidden]),
+        ids([Rows]),
+        ids([Rows]),
+    ];
+    let [k, v, slots, positions] = m.entry(EntryKind::Step, ports);
+    let kept = TensorType::new([Seqs, Context, Hidden], DType::F32);
+    let (keys, values) = (m.kept(kept.clone()), m.kept(kept));
+    let by = [&slots, &positions];
+    let out = k.append(&keys, by).add(&v.append(&values, by));
+    m.finish([(Role::Logits, &out.mul_vector(&w.a))])
 }
 
 fn count(plan: &Plan, kernel: &str) -> usize {
@@ -37,38 +90,51 @@ fn count(plan: &Plan, kernel: &str) -> usize {
     plan.steps.iter().filter(named).count()
 }
 
+fn names(plan: &Plan) -> Vec<&'static str> {
+    plan.steps.iter().map(|s| s.kernel.name()).collect()
+}
+
 fn gate() -> Map {
     Map::plain(vec![MapStage::Act(Act::Silu), MapStage::Mul])
 }
 
 #[test]
-fn gate_fuses() {
-    // With the lanes barred, thin takes the gate's stages too.
-    let plain = untiled(Device::guess(&settings())).without("lanes");
-    let (g, plan) = toy(&plain);
-    let alone = KernelRef::new(gate());
-    assert!(plan.steps.iter().all(|s| s.kernel != alone));
-    let gated = |s: &&lower::Step| s.rule == "thin" && s.covers.len() == 3;
-    let steps: Vec<_> = plan.steps.iter().filter(gated).collect();
-    assert_eq!(steps.len(), 2, "one per layer");
-    for s in steps {
-        assert_eq!(
-            s.reads.len(),
-            3,
-            "the rows, the weights and the gate's operand"
-        );
-        let holds = |r: &&graph::Region| s.covers.iter().all(|c| r.start <= *c && *c < r.end);
-        let region = g.regions.iter().find(holds).unwrap();
-        assert_eq!(region.kind, Composite::Mlp);
+fn maps_match_cpu() {
+    let g = ladder();
+    let mut noise = Noise(5);
+    let weights: Vec<Tensor> = (g.weights.iter())
+        .map(|w| fill(&g, &w.ty, &SIZES, &mut noise).unwrap())
+        .collect();
+    let ports = &g.entries[0].inputs;
+    let inputs: Vec<Tensor> = ports
+        .iter()
+        .map(|p| fill(&g, &p.ty, &SIZES, &mut noise).unwrap())
+        .collect();
+    for form in [F32_FORM, BF16_FORM] {
+        // The reference sees the weights as the plan stores them.
+        let kept: Vec<Tensor> = (weights.iter())
+            .map(|t| Tensor::f32(t.shape.clone(), form.roundtrip(t.floats().unwrap())))
+            .collect();
+        let want = run(&g, &kept, 0, &inputs).unwrap();
+        let device = Device::guess(&settings()).pinned(Pins::all(form));
+        let plan = lower(&g, 0, &SIZES, &device).unwrap();
+        assert!(names(&plan).contains(&"map"));
+        let mut runner = open(plan, &settings()).unwrap();
+        for (at, w) in kept.iter().enumerate() {
+            runner.load(at as u32, w.view()).unwrap();
+        }
+        let feeds: Vec<_> = inputs.iter().map(Tensor::view).collect();
+        let got = runner.run(&feeds).unwrap().remove(0);
+        let off = max_abs_diff(got.floats().unwrap(), want[0].floats().unwrap());
+        assert!(off < 1e-5, "as {}: off by {off:e}", form.name());
     }
 }
 
 #[test]
 fn buffers_are_shared() {
-    let (g, plan) = toy(&Device::guess(&settings()));
-    // Matmul schedules sum in their own orders.
-    assert_eq!(plan.order(), graph::Order::PerConfig);
-    assert_eq!(Plan::default().order(), graph::Order::Fixed);
+    let g = ladder();
+    let plan = lower(&g, 0, &SIZES, &Device::guess(&settings())).unwrap();
+    assert_eq!(plan.order(), graph::Order::Fixed);
     for s in &plan.steps {
         let in_place = s.reads.iter().any(|r| r.buffer == s.write.buffer);
         assert_eq!(in_place, s.kernel.overwrites());
@@ -78,51 +144,8 @@ fn buffers_are_shared() {
         plan.buffers.len() < values,
         "dead values free their buffers"
     );
-    assert_eq!(count(&plan, "angles"), 1, "one table serves every rotation");
-    let unsized_context = lower(&g, 0, &[(Seqs, 2)], &Device::guess(&settings()));
-    assert!(matches!(unsized_context, Err(Error::Size(_))));
-}
-
-#[test]
-fn cost_picks_the_matmul() {
-    // Ten rows fit the thin kernel, so cost alone decides.
-    let tiled_steps = |p: &Plan| {
-        p.steps
-            .iter()
-            .filter(|s| s.kernel.name().starts_with("tiled_"))
-            .count()
-    };
-    let (_, tiled) = toy(&Device::guess(&settings()).without("thin").without("lanes"));
-    let (_, thin) = toy(&untiled(Device::guess(&settings())).without("lanes"));
-    assert_eq!((count(&tiled, "thin"), tiled_steps(&thin)), (0, 0));
-    assert_eq!(tiled_steps(&tiled), count(&thin, "thin"));
-    let mut measured = Device::guess(&settings()).without("lanes");
-    let cheap = thin.steps.iter().map(|s| (s, 1e-6));
-    measured.fit(cheap.chain(tiled.steps.iter().map(|s| (s, 1e-3))));
-    let (_, fitted) = toy(&measured);
-    assert_eq!(tiled_steps(&fitted), 0, "the faster kernel wins");
-    assert!(measured.cost(&fitted).seconds < measured.cost(&tiled).seconds);
-}
-
-#[test]
-fn cost_picks_attention() {
-    // Dense attention is unproven, so a guess streams.
-    let (_, stream) = toy(&Device::guess(&settings()));
-    assert_eq!((count(&stream, "attend"), count(&stream, "scores")), (2, 0));
-    // The host cannot run the hand-written dense gemm.
-    if settings().gpu().is_none() {
-        return;
-    }
-    let (_, dense) = toy(&Device::guess(&settings()).favoring("dense"));
-    assert_eq!((count(&dense, "attend"), count(&dense, "join")), (0, 0));
-    let per_layer = ["scores", "causal", "values"].map(|k| count(&dense, k));
-    assert_eq!(per_layer, [2, 2, 2]);
-    let softmax = dense
-        .steps
-        .iter()
-        .find(|s| s.kernel.name() == "causal")
-        .unwrap();
-    assert_eq!(softmax.write.buffer, softmax.reads[0].buffer, "in place");
+    let unsized_rows = lower(&g, 0, &[(Seqs, 2)], &Device::guess(&settings()));
+    assert!(matches!(unsized_rows, Err(Error::Size(_))));
 }
 
 #[test]
@@ -133,17 +156,11 @@ fn rule_names_differ() {
     sorted.sort_unstable();
     sorted.dedup();
     assert_eq!(names, sorted, "rule names are unique and ordered");
-    let g = program(&Config::toy(4, 16));
-    let picked = select(&g, 0, &SIZES, &Device::guess(&settings())).unwrap();
-    assert!(
-        picked.contested.len() > 1,
-        "some site saw more than one rule"
-    );
 }
 
 #[test]
 fn order_saves_memory() {
-    let g = program(&Config::toy(4, 16));
+    let g = ladder();
     let picked = select(&g, 0, &SIZES, &Device::guess(&settings())).unwrap();
     let traced: Vec<usize> = (0..picked.ops.len()).collect();
     let order = schedule(&picked);
@@ -177,19 +194,14 @@ fn dialects_agree() {
 /// A toy step plan: `rows` new, `all` kept afterwards.
 fn step(seqs: u64, rows: u64, all: u64) -> Result<Plan, Error> {
     let sizes = [(Seqs, seqs), (Rows, rows), (Context, all)];
-    lower(
-        &stepper(&Config::toy(4, 16)),
-        0,
-        &sizes,
-        &Device::guess(&settings()),
-    )
+    lower(&appended(), 0, &sizes, &Device::guess(&settings()))
 }
 
 #[test]
 fn kept_rows_fit() {
     let plan = step(1, 2, 5).unwrap();
-    assert_eq!(plan.kept.len(), 2 * 2, "keys and values per layer");
-    // Two key heads of eight, for up to sixteen rows.
+    assert_eq!(plan.kept.len(), 2, "keys and values");
+    // Sixteen rows of sixteen, for up to sixteen rows.
     for (_, slot) in &plan.kept {
         assert_eq!((slot.len, plan.buffers[slot.buffer as usize]), (80, 1024));
     }
@@ -202,8 +214,8 @@ fn kept_rows_fit() {
         // Two rows of sixteen, into slots of sixteen rows.
         assert_eq!(launch.args[4..], [2, 16, 16].map(Arg::count));
     }
-    assert_eq!((appends.count(), count(&plan, "argmax")), (4, 1));
-    let scratch: usize = plan.buffers.iter().sum::<usize>() - 4 * 1024;
+    assert_eq!(appends.count(), 2);
+    let scratch: usize = plan.buffers.iter().sum::<usize>() - 2 * 1024;
     assert!(plan.scratch() < scratch, "kept rows are not scratch");
     // Several slots fit, each holding the bound of rows.
     assert!(step(2, 2, 5).is_ok());
@@ -240,22 +252,13 @@ fn replans_hold_buffers() {
     assert_eq!(made, so_far);
 }
 
-/// One thin launch of `m` rows, 64 outputs wide.
-fn thin(m: usize) -> Step {
-    let (n, k) = (64, 32);
+/// One map launch writing `len` elements.
+fn mapped(len: usize) -> Step {
     Step {
-        kernel: KernelRef::new(Thin {
-            product: Product {
-                m,
-                n,
-                k,
-                form: lower::form::F32_FORM,
-                after: sites::After::default(),
-            },
-        }),
-        rule: "thin",
+        kernel: KernelRef::new(gate()),
+        rule: "map",
         reads: Vec::new(),
-        write: Slot::floats(0, m * n),
+        write: Slot::floats(0, len),
         covers: Vec::new(),
         zone: 0,
     }
@@ -263,23 +266,30 @@ fn thin(m: usize) -> Step {
 
 #[test]
 fn near_samples_estimate() {
-    let seconds = |d: &Device, m: usize| d.seconds(&*thin(m).kernel, m * 64);
+    let seconds = |d: &Device, len: usize| d.seconds(&*mapped(len).kernel, len);
     let mut device = Device::guess(&settings());
-    let guess = seconds(&device, 4);
-    device.fit([(&thin(1), 1e-3), (&thin(16), 4e-3)]);
+    let guess = seconds(&device, 256);
+    device.fit([(&mapped(64), 1e-3), (&mapped(1024), 4e-3)]);
     assert_eq!(device.samples(), 2);
-    assert!((seconds(&device, 1) - 1e-3).abs() < 1e-9, "an exact match");
-    assert!((seconds(&device, 16) - 4e-3).abs() < 1e-9);
+    assert!((seconds(&device, 64) - 1e-3).abs() < 1e-9, "an exact match");
+    assert!((seconds(&device, 1024) - 4e-3).abs() < 1e-9);
     // Between samples, each is scaled by work and they blend.
-    let between = seconds(&device, 4);
+    let between = seconds(&device, 256);
     assert!(1e-3 < between && between < 4e-3 && between != guess);
-    assert!((seconds(&device, 32) - 8e-3).abs() < 1e-4, "scaled by work");
-    assert!(device.known(&thin(1)) && !device.known(&thin(4)));
+    assert!(
+        (seconds(&device, 2048) - 8e-3).abs() < 1e-4,
+        "scaled by work"
+    );
+    assert!(device.known(&mapped(64)) && !device.known(&mapped(256)));
     // A launch timed again replaces its sample.
-    device.fit([(&thin(1), 2e-3), (&thin(1), 9e-3), (&thin(1), 3e-3)]);
+    device.fit([
+        (&mapped(64), 2e-3),
+        (&mapped(64), 9e-3),
+        (&mapped(64), 3e-3),
+    ]);
     assert_eq!(device.samples(), 2);
-    assert!((seconds(&device, 1) - 3e-3).abs() < 1e-9, "the median");
-    assert!(seconds(&device.clone().without("thin"), 1).is_infinite());
+    assert!((seconds(&device, 64) - 3e-3).abs() < 1e-9, "the median");
+    assert!(seconds(&device.clone().without("map"), 64).is_infinite());
 }
 
 #[test]
@@ -287,7 +297,11 @@ fn sources_differ() {
     let hash = |stages: Vec<MapStage>| Map::plain(stages).source().hash();
     assert_eq!(hash(vec![MapStage::Add]), hash(vec![MapStage::Add]));
     assert_ne!(hash(vec![MapStage::Add]), hash(vec![MapStage::Mul]));
-    assert_ne!(hash(Vec::new()), thin(1).kernel.source().hash());
+    let widen = Widen {
+        len: 4,
+        form: BF16_FORM,
+    };
+    assert_ne!(hash(Vec::new()), widen.source().hash());
 }
 
 /// Round constants for a made-up chip.
@@ -311,7 +325,7 @@ fn chip() -> Fit {
 
 #[test]
 fn models_fill_gaps() {
-    let (step, fit) = (thin(1), chip());
+    let (step, fit) = (mapped(64), chip());
     let seconds = |d: &Device| d.seconds(&*step.kernel, 64);
     let device = Device::guess(&settings()).fitted(fit);
     let load = step.kernel.load(64).unwrap();
@@ -342,7 +356,7 @@ fn models_fill_gaps() {
 
 #[test]
 fn trees_cut_shared() {
-    let g = program(&Config::toy(4, 16));
+    let g = ladder();
     let tree = Tree::new(&g, 0, &SIZES, &Pins::default(), lower::kept::DENSE).unwrap();
     let chains = |want: &[MapStage]| -> Vec<(T, Vec<T>)> {
         let all = (0..tree.len() as u32).map(T);
@@ -353,32 +367,21 @@ fn trees_cut_shared() {
         all.filter_map(chain).collect()
     };
     // The activation has one reader, so it joins the multiply.
-    let gates = chains(&[MapStage::Act(Act::Silu), MapStage::Mul]);
-    assert_eq!(gates.len(), 2, "one per layer");
+    let gates = chains(&[MapStage::Act(Act::Silu), MapStage::Mul, MapStage::Mul]);
+    assert_eq!(gates.len(), 1);
     for (gate, reads) in &gates {
         let act = tree.node(*gate).args[0];
-        assert!(!tree.root(act) && reads.len() == 2);
-        assert_eq!(tree.covered(*gate, reads).len(), 2);
+        assert!(!tree.root(act) && reads.len() == 3);
+        assert_eq!(tree.covered(*gate, reads).len(), 3);
     }
-    // The residual stream has two readers: a root.
-    let adds = chains(&[MapStage::Add]);
-    assert_eq!(adds.len(), 2 * 2, "two per layer");
-    for (add, reads) in &adds {
-        assert!(tree.root(reads[0]) && tree.covered(*add, reads).len() == 1);
+    // The sum of x and y has two readers.
+    let sums = chains(&[MapStage::Add]);
+    assert_eq!(sums.len(), 1);
+    for (sum, reads) in &sums {
+        assert!(tree.covered(*sum, reads).len() == 1);
     }
-    let (logits, shape) = &tree.outputs[0];
-    assert!(tree.root(*logits) && *shape == [2, 5, 32]);
-}
-
-#[test]
-fn favoring_stays_local() {
-    // No rule competes with rope, so favoring it changes nothing.
-    let (_, plain) = toy(&Device::guess(&settings()));
-    let (_, favored) = toy(&Device::guess(&settings()).favoring("rope"));
-    assert!(
-        plain == favored,
-        "a favored rule skewed its readers' choice"
-    );
+    let (out, shape) = &tree.outputs[0];
+    assert!(tree.root(*out) && *shape == [2, 3, 16]);
 }
 
 #[test]
@@ -406,37 +409,29 @@ fn pins_match_paths() {
 
 #[test]
 fn pinned_weights_narrow() {
-    let g = program(&Config::toy(4, 16));
-    let pins = Pins::all(BF16_FORM).pin("embed", F32_FORM);
+    let g = ladder();
+    let pins = Pins::all(BF16_FORM).pin("a", F32_FORM);
     let plan = lower(&g, 0, &SIZES, &Device::guess(&settings()).pinned(pins)).unwrap();
     for l in &plan.weights {
-        let embed = l.weight == 0;
-        assert_eq!(l.slot.form == F32_FORM, embed, "weight {}", l.weight);
+        let kept = l.weight == 0;
+        assert_eq!(l.slot.form == F32_FORM, kept, "weight {}", l.weight);
     }
-    let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
-    for narrow in ["lanes_bf16", "widen", "gather"] {
-        assert!(
-            names.contains(&narrow),
-            "{narrow} is missing from {names:?}"
-        );
-    }
-    assert!(!names.contains(&"gather_bf16"), "the table stays f32");
-    // The head reads the tied embedding, kept f32.
-    let embed = plan.weights.iter().find(|l| l.weight == 0).unwrap();
-    for s in plan.steps.iter().filter(|s| s.kernel.name() == "lanes") {
-        assert_eq!(s.reads[1], embed.slot);
-    }
-    // Norm weights widen once each, however often they are read.
-    let widened = names.iter().filter(|n| **n == "widen").count();
-    let norms = g.weights.iter().filter(|w| w.ty.shape.0.len() == 1).count();
-    assert_eq!(widened, norms);
-    let (_, wide) = toy(&Device::guess(&settings()));
-    assert!(plan.buffers.iter().sum::<usize>() < wide.buffers.iter().sum::<usize>());
+    // Maps read floats, so the narrow weight widens once.
+    assert_eq!(count(&plan, "widen"), 1);
+    let both = lower(
+        &g,
+        0,
+        &SIZES,
+        &Device::guess(&settings()).pinned(Pins::all(BF16_FORM)),
+    );
+    assert_eq!(count(&both.unwrap(), "widen"), 2);
+    let wide = lower(&g, 0, &SIZES, &Device::guess(&settings())).unwrap();
+    assert_eq!(count(&wide, "widen"), 0);
 }
 
 #[test]
 fn plans_are_cached() {
-    let g = program(&Config::toy(4, 16));
+    let g = ladder();
     let mut cache = lower::Cache::default();
     let device = Device::guess(&settings());
     let first = cache.lower(&g, 0, &SIZES, &device).unwrap();
@@ -444,108 +439,50 @@ fn plans_are_cached() {
     assert!(first == again && cache.hits == 1 && cache.len() == 1);
     // Other sizes, or a device that changed, lower afresh.
     cache
-        .lower(&g, 0, &[(Seqs, 1), (Context, 5)], &device)
+        .lower(&g, 0, &[(Seqs, 1), (Rows, 3)], &device)
         .unwrap();
-    let favored = device.clone().favoring("tiled");
+    let favored = device.clone().favoring("map");
     assert!(favored.generation() != device.generation());
     // Two devices changed alike are still two devices.
-    let twice = device.clone().favoring("tiled");
+    let twice = device.clone().favoring("map");
     assert!(twice.generation() != favored.generation() && twice == favored);
-    let tiled = cache.lower(&g, 0, &SIZES, &favored).unwrap();
-    assert!(tiled != first && cache.hits == 1 && cache.len() == 3);
+    let narrow = device.clone().pinned(Pins::all(BF16_FORM));
+    let widened = cache.lower(&g, 0, &SIZES, &narrow).unwrap();
+    assert!(widened != first && cache.hits == 1 && cache.len() == 3);
     let mut fitted = device.clone();
-    fitted.fit([(&tiled.steps[0], 1e-3)]);
+    fitted.fit([(&widened.steps[0], 1e-3)]);
     assert!(fitted.generation() != device.generation());
     // Another graph at the same sizes is another plan.
-    let step = stepper(&Config::toy(4, 16));
+    let kept = appended();
     let sizes = [(Seqs, 1), (Rows, 2), (Context, 5)];
-    let stepped = cache.lower(&step, 0, &sizes, &device).unwrap();
+    let stepped = cache.lower(&kept, 0, &sizes, &device).unwrap();
     let forward = cache.lower(&g, 0, &sizes, &device).unwrap();
     assert!(stepped != forward && cache.len() == 5);
 }
 
 #[test]
 fn trips_are_counted() {
-    let trip = |k: &dyn lower::Kernel| k.load(64).unwrap().trip;
-    // Walking a row opens a line every sixteen floats.
-    let norm = trip(&kernels::RmsNorm {
-        rows: 4,
-        width: 64,
-        eps: 1e-5,
-        weighted: true,
-    });
-    assert_eq!((norm.loads, norm.stores), (3.0, 1.0));
-    assert!((norm.fresh - 1.0 / 16.0).abs() < 1e-9, "{norm:?}");
-    assert_eq!(norm.special, 0.0, "the root lies outside the loops");
+    let trip = |k: &dyn Kernel| k.load(64).unwrap().trip;
     // One thread per element reads a new line each time.
     let map = trip(&Map::plain(vec![MapStage::Add, MapStage::Act(Act::Silu)]));
     assert_eq!(
         (map.loads, map.stores, map.special, map.fresh),
         (2.0, 1.0, 1.0, 1.0)
     );
-    // Thin sums `m` rows a trip, each row apart.
-    let thin = trip(&Thin {
-        product: Product {
-            m: 3,
-            n: 8,
-            k: 64,
-            form: lower::form::F32_FORM,
-            after: sites::After::default(),
-        },
-    });
-    assert_eq!((thin.loads, thin.float), (4.0, 3.0));
-    assert!((thin.fresh - 1.0 / 16.0).abs() < 1e-9, "{thin:?}");
-}
-
-#[test]
-fn limits_bar_kernels() {
-    // A 64-lane device runs none of the 32-lane kernels.
-    let wide = lower::Limits {
-        lanes: 64,
-        ..lower::Limits::assumed()
-    };
-    let (_, plan) = toy(&Device::guess(&settings()).on(Platform::assumed(wide)));
-    let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
-    let lanes = |n: &&str| n.starts_with("lanes") || n.starts_with("tiled") || *n == "lane_norm";
-    assert!(!names.iter().any(lanes), "{names:?}");
-    assert!(
-        names.contains(&"thin") && names.contains(&"rms_norm"),
-        "{names:?}"
-    );
-    // A small group memory keeps the tiled schedules that fit.
-    let small = lower::Limits {
-        group_bytes: 12 * 1024,
-        ..lower::Limits::assumed()
-    };
-    let (g, _) = toy(&Device::guess(&settings()));
-    let on = Device::guess(&settings()).on(Platform::assumed(small));
-    let device = on.favoring("tiled");
-    let plan = lower(&g, 0, &SIZES, &device).unwrap();
-    let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
-    assert!(names.contains(&"tiled_32x32_w16"), "{names:?}");
-    assert!(
-        !names.iter().any(|n| n.starts_with("tiled_64")),
-        "{names:?}"
-    );
 }
 
 #[test]
 fn uncovered_is_named() {
-    use graph::{DType, Dim, DimName::Vocab, Size, TensorType};
-    use trace::{EntryKind, Model, Port, Role};
-    let dim = |name, size| Dim { name, size };
+    use graph::DimName::Vocab;
     let m = Model::new(vec![
-        dim(Seqs, Size::Bounded(4)),
-        dim(Rows, Size::Bounded(4)),
-        dim(Vocab, Size::Fixed(64)),
+        Dim::bounded(Seqs, 4),
+        Dim::bounded(Rows, 4),
+        Dim::fixed(Vocab, 64),
     ]);
-    let ty = TensorType::new([Seqs, Rows, Vocab], DType::F32);
-    let role = Role::Logits;
-    let [x] = m.entry(EntryKind::Forward, [Port { role, ty }]);
+    let [x] = m.entry(EntryKind::Forward, [floats([Seqs, Rows, Vocab])]);
     // No rule takes a lone center, so the act fails.
     let g = m.finish([(Role::Logits, &x.center().act(Act::Silu))]);
-    let sizes = [(Seqs, 2), (Rows, 3)];
-    let Err(Error::Unsupported(what)) = lower(&g, 0, &sizes, &Device::guess(&settings())) else {
+    let Err(Error::Unsupported(what)) = lower(&g, 0, &SIZES, &Device::guess(&settings())) else {
         panic!("a lone center lowered");
     };
     assert!(what.starts_with("Stage(Center)"), "{what}");

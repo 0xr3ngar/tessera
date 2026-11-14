@@ -19,9 +19,7 @@ mem = { workspace = true }
 
 [dev-dependencies]
 settings = { workspace = true }
-kernels = { workspace = true }
-linear = { workspace = true }
 interp = { workspace = true }
-models = { workspace = true }
 run = { workspace = true }
 trace = { workspace = true }
+testkit = { workspace = true }

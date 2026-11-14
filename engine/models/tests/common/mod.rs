@@ -8,7 +8,7 @@ use bundle::names::{repo, resolve};
 use checkpoint::{Slice, Stored};
 use interp::{Tensor, run};
 use lower::form::named;
-use lower::{Device, Form, Pins, Plan, Settings, View, lower};
+use lower::{Device, Form, Pins, Plan, Settings, View, lower, rules};
 use run::{Run, open};
 use settings::read as settings;
 use std::collections::BTreeMap;
@@ -226,6 +226,11 @@ macro_rules! suite {
         }
 
         #[test]
+        fn faux_rules() {
+            crate::common::faux_rules(&$spec);
+        }
+
+        #[test]
         fn golden() {
             crate::common::golden(&$spec);
         }
@@ -277,43 +282,64 @@ pub fn files(spec: &Spec) {
 
 /// Rows the faux run feeds.
 const ROWS: u64 = 8;
+const FAUX: [(DimName, u64); 2] = [(Seqs, 1), (Context, ROWS)];
+
+/// Faux weights and inputs for `g`, at the faux sizes.
+fn faux_data(g: &Graph) -> (Vec<Tensor>, Vec<Tensor>) {
+    let mut noise = Noise(17);
+    let mut draw = |ty: &TensorType| fill(g, ty, &FAUX, &mut noise).unwrap();
+    let weights: Vec<Tensor> = g.weights.iter().map(|w| draw(&w.ty)).collect();
+    let ports = &g.entries[0].inputs;
+    let inputs = ports.iter().map(|p| draw(&p.ty));
+    (weights, inputs.collect())
+}
+
+/// One plan on the faux data against the interpreter.
+fn faux_check(label: &str, g: &Graph, data: &(Vec<Tensor>, Vec<Tensor>), device: Device) {
+    let (weights, inputs) = data;
+    let form = device.pins.form(&[]);
+    // The interpreter sees the weights as the form keeps them.
+    let kept: Vec<Tensor> = (weights.iter())
+        .map(|t| Tensor::f32(t.shape.clone(), form.roundtrip(t.floats().unwrap())))
+        .collect();
+    let want = run(g, &kept, 0, inputs).unwrap();
+    let plan = lower(g, 0, &FAUX, &device).unwrap();
+    let mut runner = loaded(plan, g, &kept, &settings());
+    let feeds: Vec<View> = inputs.iter().map(Tensor::view).collect();
+    let got = runner.run(&feeds).unwrap().remove(0);
+    let (got, want) = (got.floats().unwrap(), want[0].floats().unwrap());
+    let scale = want.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+    let (off, cos) = (max_abs_diff(got, want) / scale, cosine_f32(got, want));
+    eprintln!(
+        "{label} on {}: off {off:.2e}, cos {cos:.7}",
+        runner.device()
+    );
+    assert!(off < 1e-3 && cos > 0.9999, "{label}: off {off:e} cos {cos}");
+}
 
 /// Random weights in every form: device against interpreter.
 pub fn faux(spec: &Spec) {
     let Some(small) = spec.small else { return };
     let g = small();
-    let mut noise = Noise(17);
-    let sizes = [(Seqs, 1), (Context, ROWS)];
-    let mut draw = |ty: &TensorType| fill(&g, ty, &sizes, &mut noise).unwrap();
-    let weights: Vec<Tensor> = g.weights.iter().map(|w| draw(&w.ty)).collect();
-    let ports = &g.entries[0].inputs;
-    let inputs: Vec<Tensor> = ports.iter().map(|p| draw(&p.ty)).collect();
-    let feeds: Vec<View> = inputs.iter().map(Tensor::view).collect();
-    let settings = settings();
+    let data = faux_data(&g);
     for form in ["f32", "bf16", "q8_0", "q4_0", "nvfp4"] {
-        let f = named(form).unwrap();
-        // The interpreter sees the weights as the form keeps them.
-        let kept: Vec<Tensor> = (weights.iter())
-            .map(|t| Tensor::f32(t.shape.clone(), f.roundtrip(t.floats().unwrap())))
-            .collect();
-        let want = run(&g, &kept, 0, &inputs).unwrap();
-        let device = Device::guess(&settings).pinned(Pins::all(f));
-        let plan = lower(&g, 0, &sizes, &device).unwrap();
-        let mut runner = loaded(plan, &g, &kept, &settings);
-        let got = runner.run(&feeds).unwrap().remove(0);
-        let (got, want) = (got.floats().unwrap(), want[0].floats().unwrap());
-        let scale = want.iter().fold(0.0f32, |m, v| m.max(v.abs()));
-        let (off, cos) = (max_abs_diff(got, want) / scale, cosine_f32(got, want));
-        eprintln!(
-            "{} as {form} on {}: off {off:.2e}, cos {cos:.7}",
-            spec.name,
-            runner.device()
-        );
-        assert!(
-            off < 1e-3 && cos > 0.9999,
-            "{} as {form}: off {off:e} cos {cos}",
-            spec.name
-        );
+        let device = Device::guess(&settings()).pinned(Pins::all(named(form).unwrap()));
+        faux_check(&format!("{} as {form}", spec.name), &g, &data, device);
+    }
+}
+
+/// Faux weights as f32 and bf16, favoring each rule.
+pub fn faux_rules(spec: &Spec) {
+    let Some(small) = spec.small else { return };
+    let g = small();
+    let data = faux_data(&g);
+    for rule in rules() {
+        for form in ["f32", "bf16"] {
+            let pins = Pins::all(named(form).unwrap());
+            let device = Device::guess(&settings()).favoring(rule.name).pinned(pins);
+            let label = format!("{} favoring {} as {form}", spec.name, rule.name);
+            faux_check(&label, &g, &data, device);
+        }
     }
 }
 
