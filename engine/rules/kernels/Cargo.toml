@@ -12,3 +12,10 @@ graph = { workspace = true }
 lower = { workspace = true }
 sim = { workspace = true }
 gemm = { workspace = true }
+
+[dev-dependencies]
+settings = { workspace = true }
+gpukit = { workspace = true }
+interp = { workspace = true }
+run = { workspace = true }
+trace = { workspace = true }

@@ -97,6 +97,11 @@ to = "settings"
 reason = "lower tests read settings"
 
 [[layer_allow]]
+from = "kernels"
+to = "settings"
+reason = "kernels tests read settings"
+
+[[layer_allow]]
 from = "linear"
 to = "settings"
 reason = "linear tests read settings"
