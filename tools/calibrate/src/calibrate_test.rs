@@ -3,7 +3,6 @@ use crate::{Grid, headroom, judge};
 use lower::{Device, Settings, rules};
 use settings::read as settings;
 use sim::Chip;
-use std::path::PathBuf;
 use testkit::scratch;
 
 /// A crate's rules register once this one links it.
@@ -26,16 +25,16 @@ fn grid_reaches_rules() {
     }
     // Everything is known now, so a second pass times nothing.
     assert!(Grid::tiny().run(&mut device, &settings).unwrap().is_empty());
-    let file = scratch("tessera-calibrate-test.json");
-    device.save(&file).unwrap();
-    assert!(Device::load(&file).unwrap() == device, "a round trip");
-    std::fs::remove_file(&file).unwrap();
+    // A later run on this platform reads what this stored.
     let costs = Settings {
-        costs: Some(PathBuf::from("costs")),
+        costs: Some(scratch("tessera-calibrate-costs")),
         ..settings
     };
-    let stored = Device::path(&costs, &device.name).unwrap();
-    assert!(stored.ends_with(format!("{}.json", device.name.replace(' ', "-"))));
+    let file = Device::path(&costs, &device.platform).unwrap();
+    device.save(&file).unwrap();
+    let stored = Device::stored(device.platform.clone(), &costs).unwrap();
+    assert!(stored == device, "a round trip");
+    std::fs::remove_file(&file).unwrap();
 }
 
 /// A made-up chip's reading for one probe.
