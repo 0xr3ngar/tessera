@@ -174,7 +174,7 @@ fn attend_rows(
     source = rows_source,
     launches = rows_launches,
 )]
-pub struct AttendRows(pub Attn);
+pub(crate) struct AttendRows(pub Attn);
 
 fn rows_source(k: &AttendRows) -> Source {
     let body = kept::attach(attend_rows_ir(), k.0.kept);

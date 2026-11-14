@@ -69,7 +69,7 @@ fn norm_lanes<const WIDE: u32, const AHEAD: u32, const WEIGHTED: bool>(
     load = lane_load,
     unproven,
 )]
-pub struct LaneNorm {
+pub(crate) struct LaneNorm {
     pub rows: usize,
     pub width: usize,
     pub eps: f32,

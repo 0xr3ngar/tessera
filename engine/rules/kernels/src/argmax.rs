@@ -24,7 +24,7 @@ pub struct Rows {
     work = self.0.rows * self.0.width,
     launches = self.0.launch(step, self.0.rows * self.0.parts),
 )]
-pub struct Peaks(pub Rows);
+pub(crate) struct Peaks(pub Rows);
 
 /// The best of each row's peaks.
 #[derive(Clone, Copy, Debug, Kernel)]
@@ -35,7 +35,7 @@ pub struct Peaks(pub Rows);
     work = self.0.rows * self.0.parts,
     launches = self.0.launch(step, self.0.rows),
 )]
-pub struct Argmax(pub Rows);
+pub(crate) struct Argmax(pub Rows);
 
 /// Strictly greater, so the lowest index wins ties.
 #[kernel]

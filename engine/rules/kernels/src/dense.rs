@@ -31,7 +31,7 @@ fn causal(mut x: BufMut<F32>, rows: u32, queries: u32, keys: u32, scale: f32) {
 }
 
 /// The most score elements this form may hold.
-pub const DENSE_SCORES: usize = 1 << 28;
+pub(crate) const DENSE_SCORES: usize = 1 << 28;
 
 /// The hand-written gemm, which takes either operand transposed.
 fn source(form: DType) -> Source {
@@ -67,7 +67,7 @@ fn launch(p: gemm::Problem, buffers: [Arg; 3]) -> Launch {
 
 /// Which of the two products a launch computes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Part {
+pub(crate) enum Part {
     /// Every query-key product, as `[Seqs, Heads, Queries, Keys]`.
     Scores,
     /// Each head's probabilities times its values.
@@ -86,7 +86,7 @@ pub enum Part {
     work = per_head_work(self),
     unproven,
 )]
-pub struct PerHead(pub Part, pub Attn);
+pub(crate) struct PerHead(pub Part, pub Attn);
 
 /// Scaled causal softmax over each score row, in place.
 #[derive(Clone, Copy, Debug, Kernel)]

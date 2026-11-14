@@ -42,7 +42,7 @@ fn angles(positions: Buf<U32>, mut out: BufMut<F32>, count: u32, width: u32, the
 /// Each position's cosine and sine, per pair.
 #[derive(Clone, Copy, Debug, Kernel)]
 #[launch(angles, threads = self.count * self.width / 2, shared)]
-pub struct Angles {
+pub(crate) struct Angles {
     pub count: usize,
     pub width: usize,
     pub theta: f32,

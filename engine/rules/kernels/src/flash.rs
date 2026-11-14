@@ -470,7 +470,7 @@ fn flash_rows(
     load = flash_load,
     unproven,
 )]
-pub struct Flash(pub Attn);
+pub(crate) struct Flash(pub Attn);
 
 impl Flash {
     fn tree(&self) -> Body {
@@ -558,7 +558,7 @@ fn flash_needs(a: &Attn) -> Needs {
     launches = rows_launches,
     load = rows_load,
 )]
-pub struct FlashRows(pub Attn);
+pub(crate) struct FlashRows(pub Attn);
 
 impl FlashRows {
     fn tree(&self) -> Body {
