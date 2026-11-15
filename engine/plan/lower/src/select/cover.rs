@@ -143,12 +143,7 @@ impl Cover<'_> {
                 continue;
             };
             proposed = true;
-            // A tree runs on a CPU too, in lockstep.
-            let fits = |d: &Draft| {
-                d.kernel.runs_on() == kind
-                    || (kind == ZoneKind::Cpu && matches!(d.kernel.source(), Source::Made(_)))
-            };
-            if !drafts.iter().all(fits) {
+            if !drafts.iter().all(|d| fits(d, kind)) {
                 continue;
             }
             offered.push(rule.name);
@@ -158,7 +153,7 @@ impl Cover<'_> {
                 if drafts.iter().any(|d| !d.kernel.needs().fits(platform)) {
                     continue;
                 }
-                if self.swallows(rule, t, &drafts) {
+                if self.swallows(rule, t, &drafts, kind) {
                     continue;
                 }
                 let seconds = |d: &Draft| self.device.seconds_in(zone, &*d.kernel, d.len);
@@ -225,16 +220,24 @@ impl Cover<'_> {
         seconds
     }
 
-    /// Whether a cover hides a node the favored rule takes.
-    fn swallows(&self, rule: &Rule, t: T, drafts: &[Draft]) -> bool {
+    /// Whether a cover hides a node the favorite takes here.
+    fn swallows(&self, rule: &Rule, t: T, drafts: &[Draft], kind: ZoneKind) -> bool {
         let Some(favorite) = self.favorite.filter(|f| f.name != rule.name) else {
             return false;
         };
         let inside = self.tree.inside(t, &reads(drafts));
-        let below = inside.into_iter().filter(|n| *n != t);
-        below
-            .into_iter()
-            .any(|n| (favorite.propose)(self.tree, n).is_some())
+        for n in inside {
+            if n == t {
+                continue;
+            }
+            let Some(drafts) = (favorite.propose)(self.tree, n) else {
+                continue;
+            };
+            if drafts.iter().all(|d| fits(d, kind)) {
+                return true;
+            }
+        }
+        false
     }
 
     /// The reads of `t`'s cover in `zone`, each placed.
@@ -255,4 +258,10 @@ impl Cover<'_> {
         }
         placed
     }
+}
+
+/// A tree runs on a CPU too, in lockstep.
+fn fits(d: &Draft, kind: ZoneKind) -> bool {
+    d.kernel.runs_on() == kind
+        || (kind == ZoneKind::Cpu && matches!(d.kernel.source(), Source::Made(_)))
 }

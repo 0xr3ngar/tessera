@@ -9,7 +9,6 @@ description = "Native CPU kernels for matmuls and attention, as lowering rules"
 [dependencies]
 graph = { workspace = true }
 lower = { workspace = true }
-sim = { workspace = true }
 
 [dev-dependencies]
 interp = { workspace = true }
