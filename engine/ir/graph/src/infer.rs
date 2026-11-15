@@ -1,7 +1,7 @@
 //! Per-op typing rules: shapes, dtypes and placements.
 
 use crate::dims::{Dim, DimExpr, DimName, Poly, Shape};
-use crate::node::{Graph, Mask, Op, Select, Stage, View};
+use crate::node::{Act, Graph, Mask, Op, Select, Stage, View};
 use crate::select;
 use crate::types::{DType, Placement, TensorType};
 use std::fmt;
@@ -216,6 +216,8 @@ fn matmul(dims: &[Dim], x: &TensorType, w: &TensorType) -> Result<TensorType, Ty
     let out_last = (lead + x.rank() - 1 - own) as u32;
     let placement = match (x.placement, w.placement) {
         (Replicated, Replicated) => Replicated,
+        // Zero rows stay zero, so routed rows stay routed.
+        (Replicated | Routed, Routed) | (Routed, Replicated) => Routed,
         (Replicated, Split { axis }) if axis == n => Split { axis: out_last },
         (Split { axis }, Replicated) if (n..last).contains(&axis) => Split { axis },
         (Partial, Replicated) => Partial,
@@ -400,9 +402,14 @@ fn row(dims: &[Dim], stages: &[Stage], args: &[&TensorType]) -> Result<TensorTyp
                 })?;
                 rope(dims, x, pos, p)?;
             }
-            (Stage::Act(_), _) => need(p != Placement::Partial, ErrorKind::Placement, || {
-                format!("{s:?} is nonlinear, so it cannot read partial sums")
-            })?,
+            (Stage::Act(a), _) => {
+                // Routed zeros stay zero only where the activation keeps zero.
+                let keeps_zero = *a != Act::Sigmoid;
+                let ok = p != Placement::Partial && (p != Placement::Routed || keeps_zero);
+                need(ok, ErrorKind::Placement, || {
+                    format!("{s:?} is nonlinear, so it cannot read {p:?} values")
+                })?;
+            }
             (Stage::AllReduce, _) => {
                 need(p == Placement::Partial, ErrorKind::Placement, || {
                     format!("all-reduce needs partial sums, got {p:?}")
@@ -436,6 +443,8 @@ fn combine(s: &Stage, p: Placement, q: Placement, lead: usize) -> Result<Placeme
     match (p, q) {
         (Partial, Partial) if *s == Stage::Add => Ok(Partial),
         (Partial, Replicated) if *s == Stage::Mul => Ok(Partial),
+        (Routed, Routed) => Ok(Routed),
+        (Routed, Replicated) | (Replicated, Routed) if *s == Stage::Mul => Ok(Routed),
         (a, b) if shift(b, lead) == a && a != Partial => Ok(a),
         (Split { axis }, Replicated) if (axis as usize) < lead => Ok(p),
         _ => Err(TypeError {
@@ -470,8 +479,14 @@ fn mean(axis: u32, x: &TensorType) -> Result<TensorType, TypeError> {
     )?;
     let mut shape = x.shape.0.clone();
     shape.remove(axis as usize);
+    // Each rank sums the rows it holds.
+    let placement = match x.placement {
+        Placement::Routed => Placement::Partial,
+        p => p,
+    };
     Ok(TensorType {
         shape: Shape(shape),
+        placement,
         ..x.clone()
     })
 }
@@ -512,7 +527,7 @@ fn whole(p: Placement, last: u32, s: &Stage) -> Result<(), TypeError> {
     let ok = match p {
         Placement::Replicated => true,
         Placement::Split { axis } => axis < last,
-        Placement::Partial => false,
+        Placement::Partial | Placement::Routed => false,
     };
     need(ok, ErrorKind::Placement, || {
         format!("{s:?} needs whole rows, got {p:?}")

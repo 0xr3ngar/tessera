@@ -22,7 +22,7 @@ fn whole(t: &TensorType) -> bool {
     match t.placement {
         Placement::Replicated => true,
         Placement::Split { axis } => (axis as usize) + 1 < t.rank(),
-        Placement::Partial => false,
+        Placement::Partial | Placement::Routed => false,
     }
 }
 
@@ -46,15 +46,15 @@ fn gather(table: &TensorType, ids: &TensorType) -> Result<TensorType, TypeError>
     let lead = ids.rank() as u32;
     let placement = match table.placement {
         Replicated => Replicated,
-        // Ranks without the row contribute zeros.
-        Split { axis: 0 } => Partial,
+        // Ranks without the row hold zeros.
+        Split { axis: 0 } => Routed,
         Split { axis } => Split {
             axis: axis - 1 + lead,
         },
-        Partial => {
+        Partial | Routed => {
             return Err(TypeError {
                 kind: ErrorKind::Placement,
-                message: "gather cannot read a partial table".into(),
+                message: format!("gather cannot read a {:?} table", table.placement),
             });
         }
     };
@@ -119,7 +119,7 @@ pub(crate) fn mask(x: &TensorType) -> Result<TensorType, TypeError> {
     let ok = match x.placement {
         Placement::Replicated => true,
         Placement::Split { axis } => (axis as usize) + 2 < x.rank(),
-        Placement::Partial => false,
+        Placement::Partial | Placement::Routed => false,
     };
     need(ok, ErrorKind::Placement, || {
         format!("a mask needs whole score rows, got {:?}", x.placement)

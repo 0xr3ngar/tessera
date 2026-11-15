@@ -6,11 +6,13 @@ use linear as _;
 
 mod golden;
 mod gpu;
+mod shard;
 mod step;
 
 pub use golden::{Case, Check, Compare, Golden, LOGITS, Reference, Tolerance, golden};
 pub use golden::{pulled, unit};
 pub use gpu::gpu;
+pub use shard::{pair, shards};
 pub use step::steps;
 
 use bundle::names::{repo, resolve};
@@ -136,6 +138,11 @@ macro_rules! suite {
         #[test]
         fn gpu() {
             crate::common::gpu(&$spec);
+        }
+
+        #[test]
+        fn shards() {
+            crate::common::shards(&$spec);
         }
     };
 }

@@ -5,7 +5,7 @@ use codegen::ir::{Body, Expr, Intrinsic, Ty};
 use codegen::prelude::*;
 use lower::kernels::finish;
 use lower::sites::Picked as Pick;
-use lower::{Draft, Form as Stored, Kernel, Launch, Load, Shape, Step, T, Tree};
+use lower::{Arg, Draft, Form as Stored, Kernel, Launch, Load, Shape, Step, T, Tree};
 
 /// Each row's product with the matrix `ids` names for it.
 #[derive(Clone, Debug, Kernel)]
@@ -37,6 +37,8 @@ fn picked(
     stride: u32,
     offset: u32,
     repeat: u32,
+    rank: u32,
+    per_rank: u32,
     #[build] form: &'static dyn Stored,
 ) {
     if gid() >= rows * n {
@@ -44,10 +46,11 @@ fn picked(
     }
     let row = gid() / n;
     let col = gid() % n;
-    let id = ids[row as u64];
+    // This rank's matrices start at `rank * per_rank`.
+    let id = ids[row as u64] - rank * per_rank;
     let mut sums = [0.0f32; 1];
     sums[0] = 0.0;
-    if id < count {
+    if ids[row as u64] >= rank * per_rank && id < count {
         let at = (id as u64 * stride as u64 + offset as u64 + col as u64) * k as u64;
         let from = (row / repeat) as u64 * k as u64;
         for i in 0..k {
@@ -103,7 +106,10 @@ fn picked_launches(k: &Picked, step: &Step) -> Vec<Launch> {
         pick.offset,
         pick.repeat,
     ];
-    k.product.launch(step, &counts, Shape::Line(m * n))
+    let mut launches = k.product.launch(step, &counts, Shape::Line(m * n));
+    let per_rank = if pick.routed { pick.count } else { 0 };
+    launches[0].args.extend([Arg::Rank, Arg::count(per_rank)]);
+    launches
 }
 
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
