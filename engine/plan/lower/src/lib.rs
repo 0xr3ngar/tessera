@@ -79,7 +79,7 @@ pub enum Error {
     /// A stored device file could not be read.
     Io(std::io::Error),
     /// The ranks lost touch.
-    Comm(comm::Error),
+    Comm(engine_comm::Error),
 }
 
 impl fmt::Display for Error {
@@ -110,8 +110,8 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<comm::Error> for Error {
-    fn from(e: comm::Error) -> Self {
+impl From<engine_comm::Error> for Error {
+    fn from(e: engine_comm::Error) -> Self {
         Error::Comm(e)
     }
 }

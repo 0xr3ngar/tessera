@@ -1,60 +1,28 @@
-//! TCP between every pair of ranks.
+//! TCP between every pair of ranks, over streams already connected.
 
 use crate::{Error, Transport};
 use std::io::{self, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::TcpStream;
 use std::thread;
-use std::time::{Duration, Instant};
 
-/// TCP to every other rank. Lower ranks call, higher answer.
+/// A stream to every other rank.
 pub struct Sockets {
     rank: u32,
     /// By rank. This rank's own entry is empty.
     peers: Vec<Option<TcpStream>>,
 }
 
-/// How long a rank waits for the others.
-const PATIENCE: Duration = Duration::from_secs(10);
-
 impl Sockets {
-    /// Joins rank `rank` of `addrs`, listening on `listener`.
-    pub fn join(rank: u32, listener: TcpListener, addrs: &[SocketAddr]) -> Result<Self, Error> {
-        let mut peers: Vec<Option<TcpStream>> = (0..addrs.len()).map(|_| None).collect();
-        for (r, addr) in addrs.iter().enumerate().take(rank as usize) {
-            let mut stream = call(*addr)?;
-            stream.write_all(&rank.to_le_bytes())?;
-            peers[r] = Some(stream);
-        }
-        for _ in rank as usize + 1..addrs.len() {
-            let (mut stream, _) = listener.accept()?;
-            stream.set_nodelay(true)?;
-            let mut who = [0u8; 4];
-            stream.read_exact(&mut who)?;
-            let who = u32::from_le_bytes(who) as usize;
-            if who <= rank as usize || who >= addrs.len() || peers[who].is_some() {
-                return Err(Error::Join(format!("rank {who} called rank {rank}")));
-            }
-            peers[who] = Some(stream);
+    /// Rank `rank` over `peers`, one stream per other rank.
+    pub fn over(rank: u32, peers: Vec<Option<TcpStream>>) -> Result<Self, Error> {
+        let missing = |(r, p): (usize, &Option<TcpStream>)| p.is_none() != (r == rank as usize);
+        if (rank as usize) >= peers.len() || peers.iter().enumerate().any(missing) {
+            return Err(Error::Fit(format!(
+                "rank {rank} of {} streams",
+                peers.len()
+            )));
         }
         Ok(Self { rank, peers })
-    }
-}
-
-/// Connects to `addr`, retrying while it is not up yet.
-fn call(addr: SocketAddr) -> io::Result<TcpStream> {
-    let start = Instant::now();
-    loop {
-        match TcpStream::connect(addr) {
-            Ok(stream) => {
-                stream.set_nodelay(true)?;
-                return Ok(stream);
-            }
-            Err(e) if start.elapsed() < PATIENCE => {
-                let _ = e;
-                thread::sleep(Duration::from_millis(20));
-            }
-            Err(e) => return Err(e),
-        }
     }
 }
 

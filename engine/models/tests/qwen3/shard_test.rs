@@ -1,14 +1,12 @@
 //! The toy decoder over two ranks matches one.
 
 use crate::common::pair;
-use comm::Sockets;
 use frontend_settings::read as settings;
 use graph::{Graph, Placement, shard};
 use interp::{Tensor, run, run_ranks};
 use lower::{Device, Pick, Plan, View, lower};
 use models::decoder::{Config, Swiglu, program};
-use run::{Loopback, Rank};
-use std::net::TcpListener;
+use run::Loopback;
 use testkit::{Noise, fill, max_abs_diff};
 use trace::DimName::{Context, Seqs};
 use trace::{DimName, Norm, TensorType};
@@ -83,54 +81,4 @@ fn two_rank_plan() {
         let diff = off(&got[0], &g, &weights, &inputs);
         assert!(diff < 1e-3, "{diff} on {}", ranks.rank(0).device());
     }
-}
-
-/// Each rank on its own thread, joined over TCP.
-#[test]
-fn two_sockets() {
-    let (g, sharded, weights, inputs) = toy();
-    let host = lower::Settings {
-        backend: Pick::Host,
-        ..settings()
-    };
-    let device = Device::guess(&host).zoned(pair()).ranked(vec![0, 1]);
-    let plans = [0, 1].map(|r| lower(&sharded, 0, &SIZES, &device.clone().as_rank(r)).unwrap());
-    let listeners: Vec<TcpListener> = (0..2)
-        .map(|_| TcpListener::bind("127.0.0.1:0").unwrap())
-        .collect();
-    let addrs: Vec<_> = listeners.iter().map(|l| l.local_addr().unwrap()).collect();
-    // Tensors stay on one thread, so threads get the numbers.
-    let plain = |t: &Tensor| (t.shape.clone(), t.bytes().to_vec(), t.dtype());
-    let rebuilt = |(shape, bytes, dtype): &(Vec<usize>, Vec<u8>, _)| {
-        Tensor::from_bytes(shape.clone(), *dtype, bytes)
-    };
-    let (weights_plain, inputs_plain): (Vec<_>, Vec<_>) = (
-        weights.iter().map(plain).collect(),
-        inputs.iter().map(plain).collect(),
-    );
-    let outs: Vec<Vec<f32>> = std::thread::scope(|s| {
-        let runs: Vec<_> = (listeners.into_iter().enumerate())
-            .map(|(r, listener)| {
-                let (plan, addrs, host) = (&plans[r], &addrs, &host);
-                let (weights, inputs) = (&weights_plain, &inputs_plain);
-                s.spawn(move || {
-                    let sockets = Sockets::join(r as u32, listener, addrs).unwrap();
-                    let mut rank = Rank::open(plan.clone(), host, sockets).unwrap();
-                    for (at, w) in weights.iter().enumerate() {
-                        rank.load(at as u32, rebuilt(w).view()).unwrap();
-                    }
-                    let inputs: Vec<Tensor> = inputs.iter().map(rebuilt).collect();
-                    let feeds: Vec<View> = inputs.iter().map(Tensor::view).collect();
-                    let out = rank.run(&feeds).unwrap().remove(0);
-                    out.floats().unwrap().to_vec()
-                })
-            })
-            .collect();
-        runs.into_iter().map(|t| t.join().unwrap()).collect()
-    });
-    assert_eq!(outs[0], outs[1]);
-    let shape = run(&g, &weights, 0, &inputs).unwrap()[0].shape.clone();
-    let got = Tensor::f32(shape, outs[0].clone());
-    let diff = off(&got, &g, &weights, &inputs);
-    assert!(diff < 1e-3, "{diff}");
 }

@@ -244,13 +244,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "comm"
-version = "0.1.0"
-dependencies = [
- "testkit",
-]
-
-[[package]]
 name = "compact_str"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -437,6 +430,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "engine-comm"
+version = "0.1.0"
+dependencies = [
+ "testkit",
+]
+
+[[package]]
 name = "engine-settings"
 version = "0.1.0"
 dependencies = [
@@ -526,6 +526,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "frontend-comm"
+version = "0.1.0"
+dependencies = [
+ "engine-comm",
+ "frontend-settings",
+ "graph",
+ "interp",
+ "kernels",
+ "linear",
+ "lower",
+ "mem",
+ "models",
+ "run",
+ "testkit",
+ "trace",
 ]
 
 [[package]]
@@ -976,7 +994,7 @@ name = "lower"
 version = "0.1.0"
 dependencies = [
  "codegen",
- "comm",
+ "engine-comm",
  "engine-settings",
  "frontend-settings",
  "gpukit",
@@ -1085,7 +1103,6 @@ version = "0.1.0"
 dependencies = [
  "bundle",
  "checkpoint",
- "comm",
  "cpu",
  "frontend-settings",
  "graph",
@@ -1285,8 +1302,9 @@ version = "0.1.0"
 dependencies = [
  "bundle",
  "checkpoint",
- "comm",
  "cpu",
+ "engine-comm",
+ "frontend-comm",
  "frontend-settings",
  "graph",
  "interp",
@@ -1406,7 +1424,7 @@ name = "run"
 version = "0.1.0"
 dependencies = [
  "codegen",
- "comm",
+ "engine-comm",
  "engine-settings",
  "gpukit",
  "graph",
