@@ -14,11 +14,12 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 scattered-collect = "0.22"
 codegen = { workspace = true }
 kernel-macro = { workspace = true }
+engine-settings = { workspace = true }
 gpukit = { workspace = true }
 mem = { workspace = true }
 
 [dev-dependencies]
-settings = { workspace = true }
+frontend-settings = { workspace = true }
 interp = { workspace = true }
 run = { workspace = true }
 trace = { workspace = true }

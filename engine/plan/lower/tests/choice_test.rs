@@ -1,11 +1,11 @@
 //! How selection picks among rules: cost, favor and limits.
 
+use frontend_settings::read as settings;
 use graph::DimName::{self, Hidden, Rows, Seqs};
 use graph::{Act, DType, Dim, Graph, TensorType};
 use lower::kernels::Map;
 use lower::sites;
 use lower::{Device, Draft, Kernel, Limits, Needs, Plan, Platform, T, Tree, lower, select};
-use settings::read as settings;
 use trace::{EntryKind, Model, Port, Role};
 
 /// A map stand-in with its own cost.

@@ -1,12 +1,12 @@
 //! Shared graphs and inputs for the matmul tests.
 
 use codegen::ir::Param;
+use frontend_settings::read as settings;
 use gpukit::backend::Backend;
 use gpukit::testing::Noise;
 use graph::DimName::{Ffn, Hidden, Rows};
 use interp::Tensor;
 use lower::{Plan, Settings, Source, Terms};
-use settings::read as settings;
 use std::collections::HashMap;
 use trace::{DType, Dim, EntryKind, Graph, Linear, Model, Port, Role, TensorType, Weights};
 

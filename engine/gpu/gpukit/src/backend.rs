@@ -1,7 +1,8 @@
 //! Which GPU backend this build dispatches to.
 
 /// A backend that can run kernels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Backend {
     Metal,
     Cuda,
@@ -21,6 +22,15 @@ pub fn available() -> Option<Backend> {
         (true, _) => Some(Backend::Cuda),
         (false, true) => Some(Backend::Rocm),
         (false, false) => None,
+    }
+}
+
+/// Whether `backend` can run kernels here.
+pub fn ready(backend: Backend) -> bool {
+    match backend {
+        Backend::Metal => cfg!(target_os = "macos"),
+        Backend::Cuda => crate::testing::cuda_ready(),
+        Backend::Rocm => crate::testing::rocm_ready(),
     }
 }
 

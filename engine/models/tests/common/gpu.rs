@@ -26,7 +26,7 @@ fn fixture(spec: &Spec, g: &Graph) -> Option<Fixture> {
     let mut reference = golden.reference(spec.name, g)?;
     let mut one = reference.cases.remove(0);
     Some(Fixture {
-        settings: settings::read(),
+        settings: frontend_settings::read(),
         weights: reference.weights,
         want: one.outputs.remove("logits").unwrap(),
         tokens: one.tokens,
@@ -48,7 +48,7 @@ fn close(label: &str, got: &[f32], c: &Fixture) {
 /// Both entries on this host's GPU, against the reference.
 pub fn gpu(spec: &Spec) {
     let Some(stepper) = &spec.stepper else { return };
-    if settings::read().gpu().is_none() {
+    if frontend_settings::read().gpu().is_none() {
         return eprintln!("no GPU here; skipped");
     }
     let g = (spec.release)();

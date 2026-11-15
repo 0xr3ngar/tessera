@@ -150,6 +150,7 @@ dependencies = [
  "checkpoint",
  "engine",
  "fancy-regex",
+ "frontend-settings",
  "graph",
  "interp",
  "lower",
@@ -160,7 +161,6 @@ dependencies = [
  "rmpv",
  "serde",
  "serde_json",
- "settings",
  "testkit",
  "tokenizers",
  "trace",
@@ -184,13 +184,13 @@ version = "0.1.0"
 dependencies = [
  "codegen",
  "engine",
+ "frontend-settings",
  "graph",
  "kernels",
  "linear",
  "lower",
  "models",
  "run",
- "settings",
  "sim",
  "testkit",
  "trace",
@@ -404,6 +404,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 name = "engine"
 version = "0.1.0"
 dependencies = [
+ "frontend-settings",
  "graph",
  "interp",
  "kernels",
@@ -412,9 +413,24 @@ dependencies = [
  "models",
  "run",
  "serde",
- "settings",
  "testkit",
  "trace",
+]
+
+[[package]]
+name = "engine-settings"
+version = "0.1.0"
+dependencies = [
+ "gpukit",
+]
+
+[[package]]
+name = "envy"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f47e0157f2cb54f5ae1bd371b30a2ae4311e1c028f575cd4e81de7353215965"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -436,10 +452,10 @@ dependencies = [
  "bundle",
  "checkpoint",
  "engine",
+ "frontend-settings",
  "lower",
  "serde",
  "serde_json",
- "settings",
 ]
 
 [[package]]
@@ -494,6 +510,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "frontend-settings"
+version = "0.1.0"
+dependencies = [
+ "engine-settings",
+ "envy",
+ "serde",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -521,10 +546,10 @@ dependencies = [
 name = "gemm"
 version = "0.1.0"
 dependencies = [
+ "frontend-settings",
  "gpukit",
  "objc2",
  "objc2-metal",
- "settings",
  "testkit",
 ]
 
@@ -847,12 +872,12 @@ name = "kernels"
 version = "0.1.0"
 dependencies = [
  "codegen",
+ "frontend-settings",
  "gemm",
  "graph",
  "interp",
  "lower",
  "run",
- "settings",
  "sim",
  "testkit",
  "trace",
@@ -869,13 +894,13 @@ name = "linear"
 version = "0.1.0"
 dependencies = [
  "codegen",
+ "frontend-settings",
  "gpukit",
  "graph",
  "interp",
  "kernels",
  "lower",
  "run",
- "settings",
  "trace",
 ]
 
@@ -922,6 +947,8 @@ name = "lower"
 version = "0.1.0"
 dependencies = [
  "codegen",
+ "engine-settings",
+ "frontend-settings",
  "gpukit",
  "graph",
  "interp",
@@ -931,7 +958,6 @@ dependencies = [
  "scattered-collect",
  "serde",
  "serde_json",
- "settings",
  "sim",
  "testkit",
  "trace",
@@ -1029,6 +1055,7 @@ version = "0.1.0"
 dependencies = [
  "bundle",
  "checkpoint",
+ "frontend-settings",
  "graph",
  "interp",
  "kernels",
@@ -1036,7 +1063,6 @@ dependencies = [
  "lower",
  "run",
  "serde_json",
- "settings",
  "testkit",
  "trace",
 ]
@@ -1327,6 +1353,7 @@ name = "run"
 version = "0.1.0"
 dependencies = [
  "codegen",
+ "engine-settings",
  "gpukit",
  "graph",
  "lower",
@@ -1487,18 +1514,11 @@ dependencies = [
  "axum",
  "bundle",
  "engine",
+ "frontend-settings",
  "lower",
  "serde",
- "settings",
  "tokio",
  "tokio-stream",
-]
-
-[[package]]
-name = "settings"
-version = "0.1.0"
-dependencies = [
- "gpukit",
 ]
 
 [[package]]
@@ -1649,7 +1669,7 @@ dependencies = [
  "bundle",
  "fancy-regex",
  "findings",
- "settings",
+ "frontend-settings",
  "ureq",
 ]
 

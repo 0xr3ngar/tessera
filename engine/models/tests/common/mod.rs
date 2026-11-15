@@ -15,11 +15,11 @@ pub use step::steps;
 
 use bundle::names::{repo, resolve};
 use checkpoint::{Slice, Stored};
+use frontend_settings::read as settings;
 use interp::{Tensor, run};
 use lower::form::named;
 use lower::{Device, Pins, Plan, Settings, View, lower, rules};
 use run::{Run, open};
-use settings::read as settings;
 use testkit::{Noise, cosine_f32, fill, max_abs_diff};
 use trace::DimName::{Context, Seqs};
 use trace::{Composite, DimName, Graph, TensorType};

@@ -18,7 +18,7 @@ trace = { workspace = true }
 [dev-dependencies]
 serde_json = "1"
 bundle = { workspace = true }
-settings = { workspace = true }
+frontend-settings = { workspace = true }
 kernels = { workspace = true }
 checkpoint = { workspace = true }
 interp = { workspace = true }

@@ -44,11 +44,12 @@ Crate | Description
 [sim](engine/plan/sim) | Analytic models of GPUs: what a launch should cost
 [kernels](engine/rules/kernels) | Kernels and the lowering rules that propose them
 [linear](engine/rules/linear) | Generated matmul kernels, registered as lowering rules
+[engine-settings](engine/settings) | Knobs the front end sets once and the engine reads
 [bundle](frontend/bundle) | A Hugging Face model directory as graph, weights, tokenizer and template
 [checkpoint](frontend/checkpoint) | Reads weights from safetensors files
 [eval](frontend/eval) | Measures a model under a recipe: speed per batch, parity against a reference
 [serve](frontend/serve) | An HTTP front end: text in, streamed text out, over the engine
-[settings](frontend/settings) | Settings read once from the environment, passed down
+[frontend-settings](frontend/settings) | Settings read once from the environment, passed down
 [calibrate](tools/calibrate) | Times kernels on this machine and stores what they cost
 [tessera-check](tools/check) | Runs the style checks, and prints one report or writes one PR comment
 [findings](tools/findings) | The JSON each check writes, for tessera-check to render

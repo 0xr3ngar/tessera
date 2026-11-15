@@ -4,14 +4,12 @@ mod error;
 pub use error::Error;
 pub use limits::Limits;
 pub use platform::Platform;
-pub use settings::{Pick, Settings};
 
 pub mod backend;
 pub mod limits;
 pub mod platform;
 #[cfg(test)]
 mod platform_test;
-pub mod settings;
 
 pub mod testing;
 

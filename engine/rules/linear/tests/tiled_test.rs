@@ -10,11 +10,11 @@ use interp::{Tensor, run};
 
 mod common;
 use common::{linear, noise, runs, terms};
+use frontend_settings::read as settings;
 use linear::{SCHEDULES, Schedule};
 use lower::form::FORMS;
 use lower::{Device, Dialect, Pins, Source, lower};
 use run::open;
-use settings::read as settings;
 
 /// A device that can only choose schedule `at`.
 fn only(at: usize) -> Device {

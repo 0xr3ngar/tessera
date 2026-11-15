@@ -56,7 +56,7 @@ fn engine_thread(
     queue: mpsc::Sender<Job>,
 ) {
     let start = Instant::now();
-    let settings = settings::read();
+    let settings = frontend_settings::read();
     let rules = match &settings.names {
         Some(path) => std::fs::read_to_string(path)
             .map_err(|e| e.to_string())

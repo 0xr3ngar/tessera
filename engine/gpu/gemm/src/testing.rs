@@ -2,7 +2,7 @@
 
 /// Whether GPU tests should run here.
 pub(crate) fn gpu_available() -> bool {
-    settings::read().gpu().is_some()
+    frontend_settings::read().gpu().is_some()
 }
 
 pub(crate) use testkit::assert_oracle;

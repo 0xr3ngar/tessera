@@ -64,7 +64,7 @@ fn reference_checks() {
     let Some(reference) = GOLDEN.reference("eg2", &g) else {
         return eprintln!("TESSERA_EG2 is not set; skipped");
     };
-    let settings = settings::read();
+    let settings = frontend_settings::read();
     let dir = settings.reference("eg2").unwrap();
     let cases = &reference.cases;
     if dir.join("exlr8").is_dir() || dir.join("exlr8.repo").is_file() {

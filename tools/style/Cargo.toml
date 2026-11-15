@@ -13,4 +13,4 @@ fancy-regex = "0.14"
 ureq = "2"
 
 [dev-dependencies]
-settings = { workspace = true }
+frontend-settings = { workspace = true }
