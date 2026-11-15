@@ -167,3 +167,30 @@ fn clusters_pick_links() {
     assert_eq!(c.transfer(0, host, 1e9), Some(1e-3 + 1e-3));
     assert_eq!(c.transfer(host, 0, 1.0), None, "links are one way");
 }
+
+#[test]
+fn ring_rounds() {
+    use crate::{Cluster, Link, Zone, ZoneKind};
+    let mut c = Cluster::default();
+    let gpu = |name: &str| Zone {
+        name: name.into(),
+        kind: ZoneKind::Gpu,
+        parent: None,
+    };
+    let (b, d) = (c.add(gpu("b")), c.add(gpu("d")));
+    // One slow link of 10 us. Two of 1 us.
+    for (from, to, latency) in [(0, b, 1e-6), (b, d, 1e-5), (d, 0, 1e-6)] {
+        c.links.push(Link {
+            from,
+            to,
+            latency,
+            rate: 1e9,
+            tag: Tag::Assumed,
+        });
+    }
+    assert_eq!(c.all_reduce(&[0], 3e6), Some(0.0));
+    // Four rounds of a third each, on the slow link.
+    let ring = c.all_reduce(&[0, b, d], 3e6).unwrap();
+    assert!((ring - 4.0 * (1e-5 + 1e-3)).abs() < 1e-9, "{ring}");
+    assert_eq!(c.all_reduce(&[0, d, b], 3e6), None);
+}

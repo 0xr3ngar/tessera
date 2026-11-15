@@ -1,5 +1,7 @@
 //! Qwen3-0.6B.
 
+mod shard_test;
+
 use crate::common::{LOGITS, Spec, Stepper, decoder, small_stack, suite};
 use models::decoder::{Config, program, stepper};
 use trace::Composite::{Attention, Mlp};

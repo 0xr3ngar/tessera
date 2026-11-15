@@ -6,7 +6,7 @@ mod run;
 mod tensor;
 
 pub use mem::Tensor;
-pub use run::{Store, bind, run, run_kept};
+pub use run::{Store, bind, run, run_kept, run_ranks};
 pub use tensor::Error;
 
 #[cfg(test)]

@@ -2,7 +2,10 @@
 
 use crate::cpu;
 use crate::tensor::Error;
-use graph::{DimExpr, DimName, Graph, NodeId, Numerics, Op, PathSeg, Select, Shape, Size, View};
+use graph::{
+    DimExpr, DimName, Graph, NodeId, Numerics, Op, PathSeg, Placement, Select, Shape, Size, Stage,
+    View, Weight,
+};
 use mem::Tensor;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -174,6 +177,52 @@ pub fn run_kept(
     entry: usize,
     inputs: &[Tensor],
 ) -> Result<Vec<Tensor>, Error> {
+    run_on(g, weights, store, entry, inputs, 1)
+}
+
+/// Runs `entry` on `ranks` ranks in lockstep.
+pub fn run_ranks(
+    g: &Graph,
+    weights: &[Tensor],
+    entry: usize,
+    inputs: &[Tensor],
+    ranks: usize,
+) -> Result<Vec<Tensor>, Error> {
+    let mut store = Store::default();
+    run_on(g, weights, &mut store, entry, inputs, ranks)
+}
+
+/// Rank `r`'s slice of a split weight.
+fn share(w: &Tensor, placement: Placement, r: usize, ranks: usize) -> Result<Tensor, Error> {
+    let Placement::Split { axis } = placement else {
+        return Ok(w.clone());
+    };
+    let n = w.shape[axis as usize];
+    if !n.is_multiple_of(ranks) {
+        let msg = format!("axis {axis} of {n} does not split over {ranks} ranks");
+        return Err(Error::Mismatch(msg));
+    }
+    let each = n / ranks;
+    Ok(slice(w, axis as usize, r * each, each))
+}
+
+/// The sum over ranks, in rank order.
+fn all_reduce(num: &Numerics, parts: &[Tensor]) -> Result<Tensor, Error> {
+    let mut sum = parts[0].clone();
+    for p in &parts[1..] {
+        sum = cpu::stage(num, &Stage::Add, &sum, Some(p))?;
+    }
+    Ok(sum)
+}
+
+fn run_on(
+    g: &Graph,
+    weights: &[Tensor],
+    store: &mut Store,
+    entry: usize,
+    inputs: &[Tensor],
+    ranks: usize,
+) -> Result<Vec<Tensor>, Error> {
     let e = (g.entries.get(entry)).ok_or_else(|| Error::Mismatch(format!("no entry {entry}")))?;
     if inputs.len() != e.inputs.len() || weights.len() != g.weights.len() {
         return Err(Error::Mismatch("wrong number of inputs or weights".into()));
@@ -205,46 +254,89 @@ pub fn run_kept(
             sizes.learn(&Shape(vec![g.kept[i as usize].shape.0[1].clone()]), &total)?;
         }
     }
-    let ctx = Context {
+    let mut shares = Vec::with_capacity(ranks);
+    for r in 0..ranks {
+        let own = |(w, t): (&Weight, &Tensor)| share(t, w.ty.placement, r, ranks);
+        shares.push(
+            g.weights
+                .iter()
+                .zip(weights)
+                .map(own)
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+    }
+    let ctx = |r: usize| Context {
         sizes: &sizes,
         entry,
         inputs,
-        weights,
+        weights: &shares[r],
     };
-    let mut values: Vec<Option<Tensor>> = vec![None; g.nodes.len()];
+    let mut values: Vec<Vec<Option<Tensor>>> = vec![vec![None; g.nodes.len()]; ranks];
     for (i, n) in g.nodes.iter().enumerate() {
         if !needed[i] {
             continue;
         }
-        let value = |a: &NodeId| values[a.0 as usize].as_ref().expect("args come first");
-        let args: Vec<&Tensor> = n.args.iter().map(value).collect();
         let num = n.numerics.unwrap_or_default();
-        let out = match n.op {
-            Op::Append(i) => {
-                let kept = &g.kept[i as usize].shape.0;
-                let (seqs, ctx) = (sizes.expr(&kept[0])?, sizes.expr(&kept[1])?);
-                store.append(i as usize, [args[0], args[1], args[2]], seqs, ctx)?
-            }
-            _ => ctx.eval(&num, &n.op, &args)?,
-        };
-        let want = sizes.shape(&n.ty.shape)?;
-        if out.shape != want || out.dtype() != n.ty.dtype {
-            let msg = format!(
-                "node {i} {:?} gave {:?}, graph says {want:?}",
-                n.op, out.shape
-            );
-            return Err(Error::Mismatch(msg));
+        // A rank holds its share of a split axis.
+        let mut want = sizes.shape(&n.ty.shape)?;
+        if let Placement::Split { axis } = n.ty.placement {
+            want[axis as usize] /= ranks;
         }
-        values[i] = Some(out);
+        let mut outs: Vec<Tensor> = Vec::with_capacity(ranks);
+        for (r, held) in values.iter().enumerate() {
+            let value = |a: &NodeId| held[a.0 as usize].as_ref().expect("args come first");
+            let args: Vec<&Tensor> = n.args.iter().map(value).collect();
+            outs.push(match &n.op {
+                Op::View(View::Reshape(_)) => args[0].reshaped(want.clone()),
+                // Kept rows are whole, so every rank appends the same.
+                Op::Append(_) if r > 0 => outs[0].clone(),
+                Op::Append(i) => {
+                    let kept = &g.kept[*i as usize].shape.0;
+                    let (seqs, ctx) = (sizes.expr(&kept[0])?, sizes.expr(&kept[1])?);
+                    store.append(*i as usize, [args[0], args[1], args[2]], seqs, ctx)?
+                }
+                Op::Row(row) if row.0.contains(&Stage::AllReduce) => {
+                    let at = row
+                        .0
+                        .iter()
+                        .position(|s| *s == Stage::AllReduce)
+                        .expect("found");
+                    ctx(r).stages(&num, &row.0[..at], &args)?
+                }
+                op => ctx(r).eval(&num, op, &args)?,
+            });
+        }
+        if let Op::Row(row) = &n.op
+            && let Some(at) = row.0.iter().position(|s| *s == Stage::AllReduce)
+        {
+            let sum = all_reduce(&num, &outs)?;
+            let rest = &row.0[at + 1..];
+            // The stages past the sum take no operands here.
+            outs = (0..ranks)
+                .map(|r| ctx(r).stages(&num, rest, &[&sum]))
+                .collect::<Result<_, _>>()?;
+        }
+        for (r, out) in outs.into_iter().enumerate() {
+            if out.shape != want || out.dtype() != n.ty.dtype {
+                let msg = format!(
+                    "node {i} {:?} gave {:?}, graph says {want:?}",
+                    n.op, out.shape
+                );
+                return Err(Error::Mismatch(msg));
+            }
+            values[r][i] = Some(out);
+        }
     }
-    Ok(e.outputs
-        .iter()
-        .map(|o| {
-            values[o.node.0 as usize]
-                .clone()
-                .expect("outputs are needed")
-        })
-        .collect())
+    let mut outputs = Vec::with_capacity(e.outputs.len());
+    for o in &e.outputs {
+        let at = o.node.0 as usize;
+        let first = values[0][at].clone().expect("outputs are needed");
+        if values[1..].iter().any(|v| v[at].as_ref() != Some(&first)) {
+            return Err(Error::Mismatch(format!("ranks disagree on node {at}")));
+        }
+        outputs.push(first);
+    }
+    Ok(outputs)
 }
 
 /// Which nodes the outputs depend on.
@@ -286,15 +378,7 @@ impl Context<'_> {
             }
             Op::Attend(a) => cpu::attend(num, a, [args[0], args[1], args[2]]),
             Op::Mask(_) => lacks("masks"),
-            Op::Row(row) => {
-                let mut x = args[0].clone();
-                let mut rest = args[1..].iter();
-                for s in &row.0 {
-                    let operand = (s.operands() == 1).then(|| *rest.next().expect("verified"));
-                    x = cpu::stage(num, s, &x, operand)?;
-                }
-                Ok(x)
-            }
+            Op::Row(row) => self.stages(num, &row.0, args),
             Op::Select(Select::Gather) => cpu::gather(args[0], args[1]),
             Op::Select(Select::TopK { k }) => top_k(args[0], self.sizes.expr(k)?),
             Op::Select(s) => lacks(&format!("{s:?}")),
@@ -306,22 +390,23 @@ impl Context<'_> {
         }
     }
 
+    /// `stages` over `args[0]`, operands from the rest in order.
+    fn stages(&self, num: &Numerics, stages: &[Stage], args: &[&Tensor]) -> Result<Tensor, Error> {
+        let mut x = args[0].clone();
+        let mut rest = args[1..].iter();
+        for s in stages {
+            let operand = (s.operands() == 1).then(|| *rest.next().expect("verified"));
+            x = cpu::stage(num, s, &x, operand)?;
+        }
+        Ok(x)
+    }
+
     fn view(&self, v: &View, x: &Tensor) -> Result<Tensor, Error> {
         match v {
             View::Reshape(s) => Ok(x.reshaped(self.sizes.shape(s)?)),
             View::Slice { axis, start, len } => {
-                let a = *axis as usize;
                 let (start, len) = (self.sizes.expr(start)?, self.sizes.expr(len)?);
-                let outer: usize = x.shape[..a].iter().product();
-                let inner: usize = x.shape[a + 1..].iter().product();
-                let n = x.shape[a];
-                let at = (0..outer).flat_map(move |o| {
-                    (start..start + len)
-                        .flat_map(move |j| (0..inner).map(move |i| (o * n + j) * inner + i))
-                });
-                let mut shape = x.shape.clone();
-                shape[a] = len;
-                Ok(x.pick(shape, at))
+                Ok(slice(x, *axis as usize, start, len))
             }
             View::Permute(order) => Ok(permute(x, order)),
             View::Expand { .. } | View::Concat => lacks(&format!("{v:?}")),
@@ -349,6 +434,19 @@ fn top_k(x: &Tensor, k: usize) -> Result<Tensor, Error> {
 /// Ops that trace and verify but do not run yet.
 fn lacks(what: &str) -> Result<Tensor, Error> {
     Err(Error::Unsupported(what.into()))
+}
+
+/// Elements `start..start + len` along axis `a`.
+fn slice(x: &Tensor, a: usize, start: usize, len: usize) -> Tensor {
+    let outer: usize = x.shape[..a].iter().product();
+    let inner: usize = x.shape[a + 1..].iter().product();
+    let n = x.shape[a];
+    let at = (0..outer).flat_map(move |o| {
+        (start..start + len).flat_map(move |j| (0..inner).map(move |i| (o * n + j) * inner + i))
+    });
+    let mut shape = x.shape.clone();
+    shape[a] = len;
+    x.pick(shape, at)
 }
 
 /// Each row of `a`, then the row of `b`.

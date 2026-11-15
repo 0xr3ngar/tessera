@@ -8,6 +8,7 @@ mod numerics;
 mod regions;
 mod scalar;
 mod select;
+mod shard;
 mod types;
 mod verify;
 
@@ -20,6 +21,7 @@ pub use node::{
 };
 pub use numerics::{Math, Numerics, Order};
 pub use scalar::{Bf16, E2M1, E4M3, F16};
+pub use shard::shard;
 pub use types::{DType, Placement, TensorType};
 pub use verify::{VerifyError, verify};
 
@@ -33,5 +35,7 @@ mod regions_test;
 mod rules_test;
 #[cfg(test)]
 mod scalar_test;
+#[cfg(test)]
+mod shard_test;
 #[cfg(test)]
 mod verify_test;
