@@ -75,6 +75,21 @@ impl Cluster {
         self.zones[zone].kind
     }
 
+    /// A ring sum over `zones`. The slowest link paces rounds.
+    pub fn all_reduce(&self, zones: &[usize], bytes: f64) -> Option<f64> {
+        let n = zones.len();
+        if n < 2 {
+            return Some(0.0);
+        }
+        let share = bytes / n as f64;
+        let mut round = 0.0f64;
+        for (i, &from) in zones.iter().enumerate() {
+            let to = zones[(i + 1) % n];
+            round = round.max(self.transfer(from, to, share)?);
+        }
+        Some(2.0 * (n - 1) as f64 * round)
+    }
+
     /// Seconds to move `bytes`, over the fastest link.
     pub fn transfer(&self, from: usize, to: usize, bytes: f64) -> Option<f64> {
         if from == to {
