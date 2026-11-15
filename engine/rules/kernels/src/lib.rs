@@ -2,6 +2,7 @@
 
 mod argmax;
 mod attend;
+mod by_sum;
 mod dense;
 mod flash;
 mod gather;

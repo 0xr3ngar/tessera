@@ -213,7 +213,7 @@ pub enum Act {
 /// Data-dependent picks.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum Select {
-    /// Rows of the first argument at the second's indices.
+    /// The first's rows at the second's indices. Zeros past them.
     Gather,
     /// Row entries at the second argument's indices. Out-of-range gives zero.
     Take,

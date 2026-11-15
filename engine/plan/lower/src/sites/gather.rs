@@ -10,6 +10,7 @@ pub struct Gather {
     pub ids: T,
     pub rows: usize,
     pub width: usize,
+    pub table_rows: usize,
     pub form: &'static dyn Form,
 }
 
@@ -21,12 +22,13 @@ impl Pattern for Gather {
         }
         let (table, ids) = (node.args[0], node.args[1]);
         let rows = tree.elements(ids);
-        let width = tree.elements(table) / tree.node(table).shape.first()?;
+        let table_rows = *tree.node(table).shape.first()?;
         Some(Self {
             table,
             ids,
             rows,
-            width,
+            width: tree.elements(table) / table_rows,
+            table_rows,
             form: tree.node(table).form,
         })
     }

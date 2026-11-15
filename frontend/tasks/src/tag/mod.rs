@@ -22,6 +22,8 @@ use std::path::Path;
 
 /// The fewest rows a launch carries.
 const LEAST: usize = 8;
+/// An id past every row, which gathers zeros.
+const NONE: u32 = u32::MAX;
 
 pub struct Tagger {
     model: Model,
@@ -79,19 +81,19 @@ impl Tagger {
         }
         let pad = PAD as usize;
         let padded = rows + 2 * pad;
-        // Outside the text, rows read zero: index `rows` or `padded`.
+        // Rows outside the text read zeros: an id past them.
         let mut sources = Vec::with_capacity(padded);
         let mut around = Vec::with_capacity(3 * padded);
         for j in 0..padded {
             let inside = (pad..pad + n).contains(&j);
-            sources.push(if inside {
-                (j - pad) as u32
+            sources.push(if inside { (j - pad) as u32 } else { NONE });
+            let prev = if j == 0 { NONE } else { (j - 1) as u32 };
+            let next = if j + 1 == padded {
+                NONE
             } else {
-                rows as u32
-            });
-            let prev = if j == 0 { padded } else { j - 1 };
-            let next = if j + 1 == padded { padded } else { j + 1 };
-            around.extend([prev as u32, j as u32, next as u32]);
+                (j + 1) as u32
+            };
+            around.extend([prev, j as u32, next]);
         }
         let inputs = [
             Tensor::u32(vec![1, rows, keys.len() / rows], keys),

@@ -38,31 +38,42 @@ fn declare<W: Weights>(m: &Model, path: Vec<PathSeg>, shape: &[u64]) -> W {
     W::declare(m, &mut path.clone(), &shape)
 }
 
-/// A maxout layer, stored by piece, then its layer norm.
+/// `path`, then maxout piece `p`.
+pub fn piece(name: &str, index: u32, part: &str, p: u32) -> Vec<PathSeg> {
+    let mut q = path(name, Some(index), part);
+    q.push(PathSeg::Index(p));
+    q
+}
+
+/// A maxout layer, a matrix per piece, then layer norm.
 struct Layer {
-    w: Linear,
-    b: Vector,
+    w: Vec<Linear>,
+    b: Vec<Vector>,
     gain: Vector,
     bias: Vector,
 }
 
 fn layer(m: &Model, c: &Config, i: u32, inputs: u64) -> Layer {
-    let units = PIECES * c.width;
+    let pieces = 0..PIECES as u32;
     Layer {
-        w: declare(m, path("maxout", Some(i), "w"), &[inputs, units]),
-        b: declare(m, path("maxout", Some(i), "b"), &[units]),
+        w: (pieces.clone())
+            .map(|p| declare(m, piece("maxout", i, "w", p), &[inputs, c.width]))
+            .collect(),
+        b: pieces
+            .map(|p| declare(m, piece("maxout", i, "b", p), &[c.width]))
+            .collect(),
         gain: declare(m, path("norm", Some(i), "g"), &[c.width]),
         bias: declare(m, path("norm", Some(i), "b"), &[c.width]),
     }
 }
 
 /// Largest piece per unit, as `b + relu(a - b)`, then norm.
-fn maxout_norm(x: &Tensor, l: &Layer, width: u64) -> Tensor {
-    let h = x.matmul(&l.w).add_vector(&l.b);
-    let mut best = h.slice(2, 0u64, width);
-    for p in 1..PIECES {
-        let piece = h.slice(2, p * width, width);
-        best = best.add(&piece.add(&best.scale(-1.0)).act(Act::Relu));
+fn maxout_norm(x: &Tensor, l: &Layer) -> Tensor {
+    let piece = |p: usize| x.matmul(&l.w[p]).add_vector(&l.b[p]);
+    let mut best = piece(0);
+    for p in 1..PIECES as usize {
+        let gap = piece(p).add(&best.scale(-1.0));
+        best = best.add(&gap.act(Act::Relu));
     }
     best.center()
         .rms(EPS)
@@ -70,22 +81,9 @@ fn maxout_norm(x: &Tensor, l: &Layer, width: u64) -> Tensor {
         .add_vector(&l.bias)
 }
 
-/// `x`'s rows, flattened, then one zero row.
-fn with_zero_row(x: &Tensor, len: DimExpr, width: u64) -> Tensor {
-    let t = x.reshape(vec![Seqs * len, width.into()]).permute(&[1, 0]);
-    // A mean over rows, zeroed: a column of zeros.
-    let zero = t
-        .mean(1)
-        .reshape(vec![width.into(), 1u64.into()])
-        .scale(0.0);
-    t.concat(&zero).permute(&[1, 0])
-}
-
-/// Each padded row beside its previous and next rows.
-fn window(x: &Tensor, around: &Tensor, width: u64) -> Tensor {
-    let padded = Context + 2 * PAD;
-    let rows = with_zero_row(x, padded.clone(), width).gather(around);
-    rows.reshape(vec![Seqs.into(), padded, (3 * width).into()])
+/// Rows of `x` at `ids`. Ids past them read zeros.
+fn rows(x: &Tensor, len: DimExpr, width: u64, ids: &Tensor) -> Tensor {
+    x.reshape(vec![Seqs * len, width.into()]).gather(ids)
 }
 
 /// Logits for every padded row, `[Seqs, Context + 2 * PAD, tags]`.
@@ -103,7 +101,7 @@ pub fn program(c: &Config) -> Graph {
             role: Role::Tokens,
             ty: ids(vec![Seqs.into(), Context.into(), (features * KEYS).into()]),
         },
-        // Each padded row's token, or the zero row.
+        // Each padded row's token, or any id past them.
         Port {
             role: Role::Positions,
             ty: ids(vec![Seqs.into(), padded.clone()]),
@@ -111,7 +109,7 @@ pub fn program(c: &Config) -> Graph {
         // Each padded row's previous, own and next row.
         Port {
             role: Role::Slots,
-            ty: ids(vec![Seqs.into(), padded, 3u64.into()]),
+            ty: ids(vec![Seqs.into(), padded.clone(), 3u64.into()]),
         },
     ];
     let [keys, pad, around] = m.entry(EntryKind::Forward, ports);
@@ -142,10 +140,12 @@ pub fn program(c: &Config) -> Graph {
         Context.into(),
         (features * c.width).into(),
     ]);
-    let embedded = maxout_norm(&joined, &first, c.width);
-    let mut x = with_zero_row(&embedded, Context.into(), c.width).gather(&pad);
+    let embedded = maxout_norm(&joined, &first);
+    let mut x = rows(&embedded, Context.into(), c.width, &pad);
     for l in &rest {
-        x = x.add(&maxout_norm(&window(&x, &around, c.width), l, c.width));
+        let window = rows(&x, padded.clone(), c.width, &around);
+        let window = window.reshape(vec![Seqs.into(), padded.clone(), (3 * c.width).into()]);
+        x = x.add(&maxout_norm(&window, l));
     }
     let logits = x.matmul(&tag_w).add_vector(&tag_b);
     m.finish([(Role::Logits, &logits)])

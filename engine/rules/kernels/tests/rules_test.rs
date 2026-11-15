@@ -38,7 +38,7 @@ fn ids<const N: usize>(shape: [DimName; N]) -> Port {
     Port { role, ty }
 }
 
-/// Norms, maps, a softmax, an argmax and a mean.
+/// Norms, maps, centering, a unit sum, softmax, argmax and mean.
 fn norms() -> Graph {
     let m = Model::new(vec![
         Dim::bounded(Seqs, 4),
@@ -49,8 +49,8 @@ fn norms() -> Graph {
     let port = || floats([Seqs, Rows, Hidden]);
     let [x, y] = m.entry(EntryKind::Forward, [port(), port()]);
     let gated = x.rms_norm(&w.norm, 1e-6).act(Act::Silu).mul(&y.rms(1e-6));
-    let sum = y.add(&gated);
-    let top = sum.softmax().top_k(1u64);
+    let sum = y.add(&gated).center();
+    let top = sum.act(Act::Sigmoid).unit_sum().softmax().top_k(1u64);
     m.finish([(Role::Tokens, &top), (Role::Logits, &sum.mean(0))])
 }
 

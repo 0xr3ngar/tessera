@@ -10,7 +10,7 @@ use crate::tokenize::spacy::Spacy;
 use graph::{Graph, PathSeg};
 use interp::{Tensor, bind};
 use lower::Weight;
-use models::tagger::{Config, PIECES, path, program};
+use models::tagger::{Config, PIECES, path, piece, program};
 use std::collections::HashMap;
 use std::path::Path;
 use thinc::{Array, Node};
@@ -87,9 +87,15 @@ impl Pipeline {
             if w.shape.get(1) != Some(&(PIECES as usize)) {
                 return Err(format!("maxout with {:?} pieces", w.shape.get(1)).into());
             }
-            let i = Some(i as u32);
-            weights.push((path("maxout", i, "w"), by_piece(w)));
-            weights.push((path("maxout", i, "b"), by_piece(param(m, "b")?)));
+            let i = i as u32;
+            let (w, b) = (by_piece(w), by_piece(param(m, "b")?));
+            let (wn, bn) = (w.len() / PIECES as usize, b.len() / PIECES as usize);
+            for p in 0..PIECES as u32 {
+                let at = p as usize;
+                weights.push((piece("maxout", i, "w", p), w[at * wn..][..wn].to_vec()));
+                weights.push((piece("maxout", i, "b", p), b[at * bn..][..bn].to_vec()));
+            }
+            let i = Some(i);
             weights.push((path("norm", i, "g"), param(n, "G")?.data.clone()));
             weights.push((path("norm", i, "b"), param(n, "b")?.data.clone()));
         }

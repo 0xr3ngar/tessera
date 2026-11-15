@@ -276,14 +276,15 @@ fn rms_inverse(acc: Acc, row: &[f32], eps: f32) -> f32 {
 pub(crate) fn gather(table: &Tensor, ids: &Tensor) -> Result<Tensor, Error> {
     let rows = table.shape[0];
     let width = table.len() / rows.max(1);
-    let ids_at = ids.indices()?;
-    if let Some(bad) = ids_at.iter().find(|&&i| i >= rows) {
-        return Err(Error::Mismatch(format!("index {bad} past {rows} rows")));
+    let (all, size) = (table.bytes(), table.dtype().bytes() * width);
+    let mut out = Vec::new();
+    for r in ids.indices()? {
+        match r < rows {
+            true => out.extend_from_slice(&all[r * size..(r + 1) * size]),
+            false => out.resize(out.len() + size, 0),
+        }
     }
-    let at = ids_at
-        .iter()
-        .flat_map(|&r| (0..width).map(move |c| r * width + c));
     let mut shape = ids.shape.clone();
     shape.extend_from_slice(&table.shape[1..]);
-    Ok(table.pick(shape, at))
+    Ok(Tensor::from_bytes(shape, table.dtype(), &out))
 }
