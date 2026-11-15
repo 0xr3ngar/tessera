@@ -3,25 +3,48 @@
 use crate::per_row;
 use codegen::prelude::*;
 use graph::Stage;
-use lower::{Kernel, stage_rule};
+use lower::{Arg, Kernel, Launch, Shape, Step, stage_rule};
 
 /// One thread per row: peak, sum, then the probabilities.
 #[kernel]
-fn softmax(x: Buf<F32>, mut out: BufMut<F32>, rows: u32, width: u32) {
+pub(crate) fn softmax(
+    x: Buf<F32>,
+    mut out: BufMut<F32>,
+    rows: u32,
+    queries: u32,
+    keys: u32,
+    scale: f32,
+) {
     if gid() >= rows {
         return;
     }
-    let at = gid() as u64 * width as u64;
-    let mut top = x[at];
-    for i in 1..width {
-        top = max(top, x[at + i as u64]);
+    // Queries end at the last key. Later keys are unseen.
+    let seen = keys - queries + gid() % queries + 1;
+    let at = gid() as u64 * keys as u64;
+    let mut top = x[at] * scale;
+    for i in 1..seen {
+        top = max(top, x[at + i as u64] * scale);
     }
     let mut sum = 0.0f32;
-    for i in 0..width {
-        sum += exp(x[at + i as u64] - top);
+    for i in 0..seen {
+        sum += exp(x[at + i as u64] * scale - top);
     }
-    for i in 0..width {
-        out[at + i as u64] = exp(x[at + i as u64] - top) / sum;
+    for i in 0..keys {
+        out[at + i as u64] = if i < seen {
+            exp(x[at + i as u64] * scale - top) / sum
+        } else {
+            0.0
+        };
+    }
+}
+
+/// One thread per row of `keys` scores.
+pub(crate) fn launch(x: Arg, out: Arg, [rows, queries, keys]: [usize; 3], scale: f32) -> Launch {
+    let sizes = [rows, queries, keys].map(Arg::count);
+    let args = [x, out].into_iter().chain(sizes);
+    Launch {
+        args: args.chain([Arg::value(&scale)]).collect(),
+        shape: Shape::Line(rows),
     }
 }
 
@@ -29,12 +52,17 @@ fn softmax(x: Buf<F32>, mut out: BufMut<F32>, rows: u32, width: u32) {
 #[derive(Clone, Copy, Debug, Kernel)]
 #[launch(
     softmax,
-    threads = self.rows,
+    launches = softmax_launches,
     load = Some(per_row(self.rows, self.width, body.trip(), 0.0)),
 )]
 pub struct Softmax {
     pub rows: usize,
     pub width: usize,
+}
+
+/// Each row is one query that sees every key, unscaled.
+fn softmax_launches(k: &Softmax, step: &Step) -> Vec<Launch> {
+    vec![launch(step.read(0), step.out(), [k.rows, 1, k.width], 1.0)]
 }
 
 stage_rule!("softmax", |site| {

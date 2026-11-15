@@ -42,9 +42,21 @@ fn group_dot(
     dot
 }
 
-/// Folds a value row into `acc`, scaled by `corr` first.
+/// Folds one key into the peak, sum and `acc`.
 #[kernel]
-fn fold_value(acc: &mut [f32; 2], corr: f32, p: f32, v: Buf<F32>, v_off: u64, width: u32) {
+fn take_key(
+    state: &mut [f32; 2],
+    acc: &mut [f32; 2],
+    dot: f32,
+    v: Buf<F32>,
+    v_off: u64,
+    width: u32,
+) {
+    let m_new = max(state[0], dot);
+    let corr = exp(state[0] - m_new);
+    let p = exp(dot - m_new);
+    state[0] = m_new;
+    state[1] = state[1] * corr + p;
     for i in 0..2 {
         let d = lid() + i * THREADS;
         if d < width {
@@ -53,10 +65,10 @@ fn fold_value(acc: &mut [f32; 2], corr: f32, p: f32, v: Buf<F32>, v_off: u64, wi
     }
 }
 
-/// Writes `acc` over `l` as the output row.
+/// Writes `acc` over the sum in `state` as the row.
 #[kernel]
-fn write_row(acc: &mut [f32; 2], mut out: BufMut<F32>, q_off: u64, l: f32, width: u32) {
-    let inv = if l > 0.0 { 1.0 / l } else { 0.0 };
+fn write_row(state: &[f32; 2], acc: &[f32; 2], mut out: BufMut<F32>, q_off: u64, width: u32) {
+    let inv = if state[1] > 0.0 { 1.0 / state[1] } else { 0.0 };
     for i in 0..2 {
         let d = lid() + i * THREADS;
         if d < width {
@@ -89,8 +101,8 @@ fn attend(
     let kvh = qh / (heads / kv_heads);
     let q_off = ((tok * heads + qh) * width) as u64;
     let mut red = shared::<f32>(THREADS);
-    let mut m = f32::NEG_INFINITY;
-    let mut l = 0.0f32;
+    let mut state = [0.0f32; 2];
+    state[0] = f32::NEG_INFINITY;
     let mut acc = [0.0f32; 2];
     // The query sees `back` keys behind it and `ahead` past.
     let position = past + tok;
@@ -104,15 +116,10 @@ fn attend(
         // A joined row: every head's key, then every head's value.
         let k_off = ((t * kv_heads * 2 + kvh) * width) as u64;
         let dot = group_dot(q, kv, q_off, k_off, width, &mut red);
-        let m_new = max(m, dot);
-        let corr = exp(m - m_new);
-        let p = exp(dot - m_new);
-        m = m_new;
-        l = l * corr + p;
         let v_off = k_off + (kv_heads * width) as u64;
-        fold_value(&mut acc, corr, p, kv, v_off, width);
+        take_key(&mut state, &mut acc, dot, kv, v_off, width);
     }
-    write_row(&mut acc, out, q_off, l, width);
+    write_row(&state, &acc, out, q_off, width);
 }
 
 /// A group per query row and head, within its slot.
@@ -141,8 +148,8 @@ fn attend_rows(
     let kvh = qh / (heads / kv_heads);
     let q_off = ((row * heads + qh) * width) as u64;
     let mut red = shared::<f32>(THREADS);
-    let mut m = f32::NEG_INFINITY;
-    let mut l = 0.0f32;
+    let mut state = [0.0f32; 2];
+    state[0] = f32::NEG_INFINITY;
     let mut acc = [0.0f32; 2];
     // The row sees its slot up to its own position.
     let last = if position + 1 < keys {
@@ -153,14 +160,9 @@ fn attend_rows(
     for t in 0..last {
         let kv_off = ((kept_row(slot, t) * kv_heads + kvh) * width) as u64;
         let dot = group_dot(q, k, q_off, kv_off, width, &mut red);
-        let m_new = max(m, dot);
-        let corr = exp(m - m_new);
-        let p = exp(dot - m_new);
-        m = m_new;
-        l = l * corr + p;
-        fold_value(&mut acc, corr, p, v, kv_off, width);
+        take_key(&mut state, &mut acc, dot, v, kv_off, width);
     }
-    write_row(&mut acc, out, q_off, l, width);
+    write_row(&state, &acc, out, q_off, width);
 }
 
 /// Scaled query rows over kept keys, by slot and position.

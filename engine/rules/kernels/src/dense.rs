@@ -1,34 +1,9 @@
 //! Attention as two matmuls per head around a softmax.
 
-use codegen::prelude::*;
+use crate::softmax::{self, softmax_ir};
 use graph::{Mask, Order};
 use lower::sites;
 use lower::{Arg, Attn, DType, Draft, Kernel, Launch, Needs, Read, Shape, Source, Step, T, Tree};
-
-/// Rows are queries. The last query sees every key.
-#[kernel]
-fn causal(mut x: BufMut<F32>, rows: u32, queries: u32, keys: u32, scale: f32) {
-    if gid() >= rows {
-        return;
-    }
-    let seen = keys - queries + gid() % queries + 1;
-    let at = gid() as u64 * keys as u64;
-    let mut top = x[at] * scale;
-    for i in 1..seen {
-        top = max(top, x[at + i as u64] * scale);
-    }
-    let mut sum = 0.0f32;
-    for i in 0..seen {
-        sum += exp(x[at + i as u64] * scale - top);
-    }
-    for i in 0..keys {
-        x[at + i as u64] = if i < seen {
-            exp(x[at + i as u64] * scale - top) / sum
-        } else {
-            0.0
-        };
-    }
-}
 
 /// The most score elements this form may hold.
 pub(crate) const DENSE_SCORES: usize = 1 << 28;
@@ -90,7 +65,7 @@ pub(crate) struct PerHead(pub Part, pub Attn);
 
 /// Scaled causal softmax over each score row, in place.
 #[derive(Clone, Copy, Debug, Kernel)]
-#[launch(causal, name = "causal", launches = causal_launches, overwrites)]
+#[launch(softmax, name = "causal", launches = causal_launches, overwrites)]
 pub struct Causal {
     pub queries: usize,
     pub keys: usize,
@@ -157,14 +132,11 @@ fn per_head_work(k: &PerHead) -> usize {
     a.seqs * a.heads * per_head
 }
 
+/// Rows are queries. The last query sees every key.
 fn causal_launches(k: &Causal, step: &Step) -> Vec<Launch> {
     let rows = step.write.len / k.keys;
-    let sizes = [rows, k.queries, k.keys].map(Arg::count);
-    let args = [step.read(0)].into_iter().chain(sizes);
-    vec![Launch {
-        args: args.chain([Arg::value(&k.scale)]).collect(),
-        shape: Shape::Line(rows),
-    }]
+    let sizes = [rows, k.queries, k.keys];
+    vec![softmax::launch(step.read(0), step.read(0), sizes, k.scale)]
 }
 
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {

@@ -302,6 +302,18 @@ pub enum Param {
     },
 }
 
+impl Param {
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Param::Buffer { name, .. }
+            | Param::Scalar { name, .. }
+            | Param::Shared { name, .. }
+            | Param::Tiles { name }
+            | Param::Array { name, .. } => name,
+        }
+    }
+}
+
 /// A whole kernel, before any dialect.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Body {

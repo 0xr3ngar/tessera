@@ -89,6 +89,37 @@ pub(crate) fn matmul(n: &Numerics, x: &Tensor, w: &Tensor) -> Result<Tensor, Err
     Ok(Tensor::f32(shape, out))
 }
 
+/// Keys and values every query row of one attention reads.
+struct Keys<'a> {
+    acc: Acc,
+    scale: f32,
+    k: &'a [f32],
+    v: &'a [f32],
+}
+
+impl Keys<'_> {
+    /// Adds query `q` over the keys at `at` into `o`.
+    fn row(
+        &self,
+        q: &[f32],
+        at: impl Iterator<Item = usize> + Clone,
+        p: &mut Vec<f32>,
+        o: &mut [f32],
+    ) {
+        let d = q.len();
+        p.clear();
+        for j in at.clone() {
+            p.push(self.acc.dot(q, &self.k[j..j + d]) * self.scale);
+        }
+        softmax(self.acc, p);
+        for (j, &pj) in at.zip(p.iter()) {
+            for (oi, &vi) in o.iter_mut().zip(&self.v[j..j + d]) {
+                *oi = self.acc.add(*oi, pj * vi);
+            }
+        }
+    }
+}
+
 pub(crate) fn attend(n: &Numerics, a: &Attend, qkv: [&Tensor; 3]) -> Result<Tensor, Error> {
     let acc = Acc::new(n.accumulate)?;
     let [q, k, v] = qkv;
@@ -98,27 +129,24 @@ pub(crate) fn attend(n: &Numerics, a: &Attend, qkv: [&Tensor; 3]) -> Result<Tens
     let (keys, kv_heads) = (k.shape[1], k.shape[2]);
     let group = heads / kv_heads;
     let past = past_keys(a, ctx, keys)?;
-    let (qs, ks, vs) = (q.floats()?, k.floats()?, v.floats()?);
+    let qs = q.floats()?;
+    let (k, v) = (k.floats()?, v.floats()?);
+    let kv = Keys {
+        acc,
+        scale: a.scale,
+        k,
+        v,
+    };
     let mut out = vec![0.0; qs.len()];
-    let mut p = vec![0.0; keys];
+    let mut p = Vec::with_capacity(keys);
     for s in 0..seqs {
         for t in 0..ctx {
             for h in 0..heads {
                 let qo = ((s * ctx + t) * heads + h) * d;
                 let kv_at = |j: usize| ((s * keys + j) * kv_heads + h / group) * d;
                 let (from, to) = seen(a.mask, past + t, keys);
-                for (j, pj) in p[from..to].iter_mut().enumerate() {
-                    let j = from + j;
-                    *pj = acc.dot(&qs[qo..qo + d], &ks[kv_at(j)..kv_at(j) + d]) * a.scale;
-                }
-                softmax(acc, &mut p[from..to]);
-                let o = &mut out[qo..qo + d];
-                for (j, &pj) in p[from..to].iter().enumerate() {
-                    let j = from + j;
-                    for (oi, &vi) in o.iter_mut().zip(&vs[kv_at(j)..kv_at(j) + d]) {
-                        *oi = acc.add(*oi, pj * vi);
-                    }
-                }
+                let at = (from..to).map(kv_at);
+                kv.row(&qs[qo..qo + d], at, &mut p, &mut out[qo..qo + d]);
             }
         }
     }
@@ -140,10 +168,17 @@ pub(crate) fn attend_rows(
     };
     let (keys, kv_heads) = (k.shape[1], k.shape[2]);
     let group = heads / kv_heads;
-    let (qs, ks, vs) = (q.floats()?, k.floats()?, v.floats()?);
+    let qs = q.floats()?;
+    let (k, v) = (k.floats()?, v.floats()?);
+    let kv = Keys {
+        acc,
+        scale: a.scale,
+        k,
+        v,
+    };
     let (slots, positions) = (slots.indices()?, positions.indices()?);
     let mut out = vec![0.0; qs.len()];
-    let mut p = vec![0.0; keys];
+    let mut p = Vec::with_capacity(keys);
     for r in 0..rows {
         let (s, seen) = (slots[r], positions[r] + 1);
         if seen > keys {
@@ -153,16 +188,8 @@ pub(crate) fn attend_rows(
         for h in 0..heads {
             let qo = (r * heads + h) * d;
             let kv_at = |j: usize| ((s * keys + j) * kv_heads + h / group) * d;
-            for (j, pj) in p[..seen].iter_mut().enumerate() {
-                *pj = acc.dot(&qs[qo..qo + d], &ks[kv_at(j)..kv_at(j) + d]) * a.scale;
-            }
-            softmax(acc, &mut p[..seen]);
-            let o = &mut out[qo..qo + d];
-            for (j, &pj) in p[..seen].iter().enumerate() {
-                for (oi, &vi) in o.iter_mut().zip(&vs[kv_at(j)..kv_at(j) + d]) {
-                    *oi = acc.add(*oi, pj * vi);
-                }
-            }
+            let at = (0..seen).map(kv_at);
+            kv.row(&qs[qo..qo + d], at, &mut p, &mut out[qo..qo + d]);
         }
     }
     Ok(Tensor::f32(q.shape.clone(), out))

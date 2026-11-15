@@ -28,6 +28,48 @@ pub fn derive_kernel(item: TokenStream) -> TokenStream {
     }
 }
 
+/// A `Group` impl: one kernel parameter per field.
+#[proc_macro_derive(Group)]
+pub fn derive_group(item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as syn::DeriveInput);
+    match group(&input) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+/// Each field's parameter, named `{name}_{field}`.
+fn group(input: &syn::DeriveInput) -> Res {
+    let syn::Data::Struct(data) = &input.data else {
+        return Err(Error::new(input.span(), "a struct of named fields"));
+    };
+    let mut params = Vec::new();
+    for f in &data.fields {
+        let Some(ident) = &f.ident else {
+            return Err(Error::new(f.span(), "name each field"));
+        };
+        let field = ident.to_string();
+        // One letter reads as a vector lane, like `.x`.
+        if field.len() == 1 {
+            return Err(Error::new(
+                ident.span(),
+                "a field name of two letters or more",
+            ));
+        }
+        params.push(param(&quote!(format!("{name}_{}", #field)), &f.ty, None)?);
+    }
+    let ty = &input.ident;
+    Ok(quote! {
+        impl codegen::inline::Group for #ty {
+            fn params(name: &str) -> Vec<codegen::ir::Param> {
+                #[allow(unused_imports)]
+                use codegen::ir::{Param, Ty};
+                vec![#(#params),*]
+            }
+        }
+    })
+}
+
 #[proc_macro_attribute]
 pub fn kernel(_: TokenStream, item: TokenStream) -> TokenStream {
     let mut f = parse_macro_input!(item as ItemFn);
@@ -107,14 +149,33 @@ fn tree(f: &mut ItemFn, helper: Option<Tokens>) -> Res {
                 passes.push(quote!(#ident));
             }
             false => {
-                params.push(param(&name, &p.ty, form)?);
                 takes.push(quote!(#taken: impl codegen::inline::Pass<codegen::ir::Expr>));
-                binds.push(quote!(args.push(#taken.pass());));
+                if let Some(g) = group_ty(&p.ty) {
+                    params.push(quote!(<#g as codegen::inline::Group>::params(#name)));
+                    binds.push(quote!(args.extend(codegen::inline::fields::<#g>(#taken.pass()));));
+                } else {
+                    let one = param(&quote!(#name), &p.ty, form)?;
+                    params.push(quote!(vec![#one]));
+                    binds.push(quote!(args.push(#taken.pass());));
+                }
             }
         }
     }
     let (stmts, ret) = match (&f.sig.output, f.block.stmts.split_last()) {
         (ReturnType::Default, _) => (block(&f.block.stmts, &ctx)?, quote!(None)),
+        // A returned group: the caller's `let` names its fields.
+        (ReturnType::Type(_, ty), Some((Stmt::Expr(Expr::Struct(lit), None), rest)))
+            if group_ty(ty).is_some() =>
+        {
+            let (rest, built) = (
+                block(rest, &ctx)?,
+                build_group(&quote!(codegen::inline::BUILT), lit, &ctx)?,
+            );
+            (
+                quote!({ let mut b = #rest; b.extend(#built); b }),
+                quote!(None),
+            )
+        }
         (ReturnType::Type(..), Some((Stmt::Expr(e, None), rest))) => {
             let value = expr(e, &ctx)?;
             let ret = quote! {{
@@ -133,7 +194,11 @@ fn tree(f: &mut ItemFn, helper: Option<Tokens>) -> Res {
         Body {
             entry: #entry.into(),
             layout: None,
-            params: vec![#(#params),*],
+            params: {
+                let mut params: Vec<Param> = Vec::new();
+                #(params.extend(#params);)*
+                params
+            },
             stmts,
             ret,
             helpers: inl.helpers,
@@ -226,8 +291,22 @@ fn tree_generics(f: &ItemFn) -> Generics {
     generics
 }
 
+/// The struct a `Group` parameter names, through any borrow.
+fn group_ty(ty: &Type) -> Option<&Type> {
+    let ty = match ty {
+        Type::Reference(r) => &*r.elem,
+        other => other,
+    };
+    let Type::Path(path) = ty else {
+        return None;
+    };
+    let head = path.path.segments.last()?.ident.to_string();
+    let known = ["Buf", "BufMut", "Shared", "Tiles"].contains(&head.as_str());
+    (!known && scalar(ty).is_err()).then_some(ty)
+}
+
 /// `#[form(f)]` on a `Buf<Dyn>` reads build parameter `f`.
-fn param(name: &str, ty: &Type, picked: Option<Ident>) -> Res {
+fn param(name: &Tokens, ty: &Type, picked: Option<Ident>) -> Res {
     // A reference passes group memory or tiles by name.
     let ty = match ty {
         Type::Reference(r) => &*r.elem,
@@ -313,6 +392,29 @@ fn stmt(s: &Stmt, ctx: &Ctx) -> Res {
             pre
         }));
     }
+    if let Stmt::Local(local) = s
+        && let Some(init) = &local.init
+        && let Expr::Struct(lit) = &*init.expr
+    {
+        let name = binding(&local.pat)?;
+        return build_group(&quote!(#name), lit, ctx);
+    }
+    // A bound call gives a value, or a group's fields.
+    if let Stmt::Local(local) = s
+        && let Some(init) = &local.init
+        && let Expr::Call(c) = &*init.expr
+        && let Some(call) = kernel_call(c, ctx)?
+    {
+        let name = binding(&local.pat)?;
+        return Ok(quote!({
+            let mut pre: Vec<Stmt> = Vec::new();
+            let call = #call;
+            if let Some(init) = inl.bind(&mut pre, call, #name) {
+                pre.push(Stmt::Let { name: #name.into(), init });
+            }
+            pre
+        }));
+    }
     let one = one(s, ctx)?;
     Ok(quote!({
         let mut pre: Vec<Stmt> = Vec::new();
@@ -322,21 +424,54 @@ fn stmt(s: &Stmt, ctx: &Ctx) -> Res {
     }))
 }
 
+/// A name, or `g.field` of group `g` as `g_field`.
+fn named(e: &Expr) -> Result<String, Error> {
+    match e {
+        Expr::Path(p) => match p.path.get_ident() {
+            Some(i) => Ok(i.to_string()),
+            None => Err(Error::new(p.span(), "a plain name")),
+        },
+        Expr::Field(f) => {
+            let member = &f.member;
+            Ok(format!("{}_{}", named(&f.base)?, quote!(#member)))
+        }
+        Expr::Reference(r) => named(&r.expr),
+        Expr::Paren(p) => named(&p.expr),
+        other => Err(Error::new(other.span(), "a name")),
+    }
+}
+
+fn binding(pat: &Pat) -> Result<String, Error> {
+    match pat {
+        Pat::Ident(i) => Ok(i.ident.to_string()),
+        Pat::Type(t) => binding(&t.pat),
+        other => Err(Error::new(other.span(), "name the binding")),
+    }
+}
+
+/// A group built in place: a `let` for each field.
+fn build_group(name: &Tokens, lit: &syn::ExprStruct, ctx: &Ctx) -> Res {
+    if let Some(rest) = &lit.rest {
+        return Err(Error::new(rest.span(), "give every field"));
+    }
+    let mut lets = Vec::new();
+    for f in &lit.fields {
+        let member = &f.member;
+        let field = quote!(#member).to_string();
+        let named = quote!(format!("{}_{}", #name, #field));
+        lets.push(declare(&named, &f.expr, ctx)?);
+    }
+    Ok(quote!(vec![#(#lets),*]))
+}
+
 fn one(s: &Stmt, ctx: &Ctx) -> Res {
     match s {
         Stmt::Local(local) => {
-            let name = match &local.pat {
-                Pat::Ident(i) => i.ident.to_string(),
-                Pat::Type(t) => match &*t.pat {
-                    Pat::Ident(i) => i.ident.to_string(),
-                    _ => return Err(Error::new(t.span(), "name the binding")),
-                },
-                other => return Err(Error::new(other.span(), "name the binding")),
-            };
+            let name = binding(&local.pat)?;
             let Some(init) = &local.init else {
                 return Err(Error::new(local.span(), "give the binding a value"));
             };
-            declare(&name, &init.expr, ctx)
+            declare(&quote!(#name), &init.expr, ctx)
         }
         Stmt::Expr(e, _) => statement(e, ctx),
         other => Err(Error::new(other.span(), "not part of a kernel body")),
@@ -344,7 +479,7 @@ fn one(s: &Stmt, ctx: &Ctx) -> Res {
 }
 
 /// A `let`: group memory, tiles, an array, or a value.
-fn declare(name: &str, init: &Expr, ctx: &Ctx) -> Res {
+fn declare(name: &Tokens, init: &Expr, ctx: &Ctx) -> Res {
     if let Expr::Call(call) = init
         && let Expr::Path(p) = &*call.func
         && let Some(last) = p.path.segments.last()
@@ -411,10 +546,7 @@ fn statement(e: &Expr, ctx: &Ctx) -> Res {
             }))
         }
         Expr::MethodCall(m) if m.method == "block" => {
-            let Expr::Path(acc) = &*m.receiver else {
-                return Err(Error::new(m.receiver.span(), "name the tile sums"));
-            };
-            let acc = quote!(#acc).to_string();
+            let acc = named(&m.receiver)?;
             let args: Vec<Tokens> = m
                 .args
                 .iter()
@@ -438,17 +570,11 @@ fn statement(e: &Expr, ctx: &Ctx) -> Res {
             }))
         }
         Expr::MethodCall(m) if m.method == "zero" => {
-            let Expr::Path(acc) = &*m.receiver else {
-                return Err(Error::new(m.receiver.span(), "name the tile sums"));
-            };
-            let acc = quote!(#acc).to_string();
+            let acc = named(&m.receiver)?;
             Ok(quote!(Stmt::TileZero { acc: #acc.into() }))
         }
         Expr::MethodCall(m) if m.method == "scale" => {
-            let Expr::Path(acc) = &*m.receiver else {
-                return Err(Error::new(m.receiver.span(), "name the tile sums"));
-            };
-            let acc = quote!(#acc).to_string();
+            let acc = named(&m.receiver)?;
             let Some(Expr::Closure(f)) = m.args.first() else {
                 return Err(Error::new(m.span(), "`acc.scale(|r| ..)`"));
             };
@@ -456,10 +582,7 @@ fn statement(e: &Expr, ctx: &Ctx) -> Res {
             Ok(quote!(Stmt::TileScale { acc: #acc.into(), by: #by }))
         }
         Expr::MethodCall(m) if m.method == "each" => {
-            let Expr::Path(acc) = &*m.receiver else {
-                return Err(Error::new(m.receiver.span(), "name the tile sums"));
-            };
-            let acc = quote!(#acc).to_string();
+            let acc = named(&m.receiver)?;
             let Some(Expr::Closure(f)) = m.args.first() else {
                 return Err(Error::new(m.span(), "`acc.each(|r, c, v| { .. })`"));
             };
@@ -746,11 +869,14 @@ fn expr(e: &Expr, ctx: &Ctx) -> Res {
             Ok(quote!(Expr::index(#base, #at)))
         }
         Expr::Field(f) => {
-            let (base, member) = (sub(&f.base)?, &f.member);
+            let member = &f.member;
             let name = quote!(#member).to_string();
             let Some(h) = name.chars().next().filter(|_| name.len() == 1) else {
-                return Err(Error::new(f.member.span(), "`.x`, `.y`, `.z` or `.w`"));
+                // A group's field is a parameter of its own.
+                let name = named(e)?;
+                return Ok(quote!(Expr::var(#name)));
             };
+            let base = sub(&f.base)?;
             Ok(quote!(Expr::field(#base, #h)))
         }
         Expr::MethodCall(m) => {

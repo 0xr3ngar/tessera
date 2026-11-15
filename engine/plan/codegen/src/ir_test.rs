@@ -218,6 +218,71 @@ fn callers_lend_memory() {
     assert_eq!(f32::from_le_bytes(out[..4].try_into().unwrap()), 36.0);
 }
 
+/// Memory, tiles, an array and a value lent together.
+#[derive(Group)]
+struct Lent {
+    red: Shared<f32>,
+    acc: Tiles,
+    sums: [f32; 2],
+    by: f32,
+}
+
+/// Adds `by` to the sums, then scales the tiles.
+#[kernel]
+fn take_lent(lent: &mut Lent) {
+    bump(&mut lent.sums, lent.by);
+    lent.acc.scale(|r| lent.red[r]);
+}
+
+/// A group with sums at zero and `by` to add.
+#[kernel]
+fn new_lent(by: f32) -> Lent {
+    Lent {
+        red: shared::<f32>(16),
+        acc: tiles(16, 16),
+        sums: [0.0f32; 2],
+        by,
+    }
+}
+
+/// Builds a group, then lends it twice.
+#[kernel]
+fn lend_group(mut out: BufMut<F32>) {
+    let mut lent = new_lent(2.0);
+    take_lent(&mut lent);
+    take_lent(&mut lent);
+    out[gid() as u64] = lent.sums[1];
+}
+
+#[test]
+fn groups_pass_by_field() {
+    let callee = take_lent_ir();
+    let names: Vec<&str> = callee.params.iter().map(|p| p.name()).collect();
+    assert_eq!(names, ["lent_red", "lent_acc", "lent_sums", "lent_by"]);
+    let body = lend_group_ir();
+    let text = body.text().body;
+    // Each field has its own name in caller and callee.
+    for line in [
+        "float lent_by = by_1;",
+        "] += lent_by;",
+        "lent_acc[i][j][e] *= lent_red[r];",
+    ] {
+        assert!(text.contains(line), "`{line}` in\n{text}");
+    }
+    let mut out = vec![0u8; 4];
+    let args = [ArgVal::Buf {
+        at: 0,
+        skip: 0,
+        form: crate::form::F32_FORM,
+    }];
+    let grid = Grid {
+        groups: 1,
+        threads: 1,
+    };
+    exec::run(&body, &args, &mut [&mut out], grid, LANES, Precision::EXACT);
+    assert_eq!(f32::from_le_bytes(out[..4].try_into().unwrap()), 4.0);
+}
+
 /// Shadowing in a nested block and in the same block.
 #[kernel]
 fn shadows(mut out: BufMut<F32>, base: u32, second: bool) {

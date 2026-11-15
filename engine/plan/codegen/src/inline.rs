@@ -3,6 +3,9 @@
 use crate::ir::{Body, Expr, Helper, Param, Stmt};
 use std::collections::HashMap;
 
+/// The prefix of the fields a kernel's returned group declares.
+pub const BUILT: &str = "self";
+
 /// A called kernel's argument: a build value or a tree.
 pub trait Pass<T> {
     fn pass(self) -> T;
@@ -44,6 +47,23 @@ impl Pass<Expr> for bool {
     }
 }
 
+/// Parameters that pass together, one per field, scalars by value.
+pub trait Group {
+    /// Each field as a parameter named `{name}_{field}`.
+    fn params(name: &str) -> Vec<Param>;
+}
+
+/// The caller's name for each field of group `arg`.
+pub fn fields<G: Group>(arg: Expr) -> Vec<Expr> {
+    let Expr::Var(name) = arg else {
+        panic!("a group passes by name");
+    };
+    G::params(&name)
+        .iter()
+        .map(|p| Expr::var(p.name()))
+        .collect()
+}
+
 /// A call's target: a kernel to inline, or a helper.
 pub enum Callee {
     Kernel(Body),
@@ -67,7 +87,12 @@ pub struct Inliner {
 impl Inliner {
     /// A call as a statement. Its statements go into `pre`.
     pub fn stmt(&mut self, pre: &mut Vec<Stmt>, call: Inline) {
-        self.inline(pre, call);
+        self.inline(pre, call, None);
+    }
+
+    /// A call bound by `let name`: its value or group.
+    pub fn bind(&mut self, pre: &mut Vec<Stmt>, call: Inline, name: &str) -> Option<Expr> {
+        self.inline(pre, call, Some(name))
     }
 
     /// A call as a value, after the statements in `pre`.
@@ -76,13 +101,13 @@ impl Inliner {
             Callee::Kernel(body) => body.entry.clone(),
             Callee::Helper(h) => h.name.clone(),
         };
-        match self.inline(pre, call) {
+        match self.inline(pre, call, None) {
             Some(value) => value,
             None => panic!("`{entry}` has no value"),
         }
     }
 
-    fn inline(&mut self, pre: &mut Vec<Stmt>, call: Inline) -> Option<Expr> {
+    fn inline(&mut self, pre: &mut Vec<Stmt>, call: Inline, bound: Option<&str>) -> Option<Expr> {
         self.calls += 1;
         let Inline { callee, args } = call;
         let body = match callee {
@@ -142,7 +167,12 @@ impl Inliner {
         let mut declared = Vec::new();
         declares(&body.stmts, &mut declared);
         for name in declared {
-            let fresh = self.fresh(&name);
+            // A built group's fields take the bound name.
+            let field = name.strip_prefix(BUILT).and_then(|n| n.strip_prefix('_'));
+            let fresh = match (bound, field) {
+                (Some(to), Some(field)) => format!("{to}_{field}"),
+                _ => self.fresh(&name),
+            };
             names.insert(name, fresh);
         }
         let renamer = Rename { names };
