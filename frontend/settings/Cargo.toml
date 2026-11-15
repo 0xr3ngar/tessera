@@ -1,5 +1,5 @@
 [package]
-name = "settings"
+name = "frontend-settings"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,4 +7,6 @@ publish.workspace = true
 description = "Settings read once from the environment, passed down"
 
 [dependencies]
-gpukit = { workspace = true }
+engine-settings = { workspace = true }
+envy = "0.4"
+serde = { version = "1", features = ["derive"] }

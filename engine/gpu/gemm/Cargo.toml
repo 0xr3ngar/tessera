@@ -13,7 +13,7 @@ cuda = ["gpukit/cuda"]
 rocm = ["gpukit/rocm"]
 
 [dependencies]
-settings = { workspace = true }
+frontend-settings = { workspace = true }
 gpukit = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]

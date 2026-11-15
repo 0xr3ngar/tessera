@@ -1,5 +1,6 @@
 //! Plans over a GPU zone and a host zone.
 
+use frontend_settings::read as settings;
 use graph::DimName::{Rows, Seqs, Vocab};
 use graph::{DType, Dim, Graph, TensorType};
 use lower::kernels::Map;
@@ -8,7 +9,6 @@ use lower::{
     Cluster, Device, Draft, Error, Kernel, Link, Plan, Step, T, Tree, Zone, ZoneKind, lower,
 };
 use run::open;
-use settings::read as settings;
 use sim::Tag;
 use testkit::scratch;
 use trace::{EntryKind, Model, Port, Role};

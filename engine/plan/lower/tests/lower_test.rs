@@ -1,5 +1,6 @@
 //! Plans for small graphs, with lower's own kernels.
 
+use frontend_settings::read as settings;
 use graph::DimName::{self, Context, Hidden, Rows, Seqs};
 use graph::{Act, DType, Dim, Graph, TensorType};
 use interp::{Tensor, run};
@@ -12,7 +13,6 @@ use lower::{
 };
 use lower::{assign, lower, peak, rules, schedule, select};
 use run::{Held, open};
-use settings::read as settings;
 use sim::Chip;
 use testkit::{Noise, fill, max_abs_diff, scratch};
 use trace::{EntryKind, Model, Port, Role, Vector, Weights, declare};

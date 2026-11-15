@@ -1,6 +1,6 @@
-//! Knobs the front end sets once and passes down.
+//! Knobs the front end sets once and the engine reads.
 
-use crate::backend::{self, Backend};
+pub use gpukit::backend::Backend;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -42,15 +42,6 @@ impl Default for Settings {
     }
 }
 
-/// Whether `backend` can run kernels here.
-fn ready(backend: Backend) -> bool {
-    match backend {
-        Backend::Metal => cfg!(target_os = "macos"),
-        Backend::Cuda => crate::testing::cuda_ready(),
-        Backend::Rocm => crate::testing::rocm_ready(),
-    }
-}
-
 impl Settings {
     /// The reference files for `model`, where this host has them.
     pub fn reference(&self, model: &str) -> Option<PathBuf> {
@@ -62,7 +53,7 @@ impl Settings {
         match self.backend {
             Pick::Host => None,
             Pick::Gpu(b) => Some(b),
-            Pick::Auto => backend::available().filter(|b| ready(*b)),
+            Pick::Auto => gpukit::backend::available().filter(|b| gpukit::backend::ready(*b)),
         }
     }
 }
