@@ -332,15 +332,16 @@ pub(crate) fn take(x: &Tensor, ids: &Tensor) -> Result<Tensor, Error> {
     Ok(Tensor::f32(ids.shape.clone(), out))
 }
 
-pub(crate) fn gather(table: &Tensor, ids: &Tensor) -> Result<Tensor, Error> {
+/// Rows at `ids` from `first` on. Others read zero.
+pub(crate) fn gather(table: &Tensor, ids: &Tensor, first: usize) -> Result<Tensor, Error> {
     let rows = table.shape[0];
     let width = table.len() / rows.max(1);
     let (all, size) = (table.bytes(), table.dtype().bytes() * width);
     let mut out = Vec::new();
     for r in ids.indices()? {
-        match r < rows {
-            true => out.extend_from_slice(&all[r * size..(r + 1) * size]),
-            false => out.resize(out.len() + size, 0),
+        match r.checked_sub(first).filter(|r| *r < rows) {
+            Some(r) => out.extend_from_slice(&all[r * size..(r + 1) * size]),
+            None => out.resize(out.len() + size, 0),
         }
     }
     let mut shape = ids.shape.clone();

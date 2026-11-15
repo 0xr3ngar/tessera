@@ -4,7 +4,7 @@ use crate::held::Held;
 use codegen::Precision;
 use gpukit::{Limits, Platform};
 use graph::DimName;
-use lower::{Error, Launch, Launching, Plan, Slot, Weight};
+use lower::{Arg, Error, Launch, Launching, Plan, Slot, Weight};
 use mem::{Tensor, View, copy};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -35,7 +35,15 @@ impl Base {
     /// Each launch of a step, its runtime sizes filled in.
     pub(crate) fn launches(&self, step: usize) -> Result<Vec<Launch>, Error> {
         let size = |name| self.bound.get(&name).copied();
-        let bound = |l: Launch| l.bound(&size).ok_or(Error::Unbound);
+        let bound = |l: Launch| {
+            let mut l = l.bound(&size).ok_or(Error::Unbound)?;
+            for arg in &mut l.args {
+                if *arg == Arg::Rank {
+                    *arg = Arg::count(self.rank as usize);
+                }
+            }
+            Ok(l)
+        };
         self.plan.steps[step]
             .launches()
             .into_iter()

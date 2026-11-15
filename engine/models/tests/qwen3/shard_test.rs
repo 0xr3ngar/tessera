@@ -1,13 +1,13 @@
 //! The toy decoder over two ranks matches one.
 
+use crate::common::pair;
 use comm::Sockets;
 use frontend_settings::read as settings;
 use graph::{Graph, Placement, shard};
 use interp::{Tensor, run, run_ranks};
-use lower::{Cluster, Device, Link, Pick, Plan, View, Zone, ZoneKind, lower};
+use lower::{Device, Pick, Plan, View, lower};
 use models::decoder::{Config, Swiglu, program};
 use run::{Loopback, Rank};
-use sim::Tag;
 use std::net::TcpListener;
 use testkit::{Noise, fill, max_abs_diff};
 use trace::DimName::{Context, Seqs};
@@ -46,26 +46,6 @@ fn two_ranks() {
     let two = run_ranks(&sharded, &weights, 0, &inputs, 2).unwrap();
     let diff = off(&two[0], &g, &weights, &inputs);
     assert!(diff < 1e-4, "{diff}");
-}
-
-/// Two GPU zones, linked both ways.
-fn pair() -> Cluster {
-    let mut cluster = Cluster::one("a");
-    let b = cluster.add(Zone {
-        name: "b".into(),
-        kind: ZoneKind::Gpu,
-        parent: None,
-    });
-    for (from, to) in [(0, b), (b, 0)] {
-        cluster.links.push(Link {
-            from,
-            to,
-            latency: 1e-5,
-            rate: 1e10,
-            tag: Tag::Assumed,
-        });
-    }
-    cluster
 }
 
 #[test]

@@ -1,12 +1,12 @@
-//! Tensor parallel: columns split out, rows sum back on return.
+//! Tensor parallel splits matmuls. Expert parallel splits sets.
 
 use crate::infer::infer;
-use crate::node::{Graph, Node, NodeId, Op, Row, Stage};
+use crate::node::{Graph, Node, NodeId, Op, Row, Select, Stage};
 use crate::numerics::Numerics;
 use crate::types::Placement;
 use crate::verify::{VerifyError, verify};
 
-/// Splits each residual-bound matmul the type rules allow.
+/// Splits residual-bound matmuls, and routes gathered sets by matrix.
 pub fn shard(g: &Graph) -> Result<Graph, VerifyError> {
     let mut out = g.clone();
     let mut at = 0;
@@ -21,6 +21,9 @@ pub fn shard(g: &Graph) -> Result<Graph, VerifyError> {
             at += 1;
         }
     }
+    if let Ok(typed) = retype(&route(&out)) {
+        out = typed;
+    }
     verify(&out)?;
     Ok(out)
 }
@@ -28,11 +31,68 @@ pub fn shard(g: &Graph) -> Result<Graph, VerifyError> {
 /// A matmul of a whole weight, read by an add.
 fn returns(g: &Graph, id: NodeId) -> bool {
     let node = g.node(id);
-    if node.op != Op::Matmul || !whole_weight(g, node.args[1]) {
-        return false;
+    node.op == Op::Matmul && whole_weight(g, node.args[1]) && summed(g, id)
+}
+
+/// Whether an add reads `id`, through scales at most.
+fn summed(g: &Graph, id: NodeId) -> bool {
+    let readers = (0..g.nodes.len())
+        .map(|i| NodeId(i as u32))
+        .filter(|n| g.node(*n).args.contains(&id));
+    for reader in readers {
+        let Op::Row(r) = &g.node(reader).op else {
+            continue;
+        };
+        if r.0.contains(&Stage::Add) {
+            return true;
+        }
+        let scales = r.0.iter().all(|s| matches!(s, Stage::Scale(_)));
+        if scales && summed(g, reader) {
+            return true;
+        }
     }
-    let adds = |n: &Node| matches!(&n.op, Op::Row(r) if r.0.contains(&Stage::Add));
-    g.nodes.iter().any(|n| adds(n) && n.args.contains(&id))
+    false
+}
+
+/// Every gathered set split by matrix, each mix summed back.
+fn route(g: &Graph) -> Graph {
+    let mut out = g.clone();
+    for n in &g.nodes {
+        if n.op != Op::Select(Select::Gather) {
+            continue;
+        }
+        let Op::Weight(w) = g.node(set_of(g, n.args[0])).op else {
+            continue;
+        };
+        let ty = &g.weights[w as usize].ty;
+        if ty.rank() == 3 && ty.placement == Placement::Replicated {
+            out.weights[w as usize].ty.placement = Placement::Split { axis: 0 };
+        }
+    }
+    let mut at = 0;
+    while at < out.nodes.len() {
+        let id = NodeId(at as u32);
+        at += 1;
+        if let Op::Mix(_) = out.node(id).op {
+            let sum = Node {
+                op: Op::Row(Row(vec![Stage::AllReduce])),
+                args: vec![id],
+                ty: out.node(id).ty.clone(),
+                numerics: Some(Numerics::default()),
+            };
+            insert(&mut out, id, sum);
+            at += 1;
+        }
+    }
+    out
+}
+
+/// The node under any slices of `id`.
+fn set_of(g: &Graph, mut id: NodeId) -> NodeId {
+    while let Op::View(crate::node::View::Slice { .. }) = &g.node(id).op {
+        id = g.node(id).args[0];
+    }
+    id
 }
 
 /// A rank-two weight no earlier split has claimed.

@@ -43,6 +43,8 @@ pub enum Placement {
     },
     /// Per-rank partial sums. An all-reduce makes it whole.
     Partial,
+    /// Each row lives on one rank. The others hold zeros.
+    Routed,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

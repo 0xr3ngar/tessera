@@ -265,11 +265,12 @@ fn run_on(
                 .collect::<Result<Vec<_>, _>>()?,
         );
     }
-    let ctx = |r: usize| Context {
+    let ctx = |r: usize, first: usize| Context {
         sizes: &sizes,
         entry,
         inputs,
         weights: &shares[r],
+        first,
     };
     // A value lives until its last reader has run.
     let mut last = vec![usize::MAX; g.nodes.len()];
@@ -296,6 +297,10 @@ fn run_on(
         for (r, held) in values.iter().enumerate() {
             let value = |a: &NodeId| held[a.0 as usize].as_ref().expect("args come first");
             let args: Vec<&Tensor> = n.args.iter().map(value).collect();
+            // A table split by row: this rank's rows start here.
+            let routed = matches!(n.op, Op::Select(Select::Gather))
+                && g.node(n.args[0]).ty.placement == Placement::Split { axis: 0 };
+            let first = if routed { r * args[0].shape[0] } else { 0 };
             outs.push(match &n.op {
                 Op::View(View::Reshape(_)) => args[0].reshaped(want.clone()),
                 // Kept rows are whole, so every rank appends the same.
@@ -311,9 +316,9 @@ fn run_on(
                         .iter()
                         .position(|s| *s == Stage::AllReduce)
                         .expect("found");
-                    ctx(r).stages(&num, &row.0[..at], &args)?
+                    ctx(r, 0).stages(&num, &row.0[..at], &args)?
                 }
-                op => ctx(r).eval(&num, op, &args)?,
+                op => ctx(r, first).eval(&num, op, &args)?,
             });
         }
         if let Op::Row(row) = &n.op
@@ -323,7 +328,7 @@ fn run_on(
             let rest = &row.0[at + 1..];
             // Stages past the sum are operand-free.
             outs = (0..ranks)
-                .map(|r| ctx(r).stages(&num, rest, &[&sum]))
+                .map(|r| ctx(r, 0).stages(&num, rest, &[&sum]))
                 .collect::<Result<_, _>>()?;
         }
         for (r, out) in outs.into_iter().enumerate() {
@@ -375,6 +380,8 @@ struct Context<'a> {
     entry: usize,
     inputs: &'a [Tensor],
     weights: &'a [Tensor],
+    /// The first row of a routed table this rank holds.
+    first: usize,
 }
 
 impl Context<'_> {
@@ -393,7 +400,7 @@ impl Context<'_> {
             Op::Attend(a) => cpu::attend(num, a, [args[0], args[1], args[2]]),
             Op::Mask(_) => lacks("masks"),
             Op::Row(row) => self.stages(num, &row.0, args),
-            Op::Select(Select::Gather) => cpu::gather(args[0], args[1]),
+            Op::Select(Select::Gather) => cpu::gather(args[0], args[1], self.first),
             Op::Select(Select::Take) => cpu::take(args[0], args[1]),
             Op::Select(Select::TopK { k }) => top_k(args[0], self.sizes.expr(k)?),
             Op::Append(_) => lacks("kept rows outside a launch"),
