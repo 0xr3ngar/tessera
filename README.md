@@ -57,6 +57,7 @@ Crate | Description
 [findings](tools/findings) | The JSON each check writes, for tessera-check to render
 [tessera-lint](tools/lint) | The repository's code-shape rules, run by CI and the pre-commit hook
 [load](tools/load) | Drives concurrent requests against tessera-serve and reports throughput
+[ranks](tools/ranks) | Runs one rank of a sharded Qwen3 forward pass, joined to the others over TCP
 [shape](tools/shape) | Line shapes: a line with names, numbers and strings collapsed
 [tessera-simcheck](tools/simcheck) | Fails on near-copies of code, found with EmbeddingGemma 2 embeddings
 [tessera-style](tools/style) | Comment and prose style rules, as part-of-speech patterns
