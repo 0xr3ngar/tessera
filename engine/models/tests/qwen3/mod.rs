@@ -3,7 +3,7 @@
 mod shard_test;
 
 use crate::common::{LOGITS, Spec, Stepper, decoder, small_stack, suite};
-use models::decoder::{Config, program, stepper};
+use models::decoder::{Config, Scales, Swiglu, program, stepper};
 use trace::Composite::{Attention, Mlp};
 use trace::{Graph, Norm};
 
@@ -14,10 +14,13 @@ fn small_config() -> Config {
         kv_heads: 1,
         rope_theta: 1e4,
         eps: 1e-6,
+        experts: 0,
+        top_k: 0,
+        scales: Scales::default(),
     }
 }
 
-decoder!(Norm, small_config(), Config::qwen3);
+decoder!(Norm, Swiglu, small_config(), Config::qwen3);
 
 const SPEC: Spec = Spec {
     name: "qwen3",

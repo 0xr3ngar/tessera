@@ -104,13 +104,15 @@ pub enum Op {
     Cast(DType),
     /// The mean over this axis. The axis goes away.
     Mean(u32),
+    /// The sum over this axis, slices weighted by argument two.
+    Mix(u32),
 }
 
 impl Op {
     /// Whether this op sums, so it carries `Numerics`.
     pub fn reduces(&self) -> bool {
         match self {
-            Op::Matmul | Op::Attend(_) | Op::Mean(_) => true,
+            Op::Matmul | Op::Attend(_) | Op::Mean(_) | Op::Mix(_) => true,
             Op::Row(r) => r.0.iter().any(Stage::reduces),
             _ => false,
         }

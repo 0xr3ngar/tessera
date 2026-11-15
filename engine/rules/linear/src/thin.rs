@@ -92,7 +92,7 @@ fn thin_launches(k: &Thin, step: &Step) -> Vec<Launch> {
 
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let (product, reads) = Product::find(tree, at)?;
-    if product.m > THIN_ROWS {
+    if product.picked.is_some() || product.m > THIN_ROWS {
         return None;
     }
     let len = product.outputs();

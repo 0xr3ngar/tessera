@@ -6,6 +6,7 @@ use graph::DimName::{self, Context, Rows, Segments, Seqs};
 use graph::Graph;
 use lower::form::BF16_FORM;
 use lower::{Device, Error, Pins, Plan, Recipe, Settings, Tensor, View, Weight, lower, select};
+use models::decoder::Swiglu;
 use models::{decoder, eg2};
 use run::{Run, open};
 use std::collections::BTreeMap;
@@ -42,7 +43,7 @@ fn subjects() -> [Subject; 2] {
     [
         Subject {
             name: "qwen3",
-            graph: decoder::program::<Norm>(&qwen3_config(1024)),
+            graph: decoder::program::<Norm, Swiglu>(&qwen3_config(1024)),
             // The real checkpoint is bf16.
             pins: Pins::all(BF16_FORM),
         },
@@ -286,7 +287,7 @@ fn rate(g: &Graph, w: &[Weight], recipe: &Recipe, settings: &Settings) -> Result
 
 /// Greedy decoding on qwen3, one launch a token.
 fn decode(settings: &Settings, misses: &mut Misses) -> Result<(), Error> {
-    let graph = decoder::stepper::<Norm>(&qwen3_config(CONTEXT as u64));
+    let graph = decoder::stepper::<Norm, Swiglu>(&qwen3_config(CONTEXT as u64));
     let pins = Pins::all(BF16_FORM);
     let s = Subject {
         name: "qwen3 decode",

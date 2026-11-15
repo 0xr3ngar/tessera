@@ -20,6 +20,7 @@ fn tiled_text(dialect: Dialect) -> (String, String) {
             k: 64,
             form: lower::form::F32_FORM,
             after: After::default(),
+            picked: None,
         },
         schedule: SCHEDULES[0],
     };

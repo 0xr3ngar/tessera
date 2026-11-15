@@ -131,7 +131,7 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let (product, reads) = Product::find(tree, at)?;
     // Wide loads need whole groups of four, pairs whole spans.
     let span = (2 * product.form.pairs()).max(WIDE as usize);
-    if product.m > ROWS || !product.k.is_multiple_of(span) {
+    if product.picked.is_some() || product.m > ROWS || !product.k.is_multiple_of(span) {
         return None;
     }
     let len = product.outputs();

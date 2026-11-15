@@ -1,11 +1,11 @@
 use crate::names::{Unresolved, resolve, rules};
 use checkpoint::{Slice, Stored};
 use graph::{Graph, PathSeg};
-use models::decoder::{Config, stepper};
+use models::decoder::{Config, Swiglu, stepper};
 use trace::Norm;
 
 fn graph() -> Graph {
-    stepper::<Norm>(&Config::toy(1, 8))
+    stepper::<Norm, Swiglu>(&Config::toy(1, 8))
 }
 
 /// Each field's Hugging Face and GGUF spellings.
@@ -30,7 +30,7 @@ pub(crate) fn tensor_name(path: &[PathSeg], gguf: bool) -> Option<String> {
     use PathSeg::{Field, Index};
     let (field, layer) = match path {
         [Field(f)] => (f, None),
-        [Field(layers), Index(i), Field(f)] if layers == "layers" => (f, Some(i)),
+        [Field(layers), Index(i), .., Field(f)] if layers == "layers" => (f, Some(i)),
         _ => return None,
     };
     let (_, hf, ggml) = SPELLINGS.iter().find(|(name, ..)| name == field)?;
@@ -99,7 +99,7 @@ fn refuses_doubt() {
     else {
         panic!("doubt refused");
     };
-    assert_eq!(missing, ["layers.0.down", "norm"]);
+    assert_eq!(missing, ["layers.0.mlp.down", "norm"]);
     assert_eq!(ambiguous.len(), 1);
     assert!(ambiguous[0].0.ends_with(".q") && ambiguous[0].1.len() == 2);
 }

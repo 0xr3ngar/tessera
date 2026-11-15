@@ -72,20 +72,30 @@ pub(crate) fn seen(mask: Mask, position: usize, keys: usize) -> (usize, usize) {
 
 // These sum in fixed order with exact math.
 
+/// Leading axes pair off. A shorter `x` is a prefix.
 pub(crate) fn matmul(n: &Numerics, x: &Tensor, w: &Tensor) -> Result<Tensor, Error> {
     let acc = Acc::new(n.accumulate)?;
     let (m, k) = x.rows();
-    let n = w.shape[0];
+    let lead = w.shape.len() - 2;
+    let n = w.shape[lead];
+    let batches: usize = w.shape[..lead].iter().product();
     let (xs, ws) = (x.floats()?, w.floats()?);
-    let mut out = vec![0.0; m * n];
+    let rows = m.max(batches);
+    let mut out = vec![0.0; rows * n];
     for (r, row) in out.chunks_mut(n).enumerate() {
-        let xr = &xs[r * k..(r + 1) * k];
+        let (xr, wb) = (r / (rows / m.max(1)), r / (rows / batches.max(1)));
+        let xr = &xs[xr * k..(xr + 1) * k];
+        let wb = &ws[wb * n * k..];
         for (c, o) in row.iter_mut().enumerate() {
-            *o = acc.dot(xr, &ws[c * k..(c + 1) * k]);
+            *o = acc.dot(xr, &wb[c * k..(c + 1) * k]);
         }
     }
-    let mut shape = x.shape.clone();
-    *shape.last_mut().expect("verified rank") = n;
+    let mut shape = w.shape[..lead].to_vec();
+    if batches <= m {
+        shape = x.shape.clone();
+        shape.pop();
+    }
+    shape.push(n);
     Ok(Tensor::f32(shape, out))
 }
 
@@ -261,18 +271,25 @@ pub(crate) fn stage(
     Ok(Tensor::f32(x.shape.clone(), out))
 }
 
-/// The mean over `axis`, in fixed order.
-pub(crate) fn mean(n: &Numerics, x: &Tensor, axis: usize) -> Result<Tensor, Error> {
+/// The mean over `axis`, or with `weights` a weighted sum.
+pub(crate) fn mean(
+    n: &Numerics,
+    x: &Tensor,
+    axis: usize,
+    weights: Option<&Tensor>,
+) -> Result<Tensor, Error> {
     let acc = Acc::new(n.accumulate)?;
     let count = x.shape[axis];
     let inner: usize = x.shape[axis + 1..].iter().product();
     let outer: usize = x.shape[..axis].iter().product();
     let xs = x.floats()?;
+    let ws = weights.map(Tensor::floats).transpose()?;
     let mut out = Vec::with_capacity(outer * inner);
     for o in 0..outer {
         for i in 0..inner {
-            let along = (0..count).map(|t| xs[(o * count + t) * inner + i]);
-            out.push(acc.sum(along) / count as f32);
+            let weight = |t: usize| ws.map_or(1.0 / count as f32, |w| w[o * count + t]);
+            let along = (0..count).map(|t| xs[(o * count + t) * inner + i] * weight(t));
+            out.push(acc.sum(along));
         }
     }
     let mut shape = x.shape.clone();
@@ -300,6 +317,19 @@ fn hadamard(x: &mut [f32]) {
 fn rms_inverse(acc: Acc, row: &[f32], eps: f32) -> f32 {
     let mean = acc.sum(row.iter().map(|v| v * v)) / row.len() as f32;
     1.0 / (mean + eps).sqrt()
+}
+
+/// Each row's entries at `ids`. Out-of-range ids read zero.
+pub(crate) fn take(x: &Tensor, ids: &Tensor) -> Result<Tensor, Error> {
+    let (rows, width) = x.rows();
+    let (xs, at) = (x.floats()?, ids.indices()?);
+    let picks = at.len() / rows.max(1);
+    let mut out = Vec::with_capacity(at.len());
+    for (j, &i) in at.iter().enumerate() {
+        let row = &xs[(j / picks.max(1)) * width..][..width];
+        out.push(row.get(i).copied().unwrap_or(0.0));
+    }
+    Ok(Tensor::f32(ids.shape.clone(), out))
 }
 
 pub(crate) fn gather(table: &Tensor, ids: &Tensor) -> Result<Tensor, Error> {

@@ -2,7 +2,7 @@
 
 use graph::DimName::*;
 use graph::{DType, Dim, DimExpr, DimName, Graph, Port, Role, TensorType};
-use trace::{Act, Embed, EntryKind, Linear, Mask, Model, Norm, Pairs, Weights, declare};
+use trace::{Act, Embed, EntryKind, Linear, Linears, Mask, Model, Norm, Pairs, Weights, declare};
 
 #[derive(Weights)]
 struct Layer {
@@ -20,6 +20,15 @@ struct Scale {
 struct Table {
     #[shape(Vocab, Hidden)]
     embed: Embed,
+}
+
+#[derive(Weights)]
+struct Experts {
+    #[shape(Hidden, Experts)]
+    router: Linear,
+    /// Two matrices per expert, stacked by output row.
+    #[shape(Experts, Hidden, Ffn * 2)]
+    set: Linears,
 }
 
 /// An f32 input port.
@@ -95,6 +104,40 @@ pub fn rotation(bounded: &[Dim]) -> Graph {
     let m = model(bounded, &[(Hidden, 256)]);
     let [x] = m.entry(EntryKind::Forward, [rows_of(bounded, Hidden, DType::F32)]);
     m.finish([(Role::Logits, &x.hadamard(128))])
+}
+
+/// Each row's top two experts, picked, applied and mixed.
+pub fn routed(bounded: &[Dim], [experts, width, out]: [u64; 3]) -> Graph {
+    let fixed = [(Experts, experts), (TopK, 2), (Hidden, width), (Ffn, out)];
+    let m = model(bounded, &fixed);
+    let w: Experts = declare(&m);
+    let [x] = m.entry(EntryKind::Forward, [rows_of(bounded, Hidden, DType::F32)]);
+    let scores = x.matmul(&w.router);
+    let ids = scores.top_k(TopK);
+    let gates = scores.take(&ids).softmax();
+    let on = |set: &Linears| x.matmul_rows(&m.pick(set, &ids));
+    let picks = on(&w.set.rows(0u64, Ffn))
+        .act(Act::Silu)
+        .mul(&on(&w.set.rows(Ffn, Ffn)));
+    let axis = bounded.len() as u32;
+    m.finish([(Role::Logits, &picks.mix(axis, &gates))])
+}
+
+/// Each row's top two entries weight the second input.
+pub fn picks(bounded: &[Dim], width: u64) -> Graph {
+    let m = model(bounded, &[(TopK, 2), (Hidden, width)]);
+    let lead = bounded.iter().map(|d| DimExpr::from(d.name));
+    let shape: Vec<DimExpr> = lead.chain([TopK.into(), Hidden.into()]).collect();
+    let stacked = Port {
+        role: Role::Logits,
+        ty: TensorType::new(shape, DType::F32),
+    };
+    let [x, y] = m.entry(
+        EntryKind::Forward,
+        [rows_of(bounded, Hidden, DType::F32), stacked],
+    );
+    let gates = x.take(&x.top_k(TopK)).softmax();
+    m.finish([(Role::Logits, &y.mix(bounded.len() as u32, &gates))])
 }
 
 /// Rows read from a table.

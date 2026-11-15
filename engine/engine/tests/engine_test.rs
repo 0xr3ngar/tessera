@@ -4,7 +4,7 @@ use engine::{Batch, Engine, Event, Fair, Reason, Request, Row};
 use graph::Graph;
 use interp::{Store, Tensor, run_kept};
 use lower::{Recipe, Weight, kept, rules};
-use models::decoder::{Config, stepper};
+use models::decoder::{Config, Swiglu, stepper};
 use testkit::{Noise, weights};
 use trace::Norm;
 
@@ -49,10 +49,15 @@ fn open(seed: u64, slots: u64) -> (Graph, Vec<Tensor>, Engine) {
 
 fn open_on(seed: u64, slots: u64, recipe: Recipe) -> (Graph, Vec<Tensor>, Engine) {
     let c = Config::toy(slots, 16);
-    let g = stepper::<Norm>(&c);
+    let g = stepper::<Norm, Swiglu>(&c);
     let weights = weights(&g, &mut Noise(seed));
-    let mut engine =
-        Engine::open(stepper::<Norm>(&c), 16, &recipe, &frontend_settings::read()).unwrap();
+    let mut engine = Engine::open(
+        stepper::<Norm, Swiglu>(&c),
+        16,
+        &recipe,
+        &frontend_settings::read(),
+    )
+    .unwrap();
     let stored: Vec<Weight> = weights.iter().cloned().map(Weight::Floats).collect();
     engine.load(&stored).unwrap();
     (g, weights, engine)

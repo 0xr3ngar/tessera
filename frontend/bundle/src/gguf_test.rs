@@ -6,7 +6,7 @@ use graph::Graph;
 use interp::Tensor;
 use lower::form::{F32_FORM, Form, named};
 use lower::{Pick, Recipe, Settings, Weight};
-use models::decoder::{Config, stepper};
+use models::decoder::{Config, Swiglu, stepper};
 use trace::Norm;
 
 struct Fixture {
@@ -22,7 +22,7 @@ impl Fixture {
     fn new(form: &'static dyn Form) -> Self {
         let mut c = Config::toy(2, 8);
         c.stack.hidden = 32;
-        let g = stepper::<Norm>(&c);
+        let g = stepper::<Norm, Swiglu>(&c);
         let mut meta = vec![("general.architecture".into(), Meta::Str("qwen3".into()))];
         for (key, n) in [
             ("embedding_length", c.stack.hidden),
@@ -193,7 +193,7 @@ fn tied_output() {
 
 #[test]
 fn mixed_pins() {
-    let graph = stepper::<Norm>(&Config::toy(2, 8));
+    let graph = stepper::<Norm, Swiglu>(&Config::toy(2, 8));
     let base = named("q8_0").unwrap();
     let mut forms = vec![base; graph.weights.len()];
     forms[0] = F32_FORM;

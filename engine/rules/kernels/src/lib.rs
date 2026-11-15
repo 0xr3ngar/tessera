@@ -13,6 +13,7 @@ mod mean;
 mod rms_norm;
 mod rope;
 mod softmax;
+mod take;
 
 pub use attend::Attend;
 pub use dense::Causal;

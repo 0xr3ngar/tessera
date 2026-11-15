@@ -149,6 +149,11 @@ impl Tensor {
         self.op(Op::Mean(axis), &[])
     }
 
+    /// The sum over `axis`, each slice scaled by `weights[.., axis]`.
+    pub fn mix(&self, axis: u32, weights: &Tensor) -> Tensor {
+        self.op(Op::Mix(axis), &[weights])
+    }
+
     pub fn cast(&self, dtype: DType) -> Tensor {
         self.op(Op::Cast(dtype), &[])
     }

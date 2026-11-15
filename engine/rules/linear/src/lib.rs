@@ -1,6 +1,7 @@
 //! Generated matmul kernels, registered as lowering rules.
 
 mod lanes;
+mod picked;
 mod product;
 mod thin;
 mod tiled;

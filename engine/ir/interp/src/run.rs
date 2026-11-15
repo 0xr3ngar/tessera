@@ -370,7 +370,6 @@ impl Context<'_> {
             }
             Op::Input { .. } => Err(Error::Unsupported("another entry's input".into())),
             Op::Weight(i) => Ok(self.weights[*i as usize].clone()),
-            Op::Matmul if args[1].shape.len() > 2 => lacks("batched matmul"),
             Op::Matmul => cpu::matmul(num, args[0], args[1]),
             Op::Attend(a) if a.picked => lacks("attention over picked keys"),
             Op::Attend(a) if a.ragged => {
@@ -380,13 +379,14 @@ impl Context<'_> {
             Op::Mask(_) => lacks("masks"),
             Op::Row(row) => self.stages(num, &row.0, args),
             Op::Select(Select::Gather) => cpu::gather(args[0], args[1]),
+            Op::Select(Select::Take) => cpu::take(args[0], args[1]),
             Op::Select(Select::TopK { k }) => top_k(args[0], self.sizes.expr(k)?),
-            Op::Select(s) => lacks(&format!("{s:?}")),
             Op::Append(_) => lacks("kept rows outside a launch"),
             Op::View(View::Concat) => concat(args[0], args[1]),
             Op::View(v) => self.view(v, args[0]),
             Op::Cast(dtype) => Ok(args[0].cast(*dtype)?),
-            Op::Mean(axis) => cpu::mean(num, args[0], *axis as usize),
+            Op::Mean(axis) => cpu::mean(num, args[0], *axis as usize, None),
+            Op::Mix(axis) => cpu::mean(num, args[0], *axis as usize, Some(args[1])),
         }
     }
 

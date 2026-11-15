@@ -4,7 +4,7 @@ use frontend_settings::read as settings;
 use graph::{Graph, Placement, shard};
 use interp::{Tensor, run, run_ranks};
 use lower::{Cluster, Device, Link, Pick, Plan, View, Zone, ZoneKind, lower};
-use models::decoder::{Config, program};
+use models::decoder::{Config, Swiglu, program};
 use run::{Loopback, Rank, Sockets};
 use sim::Tag;
 use std::net::TcpListener;
@@ -16,7 +16,7 @@ const SIZES: [(DimName, u64); 2] = [(Seqs, 1), (Context, 8)];
 
 /// The toy graph, sharded too, with faux weights and inputs.
 fn toy() -> (Graph, Graph, Vec<Tensor>, Vec<Tensor>) {
-    let g = program::<Norm>(&Config::toy(2, 8));
+    let g = program::<Norm, Swiglu>(&Config::toy(2, 8));
     let sharded = shard(&g).unwrap();
     let mut noise = Noise(5);
     let mut draw = |ty: &TensorType| fill(&g, ty, &SIZES, &mut noise).unwrap();

@@ -20,7 +20,7 @@ use interp::Tensor;
 use lower::form::{BF16_FORM, F32_FORM, Form};
 use lower::{Pins, Weight};
 use models::Stack;
-use models::decoder::{self, Config};
+use models::decoder::{self, Config, Moe, Scales, Swiglu};
 use names::Rule;
 use serde::Deserialize;
 use std::error::Error;
@@ -42,6 +42,14 @@ struct HfConfig {
     intermediate_size: u64,
     rope_theta: f32,
     rms_norm_eps: f32,
+    /// Routed models name their experts and the picks per row.
+    num_local_experts: Option<u64>,
+    num_experts_per_tok: Option<u64>,
+    /// Granite's multipliers.
+    embedding_multiplier: Option<f32>,
+    attention_multiplier: Option<f32>,
+    residual_multiplier: Option<f32>,
+    logits_scaling: Option<f32>,
 }
 
 /// One id or a list, as `generation_config.json` writes it.
@@ -116,8 +124,9 @@ fn floats(
 /// The step graph for an architecture name.
 pub(crate) fn stepper(arch: &str, c: &Config) -> Option<Graph> {
     Some(match arch {
-        "qwen3" => decoder::stepper::<Norm>(c),
-        "llama" => decoder::stepper::<()>(c),
+        "qwen3" => decoder::stepper::<Norm, Swiglu>(c),
+        "llama" => decoder::stepper::<(), Swiglu>(c),
+        "granitemoe" => decoder::stepper::<(), Moe>(c),
         _ => return None,
     })
 }
@@ -157,6 +166,14 @@ pub fn load_named(
         kv_heads: hf.num_key_value_heads,
         rope_theta: hf.rope_theta,
         eps: hf.rms_norm_eps,
+        experts: hf.num_local_experts.unwrap_or(0),
+        top_k: hf.num_experts_per_tok.unwrap_or(0),
+        scales: Scales {
+            embed: hf.embedding_multiplier.unwrap_or(1.0),
+            attention: hf.attention_multiplier,
+            residual: hf.residual_multiplier.unwrap_or(1.0),
+            logits: 1.0 / hf.logits_scaling.unwrap_or(1.0),
+        },
     };
     let graph = stepper(&hf.model_type, &config)
         .ok_or_else(|| format!("{} is not a model this engine traces", hf.model_type))?;

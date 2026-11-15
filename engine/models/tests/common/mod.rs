@@ -81,20 +81,20 @@ pub fn small_stack(hidden: u64, head_dim: u64, ffn: u64) -> models::Stack {
     models::Stack::sized([64, hidden, 2, 2, head_dim, ffn], 4, 16)
 }
 
-/// A decoder's graphs: `decoder!(HeadNorm, small config, release config fn)`.
+/// A decoder's graphs: `decoder!(HeadNorm, Mlp, small config, release config fn)`.
 macro_rules! decoder {
-    ($norm:ty, $small:expr, $release:expr) => {
+    ($norm:ty, $mlp:ty, $small:expr, $release:expr) => {
         fn small() -> Graph {
-            program::<$norm>(&$small)
+            program::<$norm, $mlp>(&$small)
         }
 
         fn release() -> Graph {
-            program::<$norm>(&$release(8, 40_960))
+            program::<$norm, $mlp>(&$release(8, 40_960))
         }
 
         const STEPPER: Stepper = Stepper {
-            small: || stepper::<$norm>(&$small),
-            release: || stepper::<$norm>(&$release(1, 1024)),
+            small: || stepper::<$norm, $mlp>(&$small),
+            release: || stepper::<$norm, $mlp>(&$release(1, 1024)),
         };
     };
 }
