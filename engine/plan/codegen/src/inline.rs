@@ -47,9 +47,14 @@ impl Pass<Expr> for bool {
     }
 }
 
+/// The variable that holds `field` of group `group`.
+pub fn member(group: &str, field: &str) -> String {
+    format!("{group}__{field}")
+}
+
 /// Parameters that pass together, one per field, scalars by value.
 pub trait Group {
-    /// Each field as a parameter named `{name}_{field}`.
+    /// Each field as a parameter named `{name}__{field}`.
     fn params(name: &str) -> Vec<Param>;
 }
 
@@ -168,9 +173,9 @@ impl Inliner {
         declares(&body.stmts, &mut declared);
         for name in declared {
             // A built group's fields take the bound name.
-            let field = name.strip_prefix(BUILT).and_then(|n| n.strip_prefix('_'));
+            let field = name.strip_prefix(&member(BUILT, ""));
             let fresh = match (bound, field) {
-                (Some(to), Some(field)) => format!("{to}_{field}"),
+                (Some(to), Some(field)) => member(to, field),
                 _ => self.fresh(&name),
             };
             names.insert(name, fresh);
@@ -190,7 +195,7 @@ impl Inliner {
     }
 
     fn fresh(&self, name: &str) -> String {
-        format!("{name}_{}", self.calls)
+        format!("{name}__{}", self.calls)
     }
 }
 

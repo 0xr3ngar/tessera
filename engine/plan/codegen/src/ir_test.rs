@@ -98,11 +98,11 @@ fn kernels_call() {
     let text = body.text().render(Dialect::Cuda);
     // Callee locals get the call's number. Passed names stay.
     assert!(!text.contains("(u64)at;") && !text.contains("(u32)width;"));
-    assert!(text.contains("for (u32 i_1 = 0; i_1 < width; i_1 += 1) {"));
-    assert!(text.contains("sum_1 += (x[(at + (u64)i_1)] * x[(at + (u64)i_1)]);"));
-    assert!(text.contains("float inv = f_rsqrt((sum_1 / (float)width));"));
+    assert!(text.contains("for (u32 i__1 = 0; i__1 < width; i__1 += 1) {"));
+    assert!(text.contains("sum__1 += (x[(at + (u64)i__1)] * x[(at + (u64)i__1)]);"));
+    assert!(text.contains("float inv = f_rsqrt((sum__1 / (float)width));"));
     assert!(text.contains("#pragma unroll 2"));
-    assert!(text.contains("out[(at + (u64)i_2)] = (x[(at + (u64)i_2)] * inv);"));
+    assert!(text.contains("out[(at + (u64)i__2)] = (x[(at + (u64)i__2)] * inv);"));
 
     let rows = [[1.0f32, 2.0, 2.0, 4.0], [3.0, 0.0, 0.0, 4.0]];
     let mut x: Vec<u8> = rows
@@ -188,11 +188,11 @@ fn callers_lend_memory() {
     let body = group_sum_ir();
     let text = body.text().render(Dialect::Metal);
     // The callee's loop is renamed. The caller's memory is not.
-    assert!(text.contains("for (u32 level_1 = 0; level_1 < 3; level_1 += 1) {"));
-    assert!(text.contains("u32 span_1 = (8 >> (level_1 + 1));"));
-    assert!(text.contains("red[lid] += red[(lid + span_1)];"));
+    assert!(text.contains("for (u32 level__1 = 0; level__1 < 3; level__1 += 1) {"));
+    assert!(text.contains("u32 span__1 = (8 >> (level__1 + 1));"));
+    assert!(text.contains("red[lid] += red[(lid + span__1)];"));
     assert!(text.contains("float total = red[0];"));
-    assert!(text.contains("sums[(u32)i_2] += total;"));
+    assert!(text.contains("sums[(u32)i__2] += total;"));
     assert!(text.contains("o[i][j][e] *= alpha[r];"));
 
     let mut x: Vec<u8> = (1..=8).flat_map(|v| (v as f32).to_le_bytes()).collect();
@@ -224,13 +224,13 @@ struct Lent {
     red: Shared<f32>,
     acc: Tiles,
     sums: [f32; 2],
-    by: f32,
+    b: f32,
 }
 
-/// Adds `by` to the sums, then scales the tiles.
+/// Adds `b` to the sums, then scales the tiles.
 #[kernel]
 fn take_lent(lent: &mut Lent) {
-    bump(&mut lent.sums, lent.by);
+    bump(&mut lent.sums, lent.b);
     lent.acc.scale(|r| lent.red[r]);
 }
 
@@ -241,7 +241,7 @@ fn new_lent(by: f32) -> Lent {
         red: shared::<f32>(16),
         acc: tiles(16, 16),
         sums: [0.0f32; 2],
-        by,
+        b: by,
     }
 }
 
@@ -258,14 +258,14 @@ fn lend_group(mut out: BufMut<F32>) {
 fn groups_pass_by_field() {
     let callee = take_lent_ir();
     let names: Vec<&str> = callee.params.iter().map(|p| p.name()).collect();
-    assert_eq!(names, ["lent_red", "lent_acc", "lent_sums", "lent_by"]);
+    assert_eq!(names, ["lent__red", "lent__acc", "lent__sums", "lent__b"]);
     let body = lend_group_ir();
     let text = body.text().body;
     // Each field has its own name in caller and callee.
     for line in [
-        "float lent_by = by_1;",
-        "] += lent_by;",
-        "lent_acc[i][j][e] *= lent_red[r];",
+        "float lent__b = by__1;",
+        "] += lent__b;",
+        "lent__acc[i][j][e] *= lent__red[r];",
     ] {
         assert!(text.contains(line), "`{line}` in\n{text}");
     }
@@ -301,11 +301,11 @@ fn shadows_read_outer() {
     let text = shadows_ir().text().body;
     for line in [
         "u32 col = (base + (lid * 16));",
-        "u32 col_1 = (col + 64);",
-        "out[(u64)col_1] = 1.0f;",
-        "u32 col_1 = (col + 1);",
-        "u32 col_2 = (col_1 * 2);",
-        "out[(u64)col_2] = 2.0f;",
+        "u32 col__1 = (col + 64);",
+        "out[(u64)col__1] = 1.0f;",
+        "u32 col__1 = (col + 1);",
+        "u32 col__2 = (col__1 * 2);",
+        "out[(u64)col__2] = 2.0f;",
     ] {
         assert!(text.contains(line), "`{line}` in\n{text}");
     }

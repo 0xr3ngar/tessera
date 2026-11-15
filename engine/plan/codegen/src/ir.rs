@@ -394,7 +394,7 @@ impl Printer<'_> {
         let mut n = 0;
         while taken(self, &c) {
             n += 1;
-            c = format!("{name}_{n}");
+            c = format!("{name}__{n}");
         }
         let last = self.scope.last_mut().expect("a scope");
         last.insert(name.into(), (kind, c.clone()));

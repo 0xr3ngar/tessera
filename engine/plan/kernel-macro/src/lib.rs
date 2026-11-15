@@ -38,7 +38,10 @@ pub fn derive_group(item: TokenStream) -> TokenStream {
     }
 }
 
-/// Each field's parameter, named `{name}_{field}`.
+/// Vector lanes, which `v.x` and the like read.
+const LANES: [&str; 4] = ["x", "y", "z", "w"];
+
+/// Each field's parameter, named `{name}__{field}`.
 fn group(input: &syn::DeriveInput) -> Res {
     let syn::Data::Struct(data) = &input.data else {
         return Err(Error::new(input.span(), "a struct of named fields"));
@@ -49,14 +52,14 @@ fn group(input: &syn::DeriveInput) -> Res {
             return Err(Error::new(f.span(), "name each field"));
         };
         let field = ident.to_string();
-        // One letter reads as a vector lane, like `.x`.
-        if field.len() == 1 {
-            return Err(Error::new(
-                ident.span(),
-                "a field name of two letters or more",
-            ));
+        if LANES.contains(&field.as_str()) {
+            return Err(Error::new(ident.span(), "x, y, z and w are vector lanes"));
         }
-        params.push(param(&quote!(format!("{name}_{}", #field)), &f.ty, None)?);
+        params.push(param(
+            &quote!(codegen::inline::member(name, #field)),
+            &f.ty,
+            None,
+        )?);
     }
     let ty = &input.ident;
     Ok(quote! {
@@ -424,7 +427,7 @@ fn stmt(s: &Stmt, ctx: &Ctx) -> Res {
     }))
 }
 
-/// A name, or `g.field` of group `g` as `g_field`.
+/// A name, or `g.field` of group `g` as `g__field`.
 fn named(e: &Expr) -> Result<String, Error> {
     match e {
         Expr::Path(p) => match p.path.get_ident() {
@@ -433,7 +436,7 @@ fn named(e: &Expr) -> Result<String, Error> {
         },
         Expr::Field(f) => {
             let member = &f.member;
-            Ok(format!("{}_{}", named(&f.base)?, quote!(#member)))
+            Ok(format!("{}__{}", named(&f.base)?, quote!(#member)))
         }
         Expr::Reference(r) => named(&r.expr),
         Expr::Paren(p) => named(&p.expr),
@@ -458,7 +461,7 @@ fn build_group(name: &Tokens, lit: &syn::ExprStruct, ctx: &Ctx) -> Res {
     for f in &lit.fields {
         let member = &f.member;
         let field = quote!(#member).to_string();
-        let named = quote!(format!("{}_{}", #name, #field));
+        let named = quote!(codegen::inline::member(#name, #field));
         lets.push(declare(&named, &f.expr, ctx)?);
     }
     Ok(quote!(vec![#(#lets),*]))
@@ -871,7 +874,8 @@ fn expr(e: &Expr, ctx: &Ctx) -> Res {
         Expr::Field(f) => {
             let member = &f.member;
             let name = quote!(#member).to_string();
-            let Some(h) = name.chars().next().filter(|_| name.len() == 1) else {
+            let lane = LANES.contains(&name.as_str()).then(|| name.chars().next());
+            let Some(Some(h)) = lane else {
                 // A group's field is a parameter of its own.
                 let name = named(e)?;
                 return Ok(quote!(Expr::var(#name)));
