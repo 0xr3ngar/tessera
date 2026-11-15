@@ -6,7 +6,7 @@ mod gguf_test;
 pub mod names;
 #[cfg(test)]
 mod names_test;
-pub mod tag;
+pub mod spacy;
 mod template;
 #[cfg(test)]
 mod template_test;

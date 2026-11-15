@@ -6,7 +6,7 @@ and tokens.
 <!-- crate table -->
 Crate | Description
 --- | ---
-[engine](engine) | Token ids in, token ids out: a stepper graph on a runner
+[engine](engine) | Graphs on runners: a decode loop over a stepper, or one launch of a forward graph
 [gemm](gpu/gemm) | The GEMM family: tiled Metal and CUDA bodies with a shared CPU oracle
 [gpukit](gpu/gpukit) | GPU compute infrastructure: pipeline compilation, specialization, caching, buffers
 [graph](ir/graph) | The model graph: typed nodes, symbolic shapes, a JSON form

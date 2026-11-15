@@ -1490,6 +1490,7 @@ dependencies = [
  "lower",
  "serde",
  "settings",
+ "tasks",
  "tokio",
  "tokio-stream",
 ]
@@ -1622,6 +1623,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tasks"
+version = "0.1.0"
+dependencies = [
+ "bundle",
+ "engine",
+ "interp",
+ "lower",
+ "models",
+ "serde_json",
+ "settings",
+]
+
+[[package]]
 name = "tessera-check"
 version = "0.1.0"
 dependencies = [
@@ -1646,10 +1660,10 @@ dependencies = [
 name = "tessera-style"
 version = "0.1.0"
 dependencies = [
- "bundle",
  "fancy-regex",
  "findings",
  "settings",
+ "tasks",
  "ureq",
 ]
 

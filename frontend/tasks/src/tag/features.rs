@@ -4,7 +4,7 @@
 //! A token's spaCy features, and their hash table rows.
 
 use super::symbols::{BASE_NORMS, SYMBOLS};
-use crate::tokenize::spacy::{Word, is_space};
+use bundle::tokenize::spacy::{Word, is_space};
 use std::collections::HashMap;
 
 /// MurmurHash64A with seed 1: spaCy's `hash_string`.

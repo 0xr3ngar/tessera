@@ -1,9 +1,6 @@
 //! `tessera-serve --model <dir> [--port 8080] [--context 4096] [--slots 4]`
 
 mod server;
-mod text;
-#[cfg(test)]
-mod text_test;
 
 use engine::{Batch, Engine, Fair};
 use lower::{Pins, Recipe};
@@ -12,6 +9,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Instant;
+use tasks::Generate;
 
 const USAGE: &str = "usage: tessera-serve --model <dir> [--host <addr>] [--port <n>] \
 [--context <rows>] [--slots <n>]";
@@ -87,10 +85,13 @@ fn engine_thread(
     }
     let seconds = start.elapsed().as_secs_f64();
     eprintln!("{}: loaded in {seconds:.1} s", engine.device());
-    let shared = Shared {
+    let generate = Generate {
         tokenizer: loaded.tokenizer,
         template: loaded.template,
         stop: loaded.stop,
+    };
+    let shared = Shared {
+        generate,
         jobs: Mutex::new(queue),
     };
     let _ = ready.send(Ok(Arc::new(shared)));
