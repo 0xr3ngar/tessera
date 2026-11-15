@@ -2,6 +2,7 @@
 
 use crate::Run;
 use crate::open;
+use crate::transport::summed;
 use engine_settings::Settings;
 use lower::{Error, Plan};
 use mem::{Tensor, View};
@@ -48,16 +49,12 @@ impl Loopback {
                 }
                 continue;
             }
-            let mut sum: Option<Vec<f32>> = None;
+            let mut parts = Vec::with_capacity(self.ranks.len());
             for r in &self.ranks {
-                let part = r.read(step.reads[0])?;
-                let part = part.floats()?;
-                sum = Some(match sum {
-                    None => part.to_vec(),
-                    Some(s) => s.iter().zip(part).map(|(a, b)| a + b).collect(),
-                });
+                parts.push(r.read(step.reads[0])?);
             }
-            let sum = Tensor::f32(vec![step.write.len], sum.expect("a rank"));
+            let sum = summed(parts.iter().map(|p| p.floats().expect("floats")));
+            let sum = Tensor::f32(vec![step.write.len], sum);
             for r in &mut self.ranks {
                 r.write(step.write, sum.view())?;
             }

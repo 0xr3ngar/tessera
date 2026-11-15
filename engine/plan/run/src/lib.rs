@@ -10,10 +10,12 @@ mod loopback;
 #[cfg(target_os = "macos")]
 mod metal;
 mod run;
+mod transport;
 
 pub use held::Held;
 pub use loopback::Loopback;
 pub use run::{Base, Run};
+pub use transport::{Rank, Sockets, Transport};
 
 use codegen::Precision;
 use engine_settings::Settings;
