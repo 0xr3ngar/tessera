@@ -8,7 +8,7 @@ use crate::plan::Share;
 use crate::select::Home;
 use crate::sites::Pattern;
 use codegen::kept::Layout;
-use graph::{DType, DimName, Graph, NodeId, Op, Placement, Shape, Stage};
+use graph::{DType, DimName, Graph, NodeId, Op, Parts, Placement, Shape, Stage};
 
 /// A node of the view. Arguments come before their readers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -53,8 +53,11 @@ pub struct Tree<'a> {
     pub(crate) sizes: Vec<(DimName, u64)>,
     /// Where kept rows lie.
     pub kept: &'static dyn Layout,
-    /// Ranks that each run the plan over their slice.
-    pub(crate) ranks: usize,
+    /// How split axes divide, and which part this plan is.
+    pub(crate) parts: Parts,
+    pub(crate) rank: u32,
+    /// Per node: the part of a split weight loaded here.
+    shares: Vec<Option<Share>>,
 }
 
 pub(crate) fn unsupported<T>(what: impl std::fmt::Debug) -> Result<T, Error> {
@@ -141,10 +144,11 @@ impl<'a> Tree<'a> {
         pins: &Pins,
         kept: &'static dyn Layout,
     ) -> Result<Self, Error> {
-        Self::upto(g, entry, sizes, &[], pins, kept, 1)
+        Self::upto(g, entry, sizes, &[], pins, kept, &Parts::even(1), 0)
     }
 
-    /// The same, with `upto` read at launch, over `ranks`.
+    /// The same, `upto` read at launch, as `rank` of `parts`.
+    #[allow(clippy::too_many_arguments, reason = "one view, every way it varies")]
     pub fn upto(
         g: &'a Graph,
         entry: usize,
@@ -152,7 +156,8 @@ impl<'a> Tree<'a> {
         upto: &[DimName],
         pins: &Pins,
         kept: &'static dyn Layout,
-        ranks: usize,
+        parts: &Parts,
+        rank: u32,
     ) -> Result<Self, Error> {
         let Some(e) = g.entries.get(entry) else {
             return unsupported(format_args!("entry {entry}"));
@@ -167,8 +172,11 @@ impl<'a> Tree<'a> {
             ports: Vec::new(),
             sizes: sizes.to_vec(),
             kept,
-            ranks,
+            parts: parts.clone(),
+            rank,
+            shares: Vec::new(),
         };
+        let ranks = parts.ranks();
         for port in &e.inputs {
             let shape = sized(g, sizes, upto, &port.ty.shape)?;
             let len = shape.iter().map(Extent::most).product();
@@ -179,16 +187,20 @@ impl<'a> Tree<'a> {
         for i in (0..g.nodes.len()).filter(|i| needed[*i]) {
             let n = &g.nodes[i];
             let mut extents = sized(g, sizes, upto, &n.ty.shape)?;
+            let mut share = None;
             if let Placement::Split { axis } = n.ty.placement
                 && ranks > 1
             {
                 let a = axis as usize;
                 let whole = extents[a].most();
-                if !whole.is_multiple_of(ranks) || extents[a] != Extent::Fixed(whole) {
-                    let what = format!("axis {axis} of {} over {ranks} ranks", n.ty.shape);
+                let fixed = extents[a] == Extent::Fixed(whole);
+                let Some((first, count)) = parts.part(whole, rank as usize).filter(|_| fixed)
+                else {
+                    let what = format!("axis {axis} of {} over {:?}", n.ty.shape, parts.0);
                     return Err(Error::Size(what));
-                }
-                extents[a] = Extent::Fixed(whole / ranks);
+                };
+                extents[a] = Extent::Fixed(count);
+                share = Some(Share { axis, first, count });
             }
             let shape: Vec<usize> = extents.iter().map(Extent::most).collect();
             let from = NodeId(i as u32);
@@ -215,6 +227,8 @@ impl<'a> Tree<'a> {
                     form,
                     from,
                 });
+                tree.shares
+                    .push(share.filter(|_| matches!(n.op, Op::Weight(_))));
                 T(tree.nodes.len() as u32 - 1)
             };
             at[i] = Some(match &n.op {
@@ -256,16 +270,7 @@ impl<'a> Tree<'a> {
 
     /// The part of a split weight this rank holds.
     pub fn share(&self, t: T) -> Option<Share> {
-        let Term::Leaf(Home::Weight(w)) = self.node(t).term else {
-            return None;
-        };
-        let Placement::Split { axis } = self.g.weights[w as usize].ty.placement else {
-            return None;
-        };
-        (self.ranks > 1).then_some(Share {
-            axis,
-            of: self.ranks as u32,
-        })
+        self.shares[t.0 as usize]
     }
 
     pub fn len(&self) -> usize {

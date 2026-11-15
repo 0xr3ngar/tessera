@@ -13,13 +13,14 @@ pub struct Loopback {
 }
 
 impl Loopback {
-    /// A runner for each of the plan's ranks.
-    pub fn open(plan: &Plan, settings: &Settings) -> Result<Self, Error> {
-        let mut ranks = Vec::with_capacity(plan.ranks.max(1) as usize);
-        for rank in 0..plan.ranks.max(1) {
-            let mut runner = open(plan.clone(), settings)?;
-            runner.base_mut().rank = rank;
-            ranks.push(runner);
+    /// A runner per plan, one per rank in order.
+    pub fn open(plans: &[Plan], settings: &Settings) -> Result<Self, Error> {
+        let mut ranks = Vec::with_capacity(plans.len());
+        for (rank, plan) in plans.iter().enumerate() {
+            if plan.rank as usize != rank || plan.ranks.max(1) as usize != plans.len() {
+                return Err(Error::Unsupported("plans out of rank order".into()));
+            }
+            ranks.push(open(plan.clone(), settings)?);
         }
         Ok(Self { ranks })
     }

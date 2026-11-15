@@ -3,8 +3,8 @@
 use crate::cpu;
 use crate::tensor::Error;
 use graph::{
-    DimExpr, DimName, Graph, NodeId, Numerics, Op, PathSeg, Placement, Select, Shape, Size, Stage,
-    View, Weight,
+    DimExpr, DimName, Graph, NodeId, Numerics, Op, Parts, PathSeg, Placement, Select, Shape, Size,
+    Stage, View, Weight,
 };
 use mem::Tensor;
 use std::cmp::Ordering;
@@ -177,10 +177,10 @@ pub fn run_kept(
     entry: usize,
     inputs: &[Tensor],
 ) -> Result<Vec<Tensor>, Error> {
-    run_on(g, weights, store, entry, inputs, 1)
+    run_on(g, weights, store, entry, inputs, &Parts::even(1))
 }
 
-/// Runs `entry` on `ranks` ranks in lockstep.
+/// Runs `entry` on `ranks` equal ranks in lockstep.
 pub fn run_ranks(
     g: &Graph,
     weights: &[Tensor],
@@ -188,22 +188,36 @@ pub fn run_ranks(
     inputs: &[Tensor],
     ranks: usize,
 ) -> Result<Vec<Tensor>, Error> {
+    run_parts(g, weights, entry, inputs, &Parts::even(ranks))
+}
+
+/// Runs `entry` on ranks weighted by `parts`, in lockstep.
+pub fn run_parts(
+    g: &Graph,
+    weights: &[Tensor],
+    entry: usize,
+    inputs: &[Tensor],
+    parts: &Parts,
+) -> Result<Vec<Tensor>, Error> {
     let mut store = Store::default();
-    run_on(g, weights, &mut store, entry, inputs, ranks)
+    run_on(g, weights, &mut store, entry, inputs, parts)
+}
+
+/// Rank `r`'s part of a `whole` axis.
+fn part(parts: &Parts, axis: u32, whole: usize, r: usize) -> Result<(usize, usize), Error> {
+    parts.part(whole, r).ok_or_else(|| {
+        let msg = format!("axis {axis} of {whole} does not divide by {:?}", parts.0);
+        Error::Mismatch(msg)
+    })
 }
 
 /// Rank `r`'s slice of a split weight.
-fn share(w: &Tensor, placement: Placement, r: usize, ranks: usize) -> Result<Tensor, Error> {
+fn share(w: &Tensor, placement: Placement, r: usize, parts: &Parts) -> Result<Tensor, Error> {
     let Placement::Split { axis } = placement else {
         return Ok(w.clone());
     };
-    let n = w.shape[axis as usize];
-    if !n.is_multiple_of(ranks) {
-        let msg = format!("axis {axis} of {n} does not split over {ranks} ranks");
-        return Err(Error::Mismatch(msg));
-    }
-    let each = n / ranks;
-    Ok(slice(w, axis as usize, r * each, each))
+    let (first, count) = part(parts, axis, w.shape[axis as usize], r)?;
+    Ok(slice(w, axis as usize, first, count))
 }
 
 /// The sum over ranks, in rank order.
@@ -221,8 +235,9 @@ fn run_on(
     store: &mut Store,
     entry: usize,
     inputs: &[Tensor],
-    ranks: usize,
+    parts: &Parts,
 ) -> Result<Vec<Tensor>, Error> {
+    let ranks = parts.ranks();
     let e = (g.entries.get(entry)).ok_or_else(|| Error::Mismatch(format!("no entry {entry}")))?;
     if inputs.len() != e.inputs.len() || weights.len() != g.weights.len() {
         return Err(Error::Mismatch("wrong number of inputs or weights".into()));
@@ -256,7 +271,7 @@ fn run_on(
     }
     let mut shares = Vec::with_capacity(ranks);
     for r in 0..ranks {
-        let own = |(w, t): (&Weight, &Tensor)| share(t, w.ty.placement, r, ranks);
+        let own = |(w, t): (&Weight, &Tensor)| share(t, w.ty.placement, r, parts);
         shares.push(
             g.weights
                 .iter()
@@ -288,10 +303,13 @@ fn run_on(
             continue;
         }
         let num = n.numerics.unwrap_or_default();
-        // A rank holds its share of a split axis.
-        let mut want = sizes.shape(&n.ty.shape)?;
+        // Each rank holds its part of a split axis.
+        let whole = sizes.shape(&n.ty.shape)?;
+        let mut wants = vec![whole.clone(); ranks];
         if let Placement::Split { axis } = n.ty.placement {
-            want[axis as usize] /= ranks;
+            for (r, want) in wants.iter_mut().enumerate() {
+                want[axis as usize] = part(parts, axis, whole[axis as usize], r)?.1;
+            }
         }
         let mut outs: Vec<Tensor> = Vec::with_capacity(ranks);
         for (r, held) in values.iter().enumerate() {
@@ -300,9 +318,12 @@ fn run_on(
             // A table split by row: this rank's rows start here.
             let routed = matches!(n.op, Op::Select(Select::Gather))
                 && g.node(n.args[0]).ty.placement == Placement::Split { axis: 0 };
-            let first = if routed { r * args[0].shape[0] } else { 0 };
+            let first = match routed {
+                true => part(parts, 0, sizes.shape(&g.node(n.args[0]).ty.shape)?[0], r)?.0,
+                false => 0,
+            };
             outs.push(match &n.op {
-                Op::View(View::Reshape(_)) => args[0].reshaped(want.clone()),
+                Op::View(View::Reshape(_)) => args[0].reshaped(wants[r].clone()),
                 // Kept rows are whole, so every rank appends the same.
                 Op::Append(_) if r > 0 => outs[0].clone(),
                 Op::Append(i) => {
@@ -332,10 +353,10 @@ fn run_on(
                 .collect::<Result<_, _>>()?;
         }
         for (r, out) in outs.into_iter().enumerate() {
-            if out.shape != want || out.dtype() != n.ty.dtype {
+            if out.shape != wants[r] || out.dtype() != n.ty.dtype {
                 let msg = format!(
-                    "node {i} {:?} gave {:?}, graph says {want:?}",
-                    n.op, out.shape
+                    "node {i} {:?} gave {:?}, graph says {:?}",
+                    n.op, out.shape, wants[r]
                 );
                 return Err(Error::Mismatch(msg));
             }

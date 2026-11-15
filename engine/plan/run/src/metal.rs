@@ -75,7 +75,7 @@ impl Runner {
                     let at = std::ptr::NonNull::from(&bytes[..]).cast();
                     unsafe { enc.setBytes_length_atIndex(at, bytes.len(), index) };
                 }
-                Arg::Size(_) | Arg::Buffer(..) | Arg::Rank => {
+                Arg::Size(_) | Arg::Buffer(..) => {
                     unreachable!("bound before encoding")
                 }
             }

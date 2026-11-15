@@ -5,6 +5,7 @@ mod infer;
 mod json;
 mod node;
 mod numerics;
+mod parts;
 mod regions;
 mod scalar;
 mod select;
@@ -20,6 +21,7 @@ pub use node::{
     PathSeg, Port, Region, Role, Row, Select, Stage, View, Weight,
 };
 pub use numerics::{Math, Numerics, Order};
+pub use parts::Parts;
 pub use scalar::{Bf16, E2M1, E4M3, F16};
 pub use shard::shard;
 pub use types::{DType, Placement, TensorType};

@@ -4,12 +4,12 @@
 use kernels as _;
 use linear as _;
 
-use comm::Sockets;
+use comm::{Shm, Sockets, Transport};
 use graph::DimName::{Context, Seqs};
 use graph::shard;
 use interp::Tensor;
-use lower::{Cluster, Device, Link, Weight, Zone, ZoneKind, lower};
-use models::decoder::{Config, Swiglu, program};
+use lower::{Cluster, Device, Link, Pick, Weight, Zone, ZoneKind, lower};
+use models::decoder::{Config, Moe, Swiglu, program};
 use run::Rank;
 use sim::Tag;
 use std::net::{SocketAddr, TcpListener};
@@ -18,23 +18,35 @@ use std::process::ExitCode;
 use std::time::Instant;
 use trace::Norm;
 
-const USAGE: &str = "tessera-ranks --rank N --addrs HOST:PORT,... [--fixture DIR] [--listen ADDR]
-  The fixture holds model.safetensors, tokens.txt and logits.f32.
-  Its default is the TESSERA_QWEN3 directory.";
+const USAGE: &str = "tessera-ranks --rank N (--addrs HOST:PORT,... | --shm PATH --ranks N)
+  [--model qwen3|granite] [--fixture DIR] [--listen ADDR] [--backend host|gpu] [--parts 3,1]
+  The fixture holds model.safetensors, and tokens.txt with logits.f32,
+  at its root or under cases/prompt. Its default is TESSERA_<MODEL>.";
 
 struct Args {
     rank: u32,
     addrs: Vec<SocketAddr>,
+    /// A mapped file joining the ranks, instead of sockets.
+    shm: Option<PathBuf>,
+    ranks: usize,
+    model: String,
     fixture: Option<PathBuf>,
     listen: Option<SocketAddr>,
+    host: bool,
+    parts: Vec<u32>,
 }
 
 fn parse(mut given: impl Iterator<Item = String>) -> Option<Args> {
     let mut args = Args {
         rank: 0,
         addrs: Vec::new(),
+        shm: None,
+        ranks: 0,
+        model: "qwen3".into(),
         fixture: None,
         listen: None,
+        host: false,
+        parts: Vec::new(),
     };
     while let Some(flag) = given.next() {
         let value = given.next()?;
@@ -44,12 +56,23 @@ fn parse(mut given: impl Iterator<Item = String>) -> Option<Args> {
                 let addrs = value.split(',').map(|a| a.parse().ok());
                 args.addrs = addrs.collect::<Option<_>>()?;
             }
+            "--shm" => args.shm = Some(value.into()),
+            "--ranks" => args.ranks = value.parse().ok()?,
+            "--model" => args.model = value,
             "--fixture" => args.fixture = Some(value.into()),
             "--listen" => args.listen = Some(value.parse().ok()?),
+            "--backend" => args.host = value == "host",
+            "--parts" => {
+                let parts = value.split(',').map(|p| p.parse().ok());
+                args.parts = parts.collect::<Option<_>>()?;
+            }
             _ => return None,
         }
     }
-    ((args.rank as usize) < args.addrs.len()).then_some(args)
+    if args.shm.is_none() {
+        args.ranks = args.addrs.len();
+    }
+    ((args.rank as usize) < args.ranks).then_some(args)
 }
 
 /// Every rank a GPU zone, linked to every other.
@@ -103,15 +126,49 @@ fn main() -> ExitCode {
     }
 }
 
+/// The model's forward graph for `n` tokens of one sequence.
+fn graph(model: &str, n: u64) -> Option<graph::Graph> {
+    Some(match model {
+        "qwen3" => program::<Norm, Swiglu>(&Config::qwen3(1, n)),
+        "granite" => program::<(), Moe>(&Config::granite(1, n)),
+        _ => return None,
+    })
+}
+
+/// Joins the ranks over the file, or over sockets.
+fn join(args: &Args) -> Result<Box<dyn Transport>, Box<dyn std::error::Error>> {
+    if let Some(path) = &args.shm {
+        // Room for every token's logits, and then some.
+        let capacity = 64 << 20;
+        return Ok(Box::new(Shm::join(
+            path,
+            args.rank,
+            args.ranks as u32,
+            capacity,
+        )?));
+    }
+    let listen = args.listen.unwrap_or(args.addrs[args.rank as usize]);
+    let listener = TcpListener::bind(listen)?;
+    eprintln!("rank {}: listening on {listen}", args.rank);
+    Ok(Box::new(Sockets::join(args.rank, listener, &args.addrs)?))
+}
+
 fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
-    let settings = frontend_settings::read();
+    let mut settings = frontend_settings::read();
+    if args.host {
+        settings.backend = Pick::Host;
+    }
     let fixture = match &args.fixture {
         Some(dir) => dir.clone(),
         None => settings
-            .reference("qwen3")
-            .ok_or("no fixture: set TESSERA_QWEN3")?,
+            .reference(&args.model)
+            .ok_or_else(|| format!("no fixture: set TESSERA_{}", args.model.to_uppercase()))?,
     };
-    let text = std::fs::read_to_string(fixture.join("tokens.txt"))?;
+    let case = match fixture.join("tokens.txt").is_file() {
+        true => fixture.clone(),
+        false => fixture.join("cases/prompt"),
+    };
+    let text = std::fs::read_to_string(case.join("tokens.txt"))?;
     let line = text
         .lines()
         .find(|l| !l.trim().is_empty())
@@ -121,8 +178,8 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         .map(|t| t.parse())
         .collect::<Result<_, _>>()?;
     let n = tokens.len();
-    let ranks = args.addrs.len();
-    let g = program::<Norm, Swiglu>(&Config::qwen3(1, n as u64));
+    let ranks = args.ranks;
+    let g = graph(&args.model, n as u64).ok_or("a model this tool knows")?;
     let sharded = shard(&g)?;
     let split = sharded
         .weights
@@ -138,7 +195,13 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let file = checkpoint::File::open(&fixture.join("model.safetensors"))?;
     let (weights, pins) = bundle::pull(&g, &file, 0, &[]).map_err(|e| e.to_string())?;
     let device = Device::guess(&settings).pinned(pins).zoned(cluster(ranks));
-    let device = device.ranked((0..ranks as u32).collect());
+    let device = device
+        .ranked((0..ranks as u32).collect())
+        .as_rank(args.rank);
+    let device = match args.parts.is_empty() {
+        true => device,
+        false => device.uneven(args.parts.clone()),
+    };
     let sizes = [(Seqs, 1), (Context, n as u64)];
     let start = Instant::now();
     let plan = lower(&sharded, 0, &sizes, &device)?;
@@ -156,14 +219,8 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         start.elapsed().as_secs_f64()
     );
 
-    let listen = args.listen.unwrap_or(args.addrs[args.rank as usize]);
-    let listener = TcpListener::bind(listen)?;
-    eprintln!(
-        "rank {}: listening on {listen}, joining {} ranks",
-        args.rank, ranks
-    );
-    let sockets = Sockets::join(args.rank, listener, &args.addrs)?;
-    let mut rank = Rank::open(plan, &settings, sockets)?;
+    let transport = join(args)?;
+    let mut rank = Rank::open(plan, &settings, transport)?;
     eprintln!("rank {}: on {}", args.rank, rank.runner().device());
     let start = Instant::now();
     for (at, w) in weights.iter().enumerate() {
@@ -193,7 +250,7 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         "rank {}: forward of {n} tokens in {seconds:.3} s, top ids {ours:?}",
         args.rank
     );
-    if let Ok(bytes) = std::fs::read(fixture.join("logits.f32")) {
+    if let Ok(bytes) = std::fs::read(case.join("logits.f32")) {
         let (words, _) = bytes.as_chunks::<4>();
         let want: Vec<f32> = words.iter().map(|b| f32::from_le_bytes(*b)).collect();
         let theirs: Vec<usize> = want.chunks(vocab).map(top).collect();

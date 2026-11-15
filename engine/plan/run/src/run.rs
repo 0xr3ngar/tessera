@@ -4,7 +4,7 @@ use crate::held::Held;
 use codegen::Precision;
 use gpukit::{Limits, Platform};
 use graph::DimName;
-use lower::{Arg, Error, Launch, Launching, Plan, Slot, Weight};
+use lower::{Error, Launch, Launching, Plan, Slot, Weight};
 use mem::{Tensor, View, copy};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -16,8 +16,6 @@ pub struct Base {
     pub(crate) held: Held,
     /// Runtime dimensions, as last bound.
     pub(crate) bound: HashMap<DimName, u32>,
-    /// Which copy of the plan this runner is.
-    pub rank: u32,
 }
 
 impl Base {
@@ -35,15 +33,7 @@ impl Base {
     /// Each launch of a step, its runtime sizes filled in.
     pub(crate) fn launches(&self, step: usize) -> Result<Vec<Launch>, Error> {
         let size = |name| self.bound.get(&name).copied();
-        let bound = |l: Launch| {
-            let mut l = l.bound(&size).ok_or(Error::Unbound)?;
-            for arg in &mut l.args {
-                if *arg == Arg::Rank {
-                    *arg = Arg::count(self.rank as usize);
-                }
-            }
-            Ok(l)
-        };
+        let bound = |l: Launch| l.bound(&size).ok_or(Error::Unbound);
         self.plan.steps[step]
             .launches()
             .into_iter()
@@ -100,9 +90,7 @@ pub trait Run {
         let Some(share) = loaded.and_then(|l| l.share) else {
             return Ok(data);
         };
-        let axis = share.axis as usize;
-        let each = data.shape()[axis] / share.of as usize;
-        Ok(data.slice(axis, self.base().rank as usize * each, each))
+        Ok(data.slice(share.axis as usize, share.first, share.count))
     }
 
     /// Uploads a weight as stored, widened where a slot differs.

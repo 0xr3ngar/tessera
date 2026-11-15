@@ -16,12 +16,18 @@ pub struct Rank<T: Transport> {
 impl<T: Transport> Rank<T> {
     /// A runner for the transport's rank of `plan`.
     pub fn open(plan: Plan, settings: &Settings, transport: T) -> Result<Self, Error> {
-        if plan.ranks.max(1) != transport.ranks() {
-            let what = format!("a plan over {} ranks on {}", plan.ranks, transport.ranks());
+        let fits = plan.ranks.max(1) == transport.ranks() && plan.rank == transport.rank();
+        if !fits {
+            let what = format!(
+                "rank {} of {} on rank {} of {}",
+                plan.rank,
+                plan.ranks,
+                transport.rank(),
+                transport.ranks()
+            );
             return Err(Error::Unsupported(what));
         }
-        let mut runner = open(plan, settings)?;
-        runner.base_mut().rank = transport.rank();
+        let runner = open(plan, settings)?;
         Ok(Self { runner, transport })
     }
 

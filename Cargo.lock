@@ -246,6 +246,9 @@ dependencies = [
 [[package]]
 name = "comm"
 version = "0.1.0"
+dependencies = [
+ "testkit",
+]
 
 [[package]]
 name = "compact_str"

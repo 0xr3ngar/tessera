@@ -1,7 +1,16 @@
 //! Attention splits by tensor, the experts by matrix.
 
 use super::small;
-use graph::{Placement, Stage, shard};
+use crate::common::pair;
+use frontend_settings::read as settings;
+use graph::{Parts, Placement, Stage, shard};
+use interp::{Tensor, run, run_parts};
+use lower::{Device, Pick, lower};
+use models::decoder::{Config, Moe, Scales, program};
+use run::Loopback;
+use testkit::{Noise, fill, max_abs_diff};
+use trace::DimName::{Context, Seqs};
+use trace::{DimName, TensorType};
 
 #[test]
 fn routed_experts() {
@@ -17,4 +26,69 @@ fn routed_experts() {
         .iter()
         .filter(|n| n.ty.placement == Placement::Routed);
     assert!(routed.count() > 0);
+}
+
+const SIZES: [(DimName, u64); 2] = [(Seqs, 1), (Context, 8)];
+
+/// Heads, KV heads and experts all divide by four.
+fn quarters() -> Config {
+    Config {
+        stack: models::Stack::sized([32, 64, 2, 8, 8, 32], 2, 8),
+        kv_heads: 4,
+        rope_theta: 1e4,
+        eps: 1e-6,
+        experts: 4,
+        top_k: 2,
+        scales: Scales {
+            embed: 2.0,
+            attention: Some(0.1),
+            residual: 0.5,
+            logits: 0.25,
+        },
+    }
+}
+
+/// Three quarters on one rank, one on the other.
+#[test]
+fn uneven_ranks() {
+    let g = program::<(), Moe>(&quarters());
+    let sharded = shard(&g).unwrap();
+    let mut noise = Noise(9);
+    let mut draw = |ty: &TensorType| fill(&g, ty, &SIZES, &mut noise).unwrap();
+    let weights: Vec<Tensor> = g.weights.iter().map(|w| draw(&w.ty)).collect();
+    let inputs: Vec<Tensor> = g.entries[0].inputs.iter().map(|p| draw(&p.ty)).collect();
+    let want = run(&g, &weights, 0, &inputs).unwrap();
+    let want = want[0].floats().unwrap();
+    let scale = want.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+    let parts = Parts(vec![3, 1]);
+    let got = run_parts(&sharded, &weights, 0, &inputs, &parts).unwrap();
+    let off = max_abs_diff(got[0].floats().unwrap(), want) / scale;
+    assert!(off < 1e-4, "interpreter off {off}");
+    let host = lower::Settings {
+        backend: Pick::Host,
+        ..settings()
+    };
+    let device = Device::guess(&host)
+        .zoned(pair())
+        .ranked(vec![0, 1])
+        .uneven(parts.0);
+    let plans = [0, 1].map(|r| lower(&sharded, 0, &SIZES, &device.clone().as_rank(r)).unwrap());
+    // Rank 0 holds three experts, rank 1 holds one.
+    let experts = |plan: &lower::Plan| {
+        let set = |l: &&lower::Loaded| sharded.weights[l.weight as usize].ty.rank() == 3;
+        let l = plan.weights.iter().filter(set).find(|l| l.share.is_some());
+        l.and_then(|l| l.share).map(|s| (s.first, s.count))
+    };
+    assert_eq!(
+        (experts(&plans[0]), experts(&plans[1])),
+        (Some((0, 3)), Some((3, 1)))
+    );
+    let mut ranks = Loopback::open(&plans, &host).unwrap();
+    for (at, w) in weights.iter().enumerate() {
+        ranks.load(at as u32, w.view()).unwrap();
+    }
+    let feeds: Vec<lower::View> = inputs.iter().map(Tensor::view).collect();
+    let got = ranks.run(&feeds).unwrap();
+    let off = max_abs_diff(got[0].floats().unwrap(), want) / scale;
+    assert!(off < 1e-3, "plans off {off}");
 }

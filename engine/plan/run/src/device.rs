@@ -70,7 +70,7 @@ macro_rules! device_runner {
                                 args.device_ptr(self.buffer(*slot).device_ptr() + at)
                             }
                             Arg::Value(bytes) => args.bytes(bytes),
-                            Arg::Size(_) | Arg::Buffer(..) | Arg::Rank => {
+                            Arg::Size(_) | Arg::Buffer(..) => {
                                 unreachable!("bound before launching")
                             }
                         };

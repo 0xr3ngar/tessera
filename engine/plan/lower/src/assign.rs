@@ -36,6 +36,7 @@ pub fn assign(s: &Selected, order: &[usize]) -> Plan {
     let plan = Plan {
         id: Plan::fresh(),
         ranks: s.ranks,
+        rank: s.rank,
         ..Plan::default()
     };
     let mut b = Buffers {
