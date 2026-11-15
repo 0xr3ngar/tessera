@@ -1,6 +1,7 @@
 //! Times kernels on this machine and stores what they cost.
 
 mod grid;
+pub mod plans;
 pub mod probe;
 
 // Linking the crates registers their rules.
@@ -34,7 +35,7 @@ pub fn time(runner: &mut dyn Run) -> Result<Vec<(Step, f64)>, Error> {
 }
 
 /// Times `entry` under each competing rule. Returns the new launches.
-pub fn measure(
+fn measure(
     runner: &mut dyn Run,
     (g, entry): (&Graph, usize),
     sizes: &[(DimName, u64)],

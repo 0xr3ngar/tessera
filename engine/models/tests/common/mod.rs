@@ -20,7 +20,6 @@ use lower::form::named;
 use lower::{Device, Pins, Plan, Settings, View, lower, rules};
 use run::{Run, open};
 use settings::read as settings;
-use std::collections::BTreeMap;
 use testkit::{Noise, cosine_f32, fill, max_abs_diff};
 use trace::DimName::{Context, Seqs};
 use trace::{Composite, DimName, Graph, TensorType};
@@ -72,33 +71,6 @@ pub fn loaded(plan: Plan, g: &Graph, weights: &[Tensor], settings: &Settings) ->
 pub fn interpreted(g: &Graph, weights: &[Tensor], seqs: usize, tokens: &[u32]) -> Vec<f32> {
     let out = run(g, weights, 0, &inputs(seqs, tokens)).unwrap();
     out[0].floats().unwrap().to_vec()
-}
-
-/// How often a plan launches each kernel.
-pub fn kernels(plan: &Plan) -> BTreeMap<&'static str, usize> {
-    let mut by = BTreeMap::new();
-    for step in &plan.steps {
-        *by.entry(step.kernel.name()).or_default() += step.launches().len();
-    }
-    by
-}
-
-/// Seconds each step of the plan in place takes alone.
-pub fn seconds(runner: &mut dyn Run) -> Vec<f64> {
-    let steps = 0..runner.plan().steps.len();
-    steps.map(|i| runner.repeat(i, 1).unwrap()).collect()
-}
-
-/// Launches and seconds, by kernel.
-pub fn table(plan: &Plan, steps: &[f64]) {
-    let mut by: BTreeMap<&str, (usize, f64)> = BTreeMap::new();
-    for (step, seconds) in plan.steps.iter().zip(steps) {
-        let (count, total) = by.entry(step.kernel.name()).or_default();
-        (*count, *total) = (*count + step.launches().len(), *total + seconds);
-    }
-    for (name, (count, seconds)) in by {
-        eprintln!("  {name:8} {count:4} launches {seconds:.4} s");
-    }
 }
 
 /// A manifest's text and the graph its file feeds.

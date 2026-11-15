@@ -183,10 +183,12 @@ name = "calibrate"
 version = "0.1.0"
 dependencies = [
  "codegen",
+ "engine",
  "graph",
  "kernels",
  "linear",
  "lower",
+ "models",
  "run",
  "settings",
  "sim",
@@ -1026,7 +1028,6 @@ name = "models"
 version = "0.1.0"
 dependencies = [
  "bundle",
- "calibrate",
  "checkpoint",
  "graph",
  "interp",

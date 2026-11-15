@@ -1,20 +1,9 @@
 //! SmolLM2-360M: a Llama decoder with tied embeddings.
 
 use crate::common::{LOGITS, Spec, Stepper, decoder, small_stack, suite};
-use models::Stack;
 use models::decoder::{Config, program, stepper};
 use trace::Composite::{Attention, Mlp};
 use trace::Graph;
-
-/// The 360M checkpoint's sizes.
-fn config(max_seqs: u64, max_context: u64) -> Config {
-    Config {
-        stack: Stack::sized([49_152, 960, 32, 15, 64, 2560], max_seqs, max_context),
-        kv_heads: 5,
-        rope_theta: 1e5,
-        eps: 1e-5,
-    }
-}
 
 /// Two small layers with no head norms.
 fn small_config() -> Config {
@@ -26,7 +15,7 @@ fn small_config() -> Config {
     }
 }
 
-decoder!((), small_config(), config);
+decoder!((), small_config(), Config::smollm2);
 
 const SPEC: Spec = Spec {
     name: "smollm2",

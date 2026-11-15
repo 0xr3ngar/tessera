@@ -34,6 +34,26 @@ pub struct Config {
 }
 
 impl Config {
+    /// Qwen3-0.6B's sizes. Its heads are normed.
+    pub fn qwen3(max_seqs: u64, max_context: u64) -> Self {
+        Self {
+            stack: Stack::sized([151_936, 1024, 28, 16, 128, 3072], max_seqs, max_context),
+            kv_heads: 8,
+            rope_theta: 1e6,
+            eps: 1e-6,
+        }
+    }
+
+    /// SmolLM2-360M's sizes. A Llama: its heads are not normed.
+    pub fn smollm2(max_seqs: u64, max_context: u64) -> Self {
+        Self {
+            stack: Stack::sized([49_152, 960, 32, 15, 64, 2560], max_seqs, max_context),
+            kv_heads: 5,
+            rope_theta: 1e5,
+            eps: 1e-5,
+        }
+    }
+
     /// A layout small enough to run in tests.
     pub fn toy(max_seqs: u64, max_context: u64) -> Self {
         Self {

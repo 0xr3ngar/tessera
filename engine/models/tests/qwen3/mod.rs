@@ -1,20 +1,9 @@
 //! Qwen3-0.6B.
 
 use crate::common::{LOGITS, Spec, Stepper, decoder, small_stack, suite};
-use models::Stack;
 use models::decoder::{Config, program, stepper};
 use trace::Composite::{Attention, Mlp};
 use trace::{Graph, Norm};
-
-/// The 0.6B checkpoint's sizes.
-fn config(max_seqs: u64, max_context: u64) -> Config {
-    Config {
-        stack: Stack::sized([151_936, 1024, 28, 16, 128, 3072], max_seqs, max_context),
-        kv_heads: 8,
-        rope_theta: 1e6,
-        eps: 1e-6,
-    }
-}
 
 /// Two small layers, wide enough for every block form.
 fn small_config() -> Config {
@@ -26,7 +15,7 @@ fn small_config() -> Config {
     }
 }
 
-decoder!(Norm, small_config(), config);
+decoder!(Norm, small_config(), Config::qwen3);
 
 const SPEC: Spec = Spec {
     name: "qwen3",
