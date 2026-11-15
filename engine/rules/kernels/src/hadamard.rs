@@ -2,8 +2,7 @@
 
 use codegen::prelude::*;
 use graph::Stage;
-use lower::sites;
-use lower::{Draft, Kernel, Needs, T, Tree};
+use lower::{Kernel, Needs, stage_rule};
 
 /// Each lane holds four values of the block.
 const PER_LANE: u32 = 4;
@@ -60,18 +59,11 @@ pub struct Hadamard {
     pub blocks: usize,
 }
 
-fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
-    let site: sites::Stage = tree.site(at)?;
+stage_rule!("hadamard", |site| {
     let Stage::Hadamard { block } = site.stage else {
         return None;
     };
-    if block != BLOCK {
-        return None;
-    }
-    let hadamard = Hadamard {
+    (block == BLOCK).then(|| Hadamard {
         blocks: site.len / BLOCK as usize,
-    };
-    Some(vec![Draft::new(hadamard, [site.x], site.len)])
-}
-
-lower::rule!("hadamard", propose);
+    })
+});

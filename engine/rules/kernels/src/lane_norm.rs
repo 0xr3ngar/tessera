@@ -2,8 +2,7 @@
 
 use codegen::prelude::*;
 use graph::Order;
-use lower::sites;
-use lower::{Arg, Draft, Kernel, Launch, Load, Needs, Shape, Source, Step, T, Tree};
+use lower::{Kernel, Load, Needs, stage_rule};
 
 /// Elements one wide load brings a lane.
 const WIDE: u32 = 4;
@@ -59,14 +58,30 @@ fn norm_lanes<const WIDE: u32, const AHEAD: u32, const WEIGHTED: bool>(
 /// An RMS norm over `rows` of `width`, one launch.
 #[derive(Clone, Copy, Debug, Kernel)]
 #[launch(
-    name = lane_name(self),
+    norm_lanes::<WIDE, AHEAD>,
+    variant = self.weighted,
+    name = match self.weighted {
+        true => "lane_norm",
+        false => "lane_rms",
+    },
+    threads = self.rows * LANES,
     work = self.rows * self.width,
     needs = Needs::lanes(),
     // Rows sum alike at any count. Other kernels differ.
     order = Order::PerConfig,
-    source = Source::Made(lane_body(self)),
-    launches = lane_launches,
-    load = lane_load,
+    // The row is read twice, the gains once.
+    load = Some(Load {
+        threads: self.rows * LANES,
+        group: 256,
+        trips: (self.width / (LANES * WIDE as usize)) as f64,
+        trip: body.trip(),
+        reads: vec![
+            8.0 * (self.rows * self.width) as f64,
+            4.0 * (self.rows * self.width) as f64 * f64::from(self.weighted),
+        ],
+        written: 4.0 * len as f64,
+        flight: (4 * WIDE * AHEAD) as f64,
+    }),
     unproven,
 )]
 pub(crate) struct LaneNorm {
@@ -76,61 +91,17 @@ pub(crate) struct LaneNorm {
     pub weighted: bool,
 }
 
-fn lane_name(k: &LaneNorm) -> &'static str {
-    match k.weighted {
-        true => "lane_norm",
-        false => "lane_rms",
-    }
-}
-
-fn lane_body(k: &LaneNorm) -> codegen::ir::Body {
-    let mut body = match k.weighted {
-        true => norm_lanes_ir::<WIDE, AHEAD, true>(),
-        false => norm_lanes_ir::<WIDE, AHEAD, false>(),
-    };
-    body.entry = k.name().into();
-    body
-}
-
-fn lane_load(k: &LaneNorm, len: usize) -> Option<Load> {
-    let elements = (k.rows * k.width) as f64;
-    Some(Load {
-        threads: k.rows * LANES,
-        group: 256,
-        trips: (k.width / (LANES * WIDE as usize)) as f64,
-        trip: lane_body(k).trip(),
-        // The row is read twice, the gains once.
-        reads: vec![8.0 * elements, 4.0 * elements * f64::from(k.weighted)],
-        written: 4.0 * len as f64,
-        flight: (4 * WIDE * AHEAD) as f64,
-    })
-}
-
-/// Without a weight, the row stands in for it, unread.
-fn lane_launches(k: &LaneNorm, step: &Step) -> Vec<Launch> {
-    let w = step.read(usize::from(k.weighted));
-    let mut args = vec![step.read(0), w, step.out()];
-    args.extend([k.rows, k.width].map(Arg::count));
-    args.push(Arg::value(&k.eps));
-    vec![Launch {
-        args,
-        shape: Shape::Line(k.rows * LANES),
-    }]
-}
-
-fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
-    let site: sites::Stage = tree.site(at)?;
-    let (eps, weighted) = site.rms()?;
-    let (rows, width) = (site.len / site.width, site.width);
-    let norm = LaneNorm {
-        rows,
-        width,
-        eps,
-        weighted,
-    };
-    // Wide loads need whole groups of four along a row.
-    let fits = width.is_multiple_of(WIDE as usize);
-    fits.then(|| vec![Draft::new(norm, site.reads(), site.len)])
-}
-
-lower::rule!("lane_norm", propose);
+stage_rule!(
+    "lane_norm",
+    |site| {
+        let (eps, weighted) = site.rms()?;
+        // Wide loads need whole groups of four along a row.
+        site.width.is_multiple_of(WIDE as usize).then(|| LaneNorm {
+            rows: site.len / site.width,
+            width: site.width,
+            eps,
+            weighted,
+        })
+    },
+    |site| site.padded()
+);

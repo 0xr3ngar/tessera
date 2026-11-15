@@ -210,6 +210,30 @@ macro_rules! rule {
     };
 }
 
+/// One row stage's rule, from a closure on its site.
+#[macro_export]
+macro_rules! stage_rule {
+    ($name:literal, $kernel:expr) => {
+        $crate::stage_rule!($name, $kernel, |site| site.reads());
+    };
+    // The third closure gives the reads, else the site's.
+    ($name:literal, $kernel:expr, $reads:expr) => {
+        fn propose(tree: &$crate::Tree, at: $crate::T) -> Option<Vec<$crate::Draft>> {
+            let site: $crate::sites::Stage = tree.site(at)?;
+            let kernel = $crate::rule::at_site(&site, $kernel)?;
+            let reads = $crate::rule::at_site(&site, $reads);
+            Some(vec![$crate::Draft::new(kernel, reads, site.len)])
+        }
+
+        $crate::rule!($name, propose);
+    };
+}
+
+/// `f` at `site`, typing the closure `stage_rule!` is given.
+pub fn at_site<R>(site: &crate::sites::Stage, f: impl FnOnce(&crate::sites::Stage) -> R) -> R {
+    f(site)
+}
+
 /// Every registered rule, in name order.
 pub fn rules() -> Vec<&'static Rule> {
     let mut all: Vec<&'static Rule> = RULES.iter().collect();

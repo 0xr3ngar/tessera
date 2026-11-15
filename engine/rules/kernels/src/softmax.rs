@@ -3,9 +3,7 @@
 use crate::per_row;
 use codegen::prelude::*;
 use graph::Stage;
-use lower::sites;
-use lower::{Draft, Kernel, T, Tree};
-use sim::Load;
+use lower::{Kernel, stage_rule};
 
 /// One thread per row: peak, sum, then the probabilities.
 #[kernel]
@@ -29,33 +27,19 @@ fn softmax(x: Buf<F32>, mut out: BufMut<F32>, rows: u32, width: u32) {
 
 /// One thread turns each row into probabilities.
 #[derive(Clone, Copy, Debug, Kernel)]
-#[launch(softmax, threads = self.rows, load = softmax_load)]
+#[launch(
+    softmax,
+    threads = self.rows,
+    load = Some(per_row(self.rows, self.width, body.trip(), 0.0)),
+)]
 pub struct Softmax {
     pub rows: usize,
     pub width: usize,
 }
 
-/// Finds each row's maximum, then takes two exponentials.
-fn softmax_load(k: &Softmax, _: usize) -> Option<Load> {
-    Some(per_row(k.rows, k.width, softmax_ir().trip(), 0.0))
-}
-
-fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
-    let sites::Stage {
-        stage: Stage::Softmax,
-        x,
-        len,
-        width,
-        ..
-    } = tree.site(at)?
-    else {
-        return None;
-    };
-    let kernel = Softmax {
-        rows: len / width,
-        width,
-    };
-    Some(vec![Draft::new(kernel, [x], len)])
-}
-
-lower::rule!("softmax", propose);
+stage_rule!("softmax", |site| {
+    (site.stage == Stage::Softmax).then(|| Softmax {
+        rows: site.len / site.width,
+        width: site.width,
+    })
+});
