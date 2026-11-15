@@ -1,6 +1,6 @@
 //! Decoders with grouped-query attention, RoPE and SwiGLU MLPs.
 
-use crate::shared::{Stack, step_ports, swiglu, tokens};
+use crate::shared::{Attend, Side, Stack, step_ports, swiglu, tokens};
 use trace::DimName::*;
 use trace::{
     Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Mask, Model, Norm, Pairs,
@@ -163,34 +163,30 @@ impl Pass<'_> {
     /// Queries and keys pass through `N` per head, then rotate.
     fn attention<N: HeadNorm>(&self, l: &Layer<N>, h: &Tensor, kept: Option<&Cache>) -> Tensor {
         let (c, rows) = (self.c, self.rows);
-        let split = |w: &Linear, heads: DimName| {
-            let shaped: Vec<DimExpr> = match self.slots {
-                Some(_) => vec![rows.into(), heads.into(), HeadDim.into()],
-                None => vec![Seqs.into(), rows.into(), heads.into(), HeadDim.into()],
-            };
-            h.matmul(w).reshape(shaped)
+        let lead: Vec<DimExpr> = match self.slots {
+            Some(_) => vec![rows.into()],
+            None => vec![Seqs.into(), rows.into()],
         };
-        let turn = |t: Tensor, norm: &N| {
+        let shape = [Heads.into(), KvHeads.into(), HeadDim.into()];
+        let heads = Attend::new([&l.q, &l.k, &l.v, &l.o], lead, shape);
+        let turn = |t: Tensor, side: Side| {
+            let norm = match side {
+                Side::Query => &l.q_norm,
+                Side::Key => &l.k_norm,
+                Side::Value => return t,
+            };
             let normed = norm.apply(t, c.eps);
             normed.rope(self.positions, c.rope_theta, Pairs::Halves)
         };
-        let q = turn(split(&l.q, Heads), &l.q_norm);
-        let mut k = turn(split(&l.k, KvHeads), &l.k_norm);
-        let mut v = split(&l.v, KvHeads);
         let scale = 1.0 / (c.stack.head_dim as f32).sqrt();
-        let out = match (kept, self.slots) {
+        heads.apply(h, turn, |[q, k, v]| match (kept, self.slots) {
             (Some([keys, values]), Some(slots)) => {
                 let by = [slots, self.positions];
-                (k, v) = (k.append(keys, by), v.append(values, by));
-                self.m.attend_rows(scale, [&q, &k, &v], by)
+                let (k, v) = (k.append(keys, by), v.append(values, by));
+                self.m.attend_rows(scale, [q, &k, &v], by)
             }
-            _ => self.m.attend(Mask::Causal, scale, [&q, &k, &v], None),
-        };
-        let flat: Vec<DimExpr> = match self.slots {
-            Some(_) => vec![rows.into(), Heads * HeadDim],
-            None => vec![Seqs.into(), rows.into(), Heads * HeadDim],
-        };
-        out.reshape(flat).matmul(&l.o)
+            _ => self.m.attend(Mask::Causal, scale, [q, k, v], None),
+        })
     }
 }
 

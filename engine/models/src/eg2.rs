@@ -1,6 +1,6 @@
 //! EmbeddingGemma 2: a bidirectional encoder with per-layer embeddings.
 
-use crate::shared::{Dense, Stack, tokens};
+use crate::shared::{Attend, Dense, Side, Stack, tokens};
 use trace::DimName::*;
 use trace::{
     Act, Composite, Dim, DimExpr, Embed, Graph, Mask, Model, Norm, Pairs, Role, Scalar, Tensor,
@@ -192,20 +192,23 @@ fn attend<D: Dense>(
         false => (c.theta, Mask::Within(c.window)),
     };
     let h = x.rms_norm(&a.ln, c.eps);
-    let split = |w: &D, heads: DimExpr| {
-        let shaped = vec![Seqs.into(), Context.into(), heads, head.clone()];
-        w.apply(&h).reshape(shaped)
-    };
-    let turn = |t: Tensor, norm: &Norm| {
+    let lead = vec![Seqs.into(), Context.into()];
+    let heads = Attend::new(
+        [&a.q, &a.k, &a.v, &a.o],
+        lead,
+        [Heads.into(), kv_heads, head],
+    );
+    let turn = |t: Tensor, side: Side| {
+        let norm = match side {
+            Side::Query => &a.q_norm,
+            Side::Key => &a.k_norm,
+            Side::Value => return t.rms(c.eps),
+        };
         let normed = t.rms_norm(norm, c.eps);
         normed.rope(positions, theta, Pairs::Halves)
     };
-    let q = turn(split(&a.q, Heads.into()), &a.q_norm);
-    let k = turn(split(&a.k, kv_heads.clone()), &a.k_norm);
-    let v = split(&a.v, kv_heads).rms(c.eps);
-    let out = m.attend(mask, 1.0, [&q, &k, &v], None);
-    let flat = vec![Seqs.into(), Context.into(), Heads * head];
-    a.o.apply(&out.reshape(flat)).rms_norm(&a.post, c.eps)
+    let out = heads.apply(&h, turn, |qkv| m.attend(mask, 1.0, qkv, None));
+    out.rms_norm(&a.post, c.eps)
 }
 
 /// The graph of one stage, from tokens and positions.
