@@ -9,3 +9,4 @@ description = "Helpers that tests share: noise, comparisons and scratch files"
 [dependencies]
 graph = { workspace = true }
 mem = { workspace = true }
+trace = { workspace = true }

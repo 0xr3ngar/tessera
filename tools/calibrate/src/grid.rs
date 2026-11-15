@@ -5,10 +5,8 @@ use graph::DimName::{self, *};
 use lower::{Device, Error, Settings, Step, Tensor, View, lower};
 use run::{Run, open};
 use testkit::Noise;
-use trace::{
-    Act, DType, Dim, Embed, EntryKind, Graph, Linear, Mask, Model, Norm, Pairs, Port, Role,
-    TensorType, Weights, declare,
-};
+use testkit::graphs::{attention, linear, rotation, rows, table};
+use trace::{Dim, Graph, TensorType};
 
 /// A timed plan holds at most this many elements.
 const ROOM: usize = 750_000_000;
@@ -34,94 +32,9 @@ struct Case {
     sizes: Vec<Sizes>,
 }
 
-#[derive(Weights)]
-struct Layer {
-    #[shape(Hidden, Ffn)]
-    w: Linear,
-}
-
-#[derive(Weights)]
-struct Scale {
-    #[shape(Hidden)]
-    norm: Norm,
-}
-
-#[derive(Weights)]
-struct Table {
-    #[shape(Vocab, Hidden)]
-    embed: Embed,
-}
-
-/// Every name bounded at `most`, then the fixed ones.
-fn model(bounded: &[DimName], fixed: &[(DimName, u64)]) -> Model {
-    let bounded = bounded.iter().map(|name| Dim::bounded(*name, 1 << 20));
-    let fixed = fixed.iter().map(|(name, n)| Dim::fixed(*name, *n));
-    Model::new(bounded.chain(fixed).collect())
-}
-
-fn floats<const N: usize>(shape: [DimName; N]) -> Port {
-    let ty = TensorType::new(shape, DType::F32);
-    let role = Role::Logits;
-    Port { role, ty }
-}
-
-fn ids<const N: usize>(shape: [DimName; N]) -> Port {
-    let ty = TensorType::new(shape, DType::U32);
-    let role = Role::Tokens;
-    Port { role, ty }
-}
-
-/// `k` inputs to `n` outputs: every matmul.
-fn linear(k: u64, n: u64) -> Graph {
-    let m = model(&[Rows], &[(Hidden, k), (Ffn, n)]);
-    let w: Layer = declare(&m);
-    let [x] = m.entry(EntryKind::Forward, [floats([Rows, Hidden])]);
-    m.finish([(Role::Logits, &x.matmul(&w.w))])
-}
-
-/// Norms, maps, a softmax, an argmax and a mean.
-fn rows(width: u64) -> Graph {
-    let m = model(&[Rows], &[(Hidden, width)]);
-    let w: Scale = declare(&m);
-    let port = || floats([Rows, Hidden]);
-    let [x, y] = m.entry(EntryKind::Forward, [port(), port()]);
-    let gated = x.rms_norm(&w.norm, 1e-6).act(Act::Silu).mul(&y.rms(1e-6));
-    let shares = y.add(&gated).act(Act::Sigmoid).unit_sum();
-    let centered = shares.center();
-    let ids = centered.softmax().top_k(1u64);
-    m.finish([(Role::Tokens, &ids), (Role::Logits, &centered.mean(0))])
-}
-
-/// A rotation, then causal attention.
-fn attention([heads, kv_heads, width]: [u64; 3]) -> Graph {
-    let fixed = [(Heads, heads), (KvHeads, kv_heads), (HeadDim, width)];
-    let m = model(&[Seqs, Rows, Context], &fixed);
-    let keys = || floats([Seqs, Context, KvHeads, HeadDim]);
-    let ports = [
-        floats([Seqs, Rows, Heads, HeadDim]),
-        keys(),
-        keys(),
-        ids([Seqs, Rows]),
-    ];
-    let [q, k, v, at] = m.entry(EntryKind::Forward, ports);
-    let q = q.rope(&at, 1e4, Pairs::Halves);
-    let out = m.attend(Mask::Causal, 0.1, [&q, &k, &v], None);
-    m.finish([(Role::Logits, &out)])
-}
-
-/// Rows of 256, rotated in two blocks of 128.
-fn rotation() -> Graph {
-    let m = model(&[Rows], &[(Hidden, 256)]);
-    let [x] = m.entry(EntryKind::Forward, [floats([Rows, Hidden])]);
-    m.finish([(Role::Logits, &x.hadamard(128))])
-}
-
-/// Rows read from a table.
-fn table(vocab: u64, width: u64) -> Graph {
-    let m = model(&[Rows], &[(Vocab, vocab), (Hidden, width)]);
-    let w: Table = declare(&m);
-    let [tokens] = m.entry(EntryKind::Forward, [ids([Rows])]);
-    m.finish([(Role::Logits, &m.embed(&tokens, &w.embed))])
+/// Every name bounded far past any size the grid uses.
+fn bounded(names: &[DimName]) -> Vec<Dim> {
+    names.iter().map(|n| Dim::bounded(*n, 1 << 20)).collect()
 }
 
 /// Noise for `ty` as one row. Ids stay below eight.
@@ -217,21 +130,22 @@ impl Grid {
             let sizes = self.rows.iter().map(|r| vec![(Rows, *r)]).collect();
             Case { g, sizes }
         };
+        let (one, three) = (bounded(&[Rows]), bounded(&[Seqs, Rows, Context]));
         let mut cases = Vec::new();
         for &k in &self.widths {
             let outs = self.widths.iter().chain(&self.vocabs);
-            cases.extend(outs.map(|n| by_rows(linear(k, *n))));
+            cases.extend(outs.map(|n| by_rows(linear(&one, k, *n))));
         }
-        cases.push(by_rows(rotation()));
+        cases.push(by_rows(rotation(&one)));
         for &width in self.widths.iter().chain(&self.vocabs) {
-            cases.push(by_rows(rows(width)));
-            cases.extend(self.vocabs.iter().map(|v| by_rows(table(*v, width))));
+            cases.push(by_rows(rows(&one, width)));
+            cases.extend((self.vocabs.iter()).map(|v| by_rows(table(&one, *v, width))));
         }
         for &heads in &self.heads {
             let span =
                 |[queries, keys]: &[u64; 2]| vec![(Seqs, 1), (Rows, *queries), (Context, *keys)];
             let sizes = self.spans.iter().map(span).collect();
-            let g = attention(heads);
+            let g = attention(&three, heads);
             cases.push(Case { g, sizes });
         }
         cases
