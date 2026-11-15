@@ -10,11 +10,11 @@ mod report;
 mod rules;
 mod tags;
 
-use bundle::tag::Tagger;
 use diff::Hunk;
 use report::Found;
 use std::path::Path;
 use std::process::{Command, ExitCode};
+use tasks::Tagger;
 
 const USAGE: &str = "usage: tessera-style fetch <pipeline_dir>
        tessera-style diff <pipeline_dir> <base> <head> [json_file]
@@ -37,12 +37,13 @@ impl Checker {
     fn new(pipeline: &Path) -> Result<Self, String> {
         Ok(Self {
             rules: rules::load(Path::new(RULES))?,
-            tagger: Tagger::open(pipeline).map_err(|e| format!("{}: {e}", pipeline.display()))?,
+            tagger: Tagger::open(pipeline, &frontend_settings::read())
+                .map_err(|e| format!("{}: {e}", pipeline.display()))?,
             patterns: tags::load(Path::new(TAGS))?,
         })
     }
 
-    fn hunk(&self, mut h: Hunk) -> Result<Vec<Found>, String> {
+    fn hunk(&mut self, mut h: Hunk) -> Result<Vec<Found>, String> {
         // This tool's own rules quote the defects they describe.
         if h.path.starts_with("tools/style/") {
             return Ok(Vec::new());
@@ -51,7 +52,7 @@ impl Checker {
         if h.path.ends_with(".md") {
             prose::mask_markdown(&mut h.lines);
         }
-        let hits = tags::check(&h, &self.tagger, &self.patterns).map_err(|e| e.to_string())?;
+        let hits = tags::check(&h, &mut self.tagger, &self.patterns).map_err(|e| e.to_string())?;
         let text_of = |n: usize| {
             h.numbered()
                 .find(|(i, _)| *i == n)
@@ -94,7 +95,7 @@ fn print(found: &[Found]) {
 
 /// Hits on a diff's added lines, also written to `json`.
 fn check_diff(dir: &str, diff: &str, json: Option<&&str>) -> Result<bool, String> {
-    let checker = Checker::new(Path::new(dir))?;
+    let mut checker = Checker::new(Path::new(dir))?;
     let mut found = Vec::new();
     for h in diff::parse(diff) {
         found.extend(checker.hunk(h)?);
@@ -119,7 +120,7 @@ fn run(args: &[&str]) -> Result<bool, String> {
             rest.first(),
         ),
         ["scan", dir, files @ ..] if !files.is_empty() => {
-            let checker = Checker::new(Path::new(dir))?;
+            let mut checker = Checker::new(Path::new(dir))?;
             let mut found = Vec::new();
             for path in files {
                 let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;

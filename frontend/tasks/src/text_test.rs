@@ -1,4 +1,4 @@
-use crate::text::Spool;
+use crate::Spool;
 
 /// Ids 1 and 2 are two halves of one character.
 fn decode(ids: &[u32]) -> String {

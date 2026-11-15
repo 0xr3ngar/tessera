@@ -12,13 +12,18 @@ fn gather(
     mut out: BufMut<F32>,
     rows: u32,
     width: u32,
+    table_rows: u32,
     #[build] form: &'static dyn Stored,
 ) {
     if gid() >= rows * width {
         return;
     }
     let row = ids[(gid() / width) as u64];
-    out[gid() as u64] = table[row as u64 * width as u64 + (gid() % width) as u64];
+    let mut v = 0.0f32;
+    if row < table_rows {
+        v = table[row as u64 * width as u64 + (gid() % width) as u64];
+    }
+    out[gid() as u64] = v;
 }
 
 #[derive(Clone, Copy, Debug, Kernel)]
@@ -26,6 +31,8 @@ fn gather(
 pub struct Gather {
     pub rows: usize,
     pub width: usize,
+    /// Ids from here on read zeros.
+    pub table_rows: usize,
     /// How the table is stored.
     pub form: &'static dyn Stored,
 }
@@ -40,9 +47,15 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
         ids,
         rows,
         width,
+        table_rows,
         form,
     } = tree.site(at)?;
-    let gather = Gather { rows, width, form };
+    let gather = Gather {
+        rows,
+        width,
+        table_rows,
+        form,
+    };
     Some(vec![Draft::new(gather, [table, ids], rows * width)])
 }
 

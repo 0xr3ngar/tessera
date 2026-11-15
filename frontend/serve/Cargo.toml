@@ -12,8 +12,8 @@ path = "src/main.rs"
 
 [features]
 default = []
-cuda = ["engine/cuda"]
-rocm = ["engine/rocm"]
+cuda = ["engine/cuda", "tasks/cuda"]
+rocm = ["engine/rocm", "tasks/rocm"]
 
 [dependencies]
 axum = "0.8"
@@ -22,5 +22,6 @@ bundle = { workspace = true }
 lower = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 frontend-settings = { workspace = true }
+tasks = { workspace = true }
 tokio = { version = "1", features = ["net", "rt-multi-thread", "sync"] }
 tokio-stream = "0.1"

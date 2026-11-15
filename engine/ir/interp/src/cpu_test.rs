@@ -188,9 +188,9 @@ fn gather_rows() {
         let inputs = [table.clone(), Tensor::u32(vec![ids.len()], ids)];
         eval(ports, &inputs, None, |_, [t, ids]| [t.gather(&ids)])
     };
-    // Repeats, and both ends of the table.
+    // Repeats, both table ends, and a row past it.
     close(&pick(vec![3, 0, 3]).unwrap()[0], &[7., 8., 1., 2., 7., 8.]);
-    assert!(matches!(pick(vec![4]), Err(Error::Mismatch(_))));
+    close(&pick(vec![4, 1]).unwrap()[0], &[0., 0., 3., 4.]);
 }
 
 #[test]

@@ -27,7 +27,7 @@ tessera is not alpha or beta. It's an experiment right now and no numbers are av
 <!-- crate table -->
 Crate | Description
 --- | ---
-[engine](engine/engine) | Token ids in, token ids out: a stepper graph on a runner
+[engine](engine/engine) | Graphs on runners: a decode loop over a stepper, or one launch of a forward graph
 [gemm](engine/gpu/gemm) | The GEMM family: tiled Metal and CUDA bodies with a shared CPU oracle
 [gpukit](engine/gpu/gpukit) | GPU compute infrastructure: pipeline compilation, specialization, caching, buffers
 [graph](engine/ir/graph) | The model graph: typed nodes, symbolic shapes, a JSON form
@@ -50,6 +50,7 @@ Crate | Description
 [eval](frontend/eval) | Measures a model under a recipe: speed per batch, parity against a reference
 [serve](frontend/serve) | An HTTP front end: text in, streamed text out, over the engine
 [frontend-settings](frontend/settings) | Settings read once from the environment, passed down
+[tasks](frontend/tasks) | Text in, answers out: generation and tagging over a loaded model
 [calibrate](tools/calibrate) | Times kernels on this machine and stores what they cost
 [tessera-check](tools/check) | Runs the style checks, and prints one report or writes one PR comment
 [findings](tools/findings) | The JSON each check writes, for tessera-check to render

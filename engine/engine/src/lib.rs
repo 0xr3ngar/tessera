@@ -1,4 +1,4 @@
-//! Token ids in, token ids out, over a stepper graph.
+//! Graphs on runners: decode loops and single launches.
 
 // Linking the crates registers their rules.
 use kernels as _;
@@ -13,8 +13,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::mpsc;
 
+mod model;
 mod schedule;
 
+pub use model::Model;
 pub use schedule::{Batch, Fair, Policy, Seq, Sink};
 
 /// Tokens to continue, and when to stop.

@@ -1,18 +1,17 @@
 //! The HTTP routes: health, completions and chat, plain or streamed.
 
-use crate::text::Spool;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::sse::{Event as Sse, KeepAlive, Sse as Stream};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use bundle::tokenize::hf::Hf;
-use bundle::{Message, Template};
+use bundle::Message;
 use engine::{Event, Reason, Request};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex, mpsc};
+use tasks::{Generate, Spool};
 use tokio::sync::mpsc as async_mpsc;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
@@ -22,9 +21,7 @@ pub type Job = (Request, async_mpsc::Sender<Event>);
 
 /// What every handler shares.
 pub struct Shared {
-    pub tokenizer: Hf,
-    pub template: Option<Template>,
-    pub stop: Vec<u32>,
+    pub generate: Generate,
     /// The engine thread's queue. Answers share each step.
     pub jobs: Mutex<mpsc::Sender<Job>>,
 }
@@ -97,19 +94,8 @@ fn submit(
     prompt: &str,
     max_tokens: usize,
 ) -> Result<async_mpsc::Receiver<Event>, Refused> {
-    let bad = |what: String| (StatusCode::BAD_REQUEST, what);
-    let tokens = shared
-        .tokenizer
-        .encode(prompt)
-        .map_err(|e| bad(e.to_string()))?;
-    if tokens.is_empty() {
-        return Err(bad("an empty prompt".into()));
-    }
-    let request = Request {
-        tokens,
-        max_tokens,
-        stop: shared.stop.clone(),
-    };
+    let request = (shared.generate.request(prompt, max_tokens))
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     let (events, receiver) = async_mpsc::channel(64);
     let gone = || {
         (
@@ -130,13 +116,7 @@ async fn complete(State(shared): State<Arc<Shared>>, Json(c): Json<Completion>) 
 }
 
 async fn chat(State(shared): State<Arc<Shared>>, Json(c): Json<Chat>) -> Response {
-    let Some(template) = &shared.template else {
-        return (StatusCode::BAD_REQUEST, "the model has no chat template").into_response();
-    };
-    if c.messages.is_empty() {
-        return (StatusCode::BAD_REQUEST, "no messages").into_response();
-    }
-    let prompt = match template.render(&c.messages, c.think) {
+    let prompt = match shared.generate.chat(&c.messages, c.think) {
         Ok(prompt) => prompt,
         Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
@@ -152,7 +132,7 @@ async fn answer(
     mut events: async_mpsc::Receiver<Event>,
     stream: bool,
 ) -> Response {
-    let decode = move |ids: &[u32]| shared.tokenizer.decode(ids);
+    let decode = move |ids: &[u32]| shared.generate.tokenizer.decode(ids);
     let mut spool = Spool::default();
     if stream {
         let pieces = ReceiverStream::new(events).map(move |e| {

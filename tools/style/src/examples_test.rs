@@ -30,9 +30,9 @@ fn examples_match() {
         eprintln!("TESSERA_SPACY unset: skipped");
         return;
     };
-    let checker = Checker::new(&dir).unwrap();
+    let mut checker = Checker::new(&dir).unwrap();
     let mut wrong = Vec::new();
-    for rule in &checker.rules {
+    for rule in &std::mem::take(&mut checker.rules) {
         for (text, bad) in cases(rule) {
             let found = checker.hunk(Hunk::file("example.txt", &text)).unwrap();
             if found.iter().any(|f| f.hit.rule == rule.id) != bad {

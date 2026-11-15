@@ -1,36 +1,34 @@
 // SPDX-License-Identifier: MIT
 // Ported from spaCy. Copyright ExplosionAI GmbH, see LICENSE.md.
 
-//! spaCy's part-of-speech tagger, run as a tessera graph.
+//! A spaCy pipeline folder: tokenizer, tagger graph, weights and tables.
 
-mod features;
-mod symbols;
-#[cfg(test)]
-mod tag_test;
 mod thinc;
 
 use crate::tokenize::Error;
-use crate::tokenize::spacy::{Spacy, Word};
-use features::{Features, thinc_hash};
+use crate::tokenize::spacy::Spacy;
 use graph::{Graph, PathSeg};
-use interp::{Tensor, bind, run};
-use models::tagger::{Config, KEYS, PAD, PIECES, path, program};
+use interp::{Tensor, bind};
+use lower::Weight;
+use models::tagger::{Config, PIECES, path, piece, program};
+use std::collections::HashMap;
 use std::path::Path;
 use thinc::{Array, Node};
 
 /// Tokens past this need a longer graph.
-const MAX_CONTEXT: u64 = 4096;
+pub const MAX_CONTEXT: u64 = 4096;
 
-pub struct Tagger {
-    tokenizer: Spacy,
-    features: Features,
-    graph: Graph,
-    weights: Vec<Tensor>,
-    tags: Vec<String>,
+pub struct Pipeline {
+    pub tokenizer: Spacy,
+    pub graph: Graph,
+    pub weights: Vec<Weight>,
+    pub tags: Vec<String>,
     /// Per feature: hash seed, rows, and first joined row.
-    seeds: Vec<u32>,
-    rows: Vec<u64>,
-    offsets: Vec<u64>,
+    pub seeds: Vec<u32>,
+    pub rows: Vec<u64>,
+    pub offsets: Vec<u64>,
+    /// The `lexeme_norm` table, by hash of the lower case.
+    pub lexeme: HashMap<u64, String>,
 }
 
 fn nodes(dir: &Path, part: &str) -> Result<Vec<Node>, Error> {
@@ -57,8 +55,8 @@ fn by_piece(a: &Array) -> Vec<f32> {
     out
 }
 
-impl Tagger {
-    /// Reads a spaCy pipeline folder: tokenizer, tok2vec, tagger and vocab.
+impl Pipeline {
+    /// Reads `dir`: tok2vec, tagger, tokenizer and vocab.
     pub fn open(dir: &Path) -> Result<Self, Error> {
         let t2v = nodes(dir, "tok2vec")?;
         let mut tables: Vec<&Node> = t2v.iter().filter(|n| n.name == "hashembed").collect();
@@ -89,9 +87,15 @@ impl Tagger {
             if w.shape.get(1) != Some(&(PIECES as usize)) {
                 return Err(format!("maxout with {:?} pieces", w.shape.get(1)).into());
             }
-            let i = Some(i as u32);
-            weights.push((path("maxout", i, "w"), by_piece(w)));
-            weights.push((path("maxout", i, "b"), by_piece(param(m, "b")?)));
+            let i = i as u32;
+            let (w, b) = (by_piece(w), by_piece(param(m, "b")?));
+            let (wn, bn) = (w.len() / PIECES as usize, b.len() / PIECES as usize);
+            for p in 0..PIECES as u32 {
+                let at = p as usize;
+                weights.push((piece("maxout", i, "w", p), w[at * wn..][..wn].to_vec()));
+                weights.push((piece("maxout", i, "b", p), b[at * bn..][..bn].to_vec()));
+            }
+            let i = Some(i);
             weights.push((path("norm", i, "g"), param(n, "G")?.data.clone()));
             weights.push((path("norm", i, "b"), param(n, "b")?.data.clone()));
         }
@@ -113,65 +117,19 @@ impl Tagger {
             let v = v.clone();
             Some(Tensor::f32(vec![v.len()], v))
         };
-        let lexeme = thinc::lexeme_norms(&std::fs::read(dir.join("vocab/lookups.bin"))?)?;
+        let weights = bind(&graph, find)?
+            .into_iter()
+            .map(Weight::Floats)
+            .collect();
         Ok(Self {
             tokenizer: Spacy::open(dir)?,
-            features: Features::new(lexeme),
-            weights: bind(&graph, find)?,
             graph,
+            weights,
             tags,
             seeds,
             rows,
             offsets,
+            lexeme: thinc::lexeme_norms(&std::fs::read(dir.join("vocab/lookups.bin"))?)?,
         })
-    }
-
-    /// Each token of `text` with its tag.
-    pub fn tag(&self, text: &str) -> Result<Vec<(Word, &str)>, Error> {
-        let words = self.tokenizer.words(text)?;
-        let n = words.len();
-        if n == 0 {
-            return Ok(Vec::new());
-        }
-        if n as u64 > MAX_CONTEXT {
-            return Err(format!("{n} tokens, past {MAX_CONTEXT}").into());
-        }
-        let mut keys = Vec::with_capacity(n * self.seeds.len() * KEYS as usize);
-        for w in &words {
-            let feats = self.features.of(&text[w.span.clone()], w);
-            for (c, f) in feats.iter().enumerate() {
-                for k in thinc_hash(*f, self.seeds[c]) {
-                    keys.push((u64::from(k) % self.rows[c] + self.offsets[c]) as u32);
-                }
-            }
-        }
-        let pad = PAD as usize;
-        let padded = n + 2 * pad;
-        // Outside the text, rows read zero: index `n` or `padded`.
-        let mut sources = Vec::with_capacity(padded);
-        let mut around = Vec::with_capacity(3 * padded);
-        for j in 0..padded {
-            let inside = (pad..pad + n).contains(&j);
-            sources.push(if inside { (j - pad) as u32 } else { n as u32 });
-            let prev = if j == 0 { padded } else { j - 1 };
-            let next = if j + 1 == padded { padded } else { j + 1 };
-            around.extend([prev as u32, j as u32, next as u32]);
-        }
-        let inputs = [
-            Tensor::u32(vec![1, n, keys.len() / n], keys),
-            Tensor::u32(vec![1, padded], sources),
-            Tensor::u32(vec![1, padded, 3], around),
-        ];
-        let out = run(&self.graph, &self.weights, 0, &inputs)?;
-        let logits = out[0].floats()?;
-        let width = self.tags.len();
-        let mut tagged = Vec::with_capacity(n);
-        for (w, row) in words.into_iter().zip(logits.chunks(width).skip(pad)) {
-            let best = (0..width)
-                .max_by(|&a, &b| row[a].total_cmp(&row[b]))
-                .unwrap_or(0);
-            tagged.push((w, self.tags[best].as_str()));
-        }
-        Ok(tagged)
     }
 }

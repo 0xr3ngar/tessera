@@ -3,10 +3,9 @@
 use crate::diff::Hunk;
 use crate::pattern;
 use crate::prose::{comment, is_prose_file};
-use bundle::tag::Tagger;
-use bundle::tokenize::Error;
 use fancy_regex::Regex;
 use std::path::Path;
+use tasks::{Error, Tagger};
 
 /// A rule's hit: its line, rule id and matched words.
 pub struct Hit {
@@ -64,7 +63,7 @@ fn prose_lines(h: &Hunk) -> Vec<(usize, String)> {
 }
 
 /// Tag-rule hits on added prose, by comment block.
-pub fn check(h: &Hunk, tagger: &Tagger, rules: &[Rule]) -> Result<Vec<Hit>, Error> {
+pub fn check(h: &Hunk, tagger: &mut Tagger, rules: &[Rule]) -> Result<Vec<Hit>, Error> {
     let lines = prose_lines(h);
     let mut out = Vec::new();
     let mut start = 0;
@@ -78,7 +77,11 @@ pub fn check(h: &Hunk, tagger: &Tagger, rules: &[Rule]) -> Result<Vec<Hit>, Erro
 }
 
 /// Consecutive prose lines as one text, split into sentences.
-fn block(lines: &[(usize, String)], tagger: &Tagger, rules: &[Rule]) -> Result<Vec<Hit>, Error> {
+fn block(
+    lines: &[(usize, String)],
+    tagger: &mut Tagger,
+    rules: &[Rule],
+) -> Result<Vec<Hit>, Error> {
     let (mut text, mut starts) = (String::new(), Vec::new());
     for (n, line) in lines {
         starts.push((text.len(), *n));

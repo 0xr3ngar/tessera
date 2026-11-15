@@ -3,107 +3,29 @@
 use kernels as _;
 
 use frontend_settings::read as settings;
-use graph::DimName::{Context, HeadDim, Heads, Hidden, Rows, Seqs, Vocab};
-use graph::{DType, Dim, DimName, Graph, NodeId, TensorType, verify};
+use graph::DimName::{Context, HeadDim, Heads, Rows, Seqs};
+use graph::{DType, Dim, DimName, Graph, NodeId, verify};
 use interp::{Tensor, run};
 use lower::form::{BF16_FORM, F32_FORM};
 use lower::{Device, Limits, Pins, Plan, Platform, View, cut, lower, rules};
 use run::open;
+use testkit::graphs::{self, floats, ids};
 use testkit::{Noise, fill, max_abs_diff};
-use trace::{Act, Embed, EntryKind, Mask, Model, Norm, Pairs, Port, Role, Weights, declare};
+use trace::{Act, EntryKind, Model, Pairs, Role};
 
 const SIZES: [(DimName, u64); 3] = [(Seqs, 2), (Rows, 3), (Context, 5)];
 
-#[derive(Weights)]
-struct Scale {
-    #[shape(Hidden)]
-    norm: Norm,
-}
-
-#[derive(Weights)]
-struct Table {
-    #[shape(Vocab, Hidden)]
-    embed: Embed,
-}
-
-fn floats<const N: usize>(shape: [DimName; N]) -> Port {
-    let ty = TensorType::new(shape, DType::F32);
-    let role = Role::Logits;
-    Port { role, ty }
-}
-
-fn ids<const N: usize>(shape: [DimName; N]) -> Port {
-    let ty = TensorType::new(shape, DType::U32);
-    let role = Role::Tokens;
-    Port { role, ty }
-}
-
-/// Norms, maps, a softmax, an argmax and a mean.
-fn norms() -> Graph {
-    let m = Model::new(vec![
-        Dim::bounded(Seqs, 4),
-        Dim::bounded(Rows, 8),
-        Dim::fixed(Hidden, 32),
-    ]);
-    let w: Scale = declare(&m);
-    let port = || floats([Seqs, Rows, Hidden]);
-    let [x, y] = m.entry(EntryKind::Forward, [port(), port()]);
-    let gated = x.rms_norm(&w.norm, 1e-6).act(Act::Silu).mul(&y.rms(1e-6));
-    let sum = y.add(&gated);
-    let top = sum.softmax().top_k(1u64);
-    m.finish([(Role::Tokens, &top), (Role::Logits, &sum.mean(0))])
-}
-
-/// Rotated queries over more keys, then a softmax and mean.
-fn attention() -> Graph {
-    let m = Model::new(vec![
+/// The bounds every shared graph here is built with.
+fn dims() -> Vec<Dim> {
+    vec![
         Dim::bounded(Seqs, 4),
         Dim::bounded(Rows, 8),
         Dim::bounded(Context, 16),
-        Dim::fixed(Heads, 2),
-        Dim::fixed(HeadDim, 16),
-    ]);
-    let port = |rows| floats([Seqs, rows, Heads, HeadDim]);
-    let ports = [port(Rows), port(Context), port(Context), ids([Seqs, Rows])];
-    let [q, k, v, at] = m.entry(EntryKind::Forward, ports);
-    let q = q.rope(&at, 1e4, Pairs::Halves);
-    let out = m.attend(Mask::Causal, 0.5, [&q, &k, &v], None).softmax();
-    m.finish([(Role::Logits, &out), (Role::Logits, &out.mean(1))])
+    ]
 }
 
-/// Each row's likeliest entry, over more entries than threads.
-fn likeliest() -> Graph {
-    let m = Model::new(vec![
-        Dim::bounded(Seqs, 8),
-        Dim::bounded(Rows, 8),
-        Dim::fixed(Vocab, 600),
-    ]);
-    let [logits] = m.entry(EntryKind::Forward, [floats([Seqs, Rows, Vocab])]);
-    m.finish([(Role::Tokens, &logits.top_k(1u64))])
-}
-
-/// Rows of 256, rotated in two blocks.
-fn rotated() -> Graph {
-    let m = Model::new(vec![
-        Dim::bounded(Seqs, 8),
-        Dim::bounded(Rows, 8),
-        Dim::fixed(Hidden, 256),
-    ]);
-    let [x] = m.entry(EntryKind::Forward, [floats([Seqs, Rows, Hidden])]);
-    m.finish([(Role::Logits, &x.hadamard(128))])
-}
-
-/// Rows read from a table.
-fn table() -> Graph {
-    let m = Model::new(vec![
-        Dim::bounded(Seqs, 4),
-        Dim::bounded(Rows, 8),
-        Dim::fixed(Vocab, 32),
-        Dim::fixed(Hidden, 16),
-    ]);
-    let w: Table = declare(&m);
-    let [tokens] = m.entry(EntryKind::Forward, [ids([Seqs, Rows])]);
-    m.finish([(Role::Logits, &m.embed(&tokens, &w.embed))])
+fn attention() -> Graph {
+    graphs::attention(&dims(), [2, 2, 16])
 }
 
 /// Runs entry 0 both ways. Returns the largest difference.
@@ -123,7 +45,15 @@ fn gap(g: &Graph, inputs: &[Tensor], device: &Device) -> f32 {
 #[test]
 fn each_rule_matches_cpu() {
     let mut noise = Noise(7);
-    let graphs = [norms(), attention(), likeliest(), rotated(), table()];
+    let d = dims();
+    // Rows of 600: more entries than threads for the argmax.
+    let graphs = [
+        graphs::rows(&d, 32),
+        graphs::rows(&d, 600),
+        attention(),
+        graphs::rotation(&d),
+        graphs::table(&d, 32, 16),
+    ];
     let ours: Vec<&lower::Rule> = rules()
         .into_iter()
         .filter(|r| r.module.starts_with("kernels::"))
@@ -151,7 +81,7 @@ fn each_rule_matches_cpu() {
             assert!(off < 1e-4, "{:?} is off by {off:e}", step.kernel);
         }
     }
-    // A new rule needs a graph here and in calibrate.
+    // A new rule needs a graph in `testkit::graphs`.
     for rule in ours {
         // Hand-written kernels wait for a compiler.
         if settings().gpu().is_none() && rule.name == "dense" {
@@ -244,7 +174,7 @@ fn trips_are_counted() {
 
 #[test]
 fn limits_bar_kernels() {
-    let g = norms();
+    let g = graphs::rows(&dims(), 32);
     let guess = Device::guess(&settings()).favoring("lane_norm");
     assert!(names(&lower(&g, 0, &SIZES, &guess).unwrap()).contains(&"lane_norm"));
     // A 64-lane device runs none of the 32-lane kernels.
@@ -259,7 +189,7 @@ fn limits_bar_kernels() {
 
 #[test]
 fn tables_keep_forms() {
-    let g = table();
+    let g = graphs::table(&dims(), 32, 16);
     let guess = Device::guess(&settings());
     let narrow = guess.clone().pinned(Pins::all(BF16_FORM));
     assert!(names(&lower(&g, 0, &SIZES, &narrow).unwrap()).contains(&"gather_bf16"));

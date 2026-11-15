@@ -7,10 +7,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-bundle = { workspace = true }
 findings = { workspace = true }
 fancy-regex = "0.14"
-ureq = "2"
-
-[dev-dependencies]
 frontend-settings = { workspace = true }
+tasks = { workspace = true }
+ureq = "2"
