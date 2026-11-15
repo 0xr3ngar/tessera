@@ -7,6 +7,7 @@ use crate::recipe::Recipe;
 use codegen::kept::Layout;
 use engine_settings::Settings;
 use gpukit::{Limits, Platform};
+use graph::Parts;
 use serde::{Deserialize, Serialize};
 use sim::{Chip, Cluster, Fit, Pool};
 use std::cell::RefCell;
@@ -83,6 +84,12 @@ pub struct Device {
     /// Zones that each run the plan. Empty means one.
     #[serde(default)]
     pub ranks: Vec<u32>,
+    /// Each rank's weight of split axes. Empty means equal.
+    #[serde(default)]
+    pub parts: Vec<u32>,
+    /// The rank this device lowers for.
+    #[serde(default)]
+    pub rank: u32,
     /// The hardware as asked, with its table row.
     #[serde(default)]
     pub platform: Platform,
@@ -124,6 +131,8 @@ impl PartialEq for Device {
             && self.fit == other.fit
             && self.cluster == other.cluster
             && self.ranks == other.ranks
+            && self.parts == other.parts
+            && self.rank == other.rank
             && self.platform == other.platform
             && self.timed == other.timed
             && self.favor == other.favor
@@ -145,6 +154,8 @@ impl Default for Device {
             pool: None,
             cluster: Cluster::default(),
             ranks: Vec::new(),
+            parts: Vec::new(),
+            rank: 0,
             platform: Platform::default(),
             timed: BTreeMap::new(),
             favor: None,
@@ -251,6 +262,26 @@ impl Device {
     /// Copies of the plan that run together.
     pub fn ranks(&self) -> usize {
         self.ranks.len().max(1)
+    }
+
+    /// The same device, ranks weighted unevenly.
+    pub fn uneven(mut self, parts: Vec<u32>) -> Self {
+        self.parts = parts;
+        self.changed()
+    }
+
+    /// The same device, lowering for rank `rank`.
+    pub fn as_rank(mut self, rank: u32) -> Self {
+        self.rank = rank;
+        self.changed()
+    }
+
+    /// How split axes divide among the ranks.
+    pub fn division(&self) -> Parts {
+        match self.parts.len() == self.ranks() {
+            true => Parts(self.parts.clone()),
+            false => Parts::even(self.ranks()),
+        }
     }
 
     /// Seconds the ranks take to sum `bytes`, if linked.

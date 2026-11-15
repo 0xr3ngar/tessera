@@ -1,7 +1,9 @@
-//! Moves bytes between ranks: the transport trait and TCP sockets.
+//! Moves bytes between ranks: a trait, sockets, shared memory.
 
+mod shm;
 mod sockets;
 
+pub use shm::Shm;
 pub use sockets::Sockets;
 
 use std::fmt;
@@ -13,6 +15,20 @@ pub trait Transport {
     fn ranks(&self) -> u32;
     /// Every rank's bytes, in rank order, `mine` among them.
     fn exchange(&mut self, mine: &[u8]) -> Result<Vec<Vec<u8>>, Error>;
+}
+
+impl<T: Transport + ?Sized> Transport for Box<T> {
+    fn rank(&self) -> u32 {
+        (**self).rank()
+    }
+
+    fn ranks(&self) -> u32 {
+        (**self).ranks()
+    }
+
+    fn exchange(&mut self, mine: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
+        (**self).exchange(mine)
+    }
 }
 
 /// The parts summed in rank order. Every rank agrees.

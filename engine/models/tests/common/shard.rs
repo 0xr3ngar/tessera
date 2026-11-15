@@ -62,7 +62,8 @@ pub fn shards(spec: &Spec) {
         ..settings()
     };
     let device = Device::guess(&host).zoned(pair()).ranked(vec![0, 1]);
-    let plan = lower(&sharded, 0, &SIZES, &device).unwrap();
+    let plans = [0, 1].map(|r| lower(&sharded, 0, &SIZES, &device.clone().as_rank(r)).unwrap());
+    let plan = &plans[0];
     let split = (sharded.weights.iter()).any(|w| w.ty.placement != Placement::Replicated);
     let sums = (plan.steps.iter()).filter(|s| s.kernel.name() == "all_reduce");
     assert_eq!(
@@ -72,7 +73,7 @@ pub fn shards(spec: &Spec) {
         spec.name
     );
     for settings in [host, settings()] {
-        let mut ranks = Loopback::open(&plan, &settings).unwrap();
+        let mut ranks = Loopback::open(&plans, &settings).unwrap();
         for (at, w) in weights.iter().enumerate() {
             ranks.load(at as u32, w.view()).unwrap();
         }

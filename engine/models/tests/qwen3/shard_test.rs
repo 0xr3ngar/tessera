@@ -56,7 +56,8 @@ fn two_rank_plan() {
         ..settings()
     };
     let device = Device::guess(&host).zoned(pair()).ranked(vec![0, 1]);
-    let plan = lower(&sharded, 0, &SIZES, &device).unwrap();
+    let plans = [0, 1].map(|r| lower(&sharded, 0, &SIZES, &device.clone().as_rank(r)).unwrap());
+    let plan = &plans[0];
     let sums = plan
         .steps
         .iter()
@@ -69,11 +70,11 @@ fn two_rank_plan() {
         .filter(|(w, _)| w.ty.placement != Placement::Replicated)
         .map(|(_, t)| t.len())
         .sum();
-    assert_eq!(held(&whole) - held(&plan), split / 2);
-    assert!(device.cost(&plan).seconds.is_finite());
+    assert_eq!(held(&whole) - held(plan), split / 2);
+    assert!(device.cost(plan).seconds.is_finite());
     // On the host, then on any GPU the settings pick.
     for settings in [host, settings()] {
-        let mut ranks = Loopback::open(&plan, &settings).unwrap();
+        let mut ranks = Loopback::open(&plans, &settings).unwrap();
         for (at, w) in weights.iter().enumerate() {
             ranks.load(at as u32, w.view()).unwrap();
         }
@@ -93,7 +94,7 @@ fn two_sockets() {
         ..settings()
     };
     let device = Device::guess(&host).zoned(pair()).ranked(vec![0, 1]);
-    let plan = lower(&sharded, 0, &SIZES, &device).unwrap();
+    let plans = [0, 1].map(|r| lower(&sharded, 0, &SIZES, &device.clone().as_rank(r)).unwrap());
     let listeners: Vec<TcpListener> = (0..2)
         .map(|_| TcpListener::bind("127.0.0.1:0").unwrap())
         .collect();
@@ -110,7 +111,7 @@ fn two_sockets() {
     let outs: Vec<Vec<f32>> = std::thread::scope(|s| {
         let runs: Vec<_> = (listeners.into_iter().enumerate())
             .map(|(r, listener)| {
-                let (plan, addrs, host) = (&plan, &addrs, &host);
+                let (plan, addrs, host) = (&plans[r], &addrs, &host);
                 let (weights, inputs) = (&weights_plain, &inputs_plain);
                 s.spawn(move || {
                     let sockets = Sockets::join(r as u32, listener, addrs).unwrap();

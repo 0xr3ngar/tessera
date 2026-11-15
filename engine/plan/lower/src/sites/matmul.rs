@@ -17,8 +17,8 @@ pub struct Picked {
     pub offset: usize,
     /// Output rows that share one `x` row.
     pub repeat: usize,
-    /// Each rank holds `count` of the matrices, by rank order.
-    pub routed: bool,
+    /// This rank's first matrix id, when the set is routed.
+    pub first: Option<usize>,
 }
 
 /// `x[m, k]` times `w[n, k]` transposed, `w` stored as `form`.
@@ -58,7 +58,7 @@ impl Pattern for Matmul {
         let [count, stride, _] = tree.node(set).shape[..] else {
             return None;
         };
-        let routed = tree.share(set).is_some_and(|s| s.axis == 0);
+        let first = tree.share(set).filter(|s| s.axis == 0).map(|s| s.first);
         let (m, n) = (
             tree.elements(ids),
             tree.elements(w) / tree.elements(ids) / k,
@@ -76,7 +76,7 @@ impl Pattern for Matmul {
                 stride,
                 offset,
                 repeat: m / (tree.elements(x) / k),
-                routed,
+                first,
             }),
         })
     }

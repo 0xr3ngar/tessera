@@ -1,4 +1,4 @@
-use crate::{Sockets, Transport, summed};
+use crate::{Shm, Sockets, Transport, summed};
 use std::net::TcpListener;
 
 #[test]
@@ -30,6 +30,38 @@ fn sockets_exchange() {
             .collect();
         runs.into_iter().map(|t| t.join().unwrap()).collect()
     });
+    let want = vec![
+        vec![0, 0, 0],
+        vec![1, 1, 1],
+        vec![2, 2, 2],
+        vec![10],
+        vec![11],
+        vec![12],
+    ];
+    for rank in &seen {
+        assert_eq!(*rank, want);
+    }
+}
+
+/// Three ranks on threads over one mapped file, two rounds.
+#[test]
+fn shm_exchange() {
+    let path = testkit::scratch(&format!("comm-{}", std::process::id()));
+    let seen: Vec<Vec<Vec<u8>>> = std::thread::scope(|s| {
+        let runs: Vec<_> = (0..3u32)
+            .map(|r| {
+                let path = &path;
+                s.spawn(move || {
+                    let mut shm = Shm::join(path, r, 3, 16).unwrap();
+                    let first = shm.exchange(&[r as u8; 3]).unwrap();
+                    let second = shm.exchange(&[r as u8 + 10]).unwrap();
+                    [first, second].concat()
+                })
+            })
+            .collect();
+        runs.into_iter().map(|t| t.join().unwrap()).collect()
+    });
+    let _ = std::fs::remove_file(&path);
     let want = vec![
         vec![0, 0, 0],
         vec![1, 1, 1],

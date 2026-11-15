@@ -37,8 +37,7 @@ fn picked(
     stride: u32,
     offset: u32,
     repeat: u32,
-    rank: u32,
-    per_rank: u32,
+    first: u32,
     #[build] form: &'static dyn Stored,
 ) {
     if gid() >= rows * n {
@@ -46,11 +45,11 @@ fn picked(
     }
     let row = gid() / n;
     let col = gid() % n;
-    // This rank's matrices start at `rank * per_rank`.
-    let id = ids[row as u64] - rank * per_rank;
+    // This rank's matrices start at `first`.
+    let id = ids[row as u64] - first;
     let mut sums = [0.0f32; 1];
     sums[0] = 0.0;
-    if ids[row as u64] >= rank * per_rank && id < count {
+    if ids[row as u64] >= first && id < count {
         let at = (id as u64 * stride as u64 + offset as u64 + col as u64) * k as u64;
         let from = (row / repeat) as u64 * k as u64;
         for i in 0..k {
@@ -107,8 +106,7 @@ fn picked_launches(k: &Picked, step: &Step) -> Vec<Launch> {
         pick.repeat,
     ];
     let mut launches = k.product.launch(step, &counts, Shape::Line(m * n));
-    let per_rank = if pick.routed { pick.count } else { 0 };
-    launches[0].args.extend([Arg::Rank, Arg::count(per_rank)]);
+    launches[0].args.push(Arg::count(pick.first.unwrap_or(0)));
     launches
 }
 

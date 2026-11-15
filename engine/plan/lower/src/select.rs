@@ -66,8 +66,9 @@ pub struct Selected {
     pub outputs: Vec<(Val, Vec<usize>)>,
     /// Rules that competed with another at some site.
     pub contested: BTreeSet<&'static str>,
-    /// Ranks that each run the plan.
+    /// Ranks that run together, and which this is.
     pub ranks: u32,
+    pub rank: u32,
 }
 
 /// Names node `t`, and the root above it.
@@ -101,8 +102,17 @@ pub(crate) fn select_upto(
 ) -> Result<Selected, Error> {
     let rules = rules();
     linked(&rules)?;
-    let ranks = device.ranks();
-    let tree = Tree::upto(g, entry, sizes, upto, &device.pins, device.kept, ranks)?;
+    let (parts, rank) = (device.division(), device.rank);
+    let tree = Tree::upto(
+        g,
+        entry,
+        sizes,
+        upto,
+        &device.pins,
+        device.kept,
+        &parts,
+        rank,
+    )?;
     let nodes = (0..tree.len() as u32).map(T);
     let mut cover = Cover {
         tree: &tree,
@@ -191,6 +201,7 @@ pub(crate) fn select_upto(
         let val = e.bring(val, EDGE);
         e.out.outputs.push((val, shape.clone()));
     }
-    e.out.ranks = tree.ranks as u32;
+    e.out.ranks = tree.parts.ranks() as u32;
+    e.out.rank = tree.rank;
     Ok(e.out)
 }

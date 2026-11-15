@@ -15,8 +15,6 @@ pub enum Arg {
     Value(Vec<u8>),
     /// A u32 read from a dimension at launch.
     Size(Extent),
-    /// The running rank's index, as a u32.
-    Rank,
 }
 
 impl Arg {

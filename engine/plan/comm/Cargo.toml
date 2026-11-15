@@ -4,6 +4,9 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Moves bytes between ranks: the transport trait and TCP sockets"
+description = "Moves bytes between ranks: the transport trait, TCP sockets and shared memory"
 
 [dependencies]
+
+[dev-dependencies]
+testkit = { workspace = true }
