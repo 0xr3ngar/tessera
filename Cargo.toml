@@ -41,6 +41,7 @@ graph = { path = "engine/ir/graph" }
 interp = { path = "engine/ir/interp" }
 kernel-macro = { path = "engine/plan/kernel-macro" }
 kernels = { path = "engine/rules/kernels" }
+cpu = { path = "engine/rules/cpu" }
 linear = { path = "engine/rules/linear" }
 lower = { path = "engine/plan/lower" }
 mem = { path = "engine/ir/mem" }

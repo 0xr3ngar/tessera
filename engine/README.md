@@ -22,6 +22,7 @@ Crate | Description
 [lower](plan/lower) | Lowers a graph to a plan of kernel launches
 [run](plan/run) | Runs lowered plans on the host, Metal, CUDA or ROCm
 [sim](plan/sim) | Analytic models of GPUs: what a launch should cost
+[cpu](rules/cpu) | Native CPU kernels for matmuls and attention, as lowering rules
 [kernels](rules/kernels) | Kernels and the lowering rules that propose them
 [linear](rules/linear) | Generated matmul kernels, registered as lowering rules
 [engine-settings](settings) | Knobs the front end sets once and the engine reads

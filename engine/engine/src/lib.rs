@@ -1,6 +1,7 @@
 //! Graphs on runners: decode loops and single launches.
 
 // Linking the crates registers their rules.
+use cpu as _;
 use kernels as _;
 use linear as _;
 

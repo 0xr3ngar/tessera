@@ -30,6 +30,35 @@ impl Runner {
         Ok(runner)
     }
 
+    /// Step `step`'s host code over its slots' bytes.
+    fn native(&mut self, step: usize, native: &dyn lower::Native) -> Result<(), Error> {
+        let s = &self.base.plan.steps[step];
+        let (reads, write) = (s.reads.clone(), s.write);
+        if reads.iter().any(|r| r.buffer == write.buffer) {
+            return Err(Error::Unsupported(
+                "a native kernel writing over its input".into(),
+            ));
+        }
+        let mut buffers: Vec<u32> = vec![write.buffer];
+        for r in &reads {
+            if !buffers.contains(&r.buffer) {
+                buffers.push(r.buffer);
+            }
+        }
+        let mut mapped = self.base.held.mapped_mut(&buffers);
+        let (out, rest) = mapped.split_first_mut().expect("the write");
+        let rest: Vec<&[u8]> = rest.iter().map(|b| &**b).collect();
+        let slices: Vec<&[u8]> = reads
+            .iter()
+            .map(|r| {
+                let at = buffers.iter().position(|b| *b == r.buffer).expect("listed") - 1;
+                &rest[at][r.start()..r.start() + r.bytes()]
+            })
+            .collect();
+        let out = &mut out[write.start()..write.start() + write.bytes()];
+        native.run(&slices, out).map_err(Error::Unsupported)
+    }
+
     /// One launch of `step`'s tree over the host.
     fn launch(&mut self, step: usize, launch: &Launch) -> Result<(), Error> {
         let Some(body) = &self.bodies[step] else {
@@ -121,6 +150,11 @@ impl Run for Runner {
 
     fn submit(&mut self, steps: Range<usize>) -> Result<(), Error> {
         for i in steps {
+            let kernel = self.base.plan.steps[i].kernel.clone();
+            if let Some(native) = kernel.native() {
+                self.native(i, native)?;
+                continue;
+            }
             for launch in self.base.launches(i)? {
                 self.launch(i, &launch)?;
             }

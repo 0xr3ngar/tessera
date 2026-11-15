@@ -22,6 +22,7 @@ frontend-settings = { workspace = true }
 kernels = { workspace = true }
 checkpoint = { workspace = true }
 comm = { workspace = true }
+cpu = { workspace = true }
 interp = { workspace = true }
 lower = { workspace = true }
 linear = { workspace = true }

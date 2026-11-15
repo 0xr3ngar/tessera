@@ -1,10 +1,12 @@
 //! Covers each tree node with the cheapest rule, per zone.
 
+use crate::abi::Source;
 use crate::cost::Device;
 use crate::kernels::{AllReduce, Widen};
 use crate::rule::{Draft, Read, Rule, ways};
 use crate::tree::{T, Term, Tree};
 use graph::{Op, Stage, View};
+use sim::ZoneKind;
 
 /// The cheapest cover found at one node, in one zone.
 pub(crate) struct Choice {
@@ -141,7 +143,12 @@ impl Cover<'_> {
                 continue;
             };
             proposed = true;
-            if drafts.iter().any(|d| d.kernel.runs_on() != kind) {
+            // A tree runs on a CPU too, in lockstep.
+            let fits = |d: &Draft| {
+                d.kernel.runs_on() == kind
+                    || (kind == ZoneKind::Cpu && matches!(d.kernel.source(), Source::Made(_)))
+            };
+            if !drafts.iter().all(fits) {
                 continue;
             }
             offered.push(rule.name);

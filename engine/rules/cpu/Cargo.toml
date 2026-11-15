@@ -1,0 +1,17 @@
+[package]
+name = "cpu"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Native CPU kernels for matmuls and attention, as lowering rules"
+
+[dependencies]
+graph = { workspace = true }
+lower = { workspace = true }
+sim = { workspace = true }
+
+[dev-dependencies]
+interp = { workspace = true }
+testkit = { workspace = true }
+trace = { workspace = true }

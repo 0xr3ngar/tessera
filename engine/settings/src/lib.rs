@@ -9,7 +9,10 @@ use std::path::PathBuf;
 pub enum Pick {
     /// This build's GPU if one is up, else the host.
     Auto,
+    /// The host running kernel trees in lockstep.
     Host,
+    /// The host running native kernels.
+    Cpu,
     Gpu(Backend),
 }
 
@@ -51,7 +54,7 @@ impl Settings {
     /// The GPU plans run on, or `None` for the host.
     pub fn gpu(&self) -> Option<Backend> {
         match self.backend {
-            Pick::Host => None,
+            Pick::Host | Pick::Cpu => None,
             Pick::Gpu(b) => Some(b),
             Pick::Auto => gpukit::backend::available().filter(|b| gpukit::backend::ready(*b)),
         }
