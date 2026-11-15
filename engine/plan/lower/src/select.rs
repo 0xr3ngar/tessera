@@ -10,6 +10,7 @@ use crate::Error;
 use crate::cost::Device;
 use crate::form::{self, Form};
 use crate::kernel::KernelRef;
+use crate::plan::Share;
 use crate::rule::{Read, linked, rules};
 use crate::tree::{T, Term, Tree};
 use graph::{DimName, Graph, NodeId, View};
@@ -40,6 +41,8 @@ pub struct Value {
     /// The zone it lies in.
     pub zone: u32,
     pub form: &'static dyn Form,
+    /// A split weight's part on this rank.
+    pub share: Option<Share>,
 }
 
 /// One launch, before it has buffers.
@@ -63,6 +66,8 @@ pub struct Selected {
     pub outputs: Vec<(Val, Vec<usize>)>,
     /// Rules that competed with another at some site.
     pub contested: BTreeSet<&'static str>,
+    /// Ranks that each run the plan.
+    pub ranks: u32,
 }
 
 /// Names node `t`, and the root above it.
@@ -96,7 +101,8 @@ pub(crate) fn select_upto(
 ) -> Result<Selected, Error> {
     let rules = rules();
     linked(&rules)?;
-    let tree = Tree::upto(g, entry, sizes, upto, &device.pins, device.kept)?;
+    let ranks = device.ranks();
+    let tree = Tree::upto(g, entry, sizes, upto, &device.pins, device.kept, ranks)?;
     let nodes = (0..tree.len() as u32).map(T);
     let mut cover = Cover {
         tree: &tree,
@@ -145,7 +151,11 @@ pub(crate) fn select_upto(
         let val = |a: T| vals[a.0 as usize].expect("arguments come first");
         let made = match (&n.term, own[t.0 as usize]) {
             (Term::Leaf(Home::Input(port)), _) => e.out.inputs[*port as usize],
-            (Term::Leaf(home), _) => e.value(tree.elements(t), *home, EDGE, n.form),
+            (Term::Leaf(home), _) => {
+                let val = e.value(tree.elements(t), *home, EDGE, n.form);
+                e.out.values[val.0 as usize].share = tree.share(t);
+                val
+            }
             (_, None) => continue,
             (Term::Op(graph::Op::View(View::Reshape(_))), _) => val(n.args[0]),
             (Term::Op(graph::Op::Append(index)), _) => {
@@ -181,5 +191,6 @@ pub(crate) fn select_upto(
         let val = e.bring(val, EDGE);
         e.out.outputs.push((val, shape.clone()));
     }
+    e.out.ranks = tree.ranks as u32;
     Ok(e.out)
 }

@@ -69,11 +69,21 @@ impl Step {
     }
 }
 
+/// A rank's part of a split weight.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Share {
+    pub axis: u32,
+    /// Ranks the axis is divided among.
+    pub of: u32,
+}
+
 /// A graph weight and where it loads, with its form.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Loaded {
     pub weight: u32,
     pub slot: Slot,
+    /// Set when each rank loads its own slice.
+    pub share: Option<Share>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -90,6 +100,8 @@ pub struct Plan {
     pub buffers: Vec<usize>,
     /// The zone each buffer lies in. Empty means zone 0.
     pub zones: Vec<u32>,
+    /// Ranks that each run this plan. Zero means one.
+    pub ranks: u32,
     pub steps: Vec<Step>,
     /// Each used graph weight.
     pub weights: Vec<Loaded>,
@@ -107,6 +119,7 @@ impl PartialEq for Plan {
     fn eq(&self, other: &Self) -> bool {
         self.buffers == other.buffers
             && self.zones == other.zones
+            && self.ranks == other.ranks
             && self.steps == other.steps
             && self.weights == other.weights
             && self.kept == other.kept
