@@ -4,7 +4,7 @@ use codegen::hash;
 use codegen::ir::{BinOp, Body, Expr, Stmt, Ty};
 use lower::kernels::{add_operands, finish};
 use lower::sites;
-use lower::sites::After;
+use lower::sites::{After, Picked};
 use lower::{Arg, Form as Stored, Launch, Read, Shape, Source, Step, T, Tree};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -25,6 +25,8 @@ pub struct Product {
     pub k: usize,
     pub form: &'static dyn Stored,
     pub after: After,
+    /// Set when each row reads its own matrix.
+    pub picked: Option<Picked>,
 }
 
 /// The index of the output at `row` and `col`.
@@ -38,7 +40,14 @@ impl Product {
     /// The finished matmul at `at`, with its reads.
     pub(crate) fn find(tree: &Tree, at: T) -> Option<(Self, Vec<Read>)> {
         let site: sites::Finished = tree.site(at)?;
-        let sites::Matmul { m, n, k, form, .. } = site.product;
+        let sites::Matmul {
+            m,
+            n,
+            k,
+            form,
+            picked,
+            ..
+        } = site.product;
         let after = site.after.clone();
         Some((
             Self {
@@ -47,6 +56,7 @@ impl Product {
                 k,
                 form,
                 after,
+                picked,
             },
             site.reads(),
         ))
@@ -56,7 +66,8 @@ impl Product {
     pub(crate) fn tree(&self, key: Variant, build: impl FnOnce() -> Body) -> Body {
         let mut body = TREES.with(|t| t.borrow_mut().entry(key).or_insert_with(build).clone());
         // The operands sit between the weights and the output.
-        add_operands(&mut body, 2, self.after.others());
+        let at = 2 + usize::from(self.picked.is_some());
+        add_operands(&mut body, at, self.after.others());
         body
     }
 

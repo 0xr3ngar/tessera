@@ -8,7 +8,7 @@ use graph::{Graph, PathSeg};
 use lower::Pins;
 use lower::form::{F32_FORM, Form, named};
 use models::Stack;
-use models::decoder::Config;
+use models::decoder::{Config, Scales};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -47,6 +47,9 @@ fn config(gguf: &Gguf, arch: &str, slots: u64, context: u64) -> Result<Config, F
         kv_heads: integer("attention.head_count_kv")?,
         rope_theta: float("rope.freq_base")?,
         eps: float("attention.layer_norm_rms_epsilon")?,
+        experts: 0,
+        top_k: 0,
+        scales: Scales::default(),
     };
     if vocab == 0
         || slots == 0
@@ -56,6 +59,13 @@ fn config(gguf: &Gguf, arch: &str, slots: u64, context: u64) -> Result<Config, F
         return Err(format!("invalid {arch} dimensions").into());
     }
     Ok(config)
+}
+
+fn segment(p: &PathSeg) -> String {
+    match p {
+        PathSeg::Field(s) => s.clone(),
+        PathSeg::Index(i) => i.to_string(),
+    }
 }
 
 pub(crate) fn pins(graph: &Graph, forms: &[&'static dyn Form], layers: u64) -> Pins {
@@ -69,15 +79,12 @@ pub(crate) fn pins(graph: &Graph, forms: &[&'static dyn Form], layers: u64) -> P
         .and_then(|(name, _)| named(name))
         .unwrap_or(F32_FORM);
     let mut pins = Pins::all(base);
-    let mut fields: BTreeMap<&str, Vec<(u64, &'static dyn Form)>> = BTreeMap::new();
+    let mut fields: BTreeMap<String, Vec<(u64, &'static dyn Form)>> = BTreeMap::new();
     for (w, &f) in graph.weights.iter().zip(forms) {
-        if let [
-            PathSeg::Field(root),
-            PathSeg::Index(i),
-            PathSeg::Field(field),
-        ] = w.path.as_slice()
+        if let [PathSeg::Field(root), PathSeg::Index(i), rest @ ..] = w.path.as_slice()
             && root == "layers"
         {
+            let field = rest.iter().map(segment).collect::<Vec<_>>().join(".");
             fields.entry(field).or_default().push((*i as u64, f));
         }
     }
@@ -95,14 +102,7 @@ pub(crate) fn pins(graph: &Graph, forms: &[&'static dyn Form], layers: u64) -> P
     }
     for (w, &f) in graph.weights.iter().zip(forms) {
         if pins.form(&w.path).name() != f.name() {
-            let segments: Vec<_> = w
-                .path
-                .iter()
-                .map(|p| match p {
-                    PathSeg::Field(s) => s.clone(),
-                    PathSeg::Index(i) => i.to_string(),
-                })
-                .collect();
+            let segments: Vec<_> = w.path.iter().map(segment).collect();
             pins = pins.pin(&segments.join("."), f);
         }
     }

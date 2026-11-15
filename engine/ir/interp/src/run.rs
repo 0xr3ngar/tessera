@@ -271,6 +271,16 @@ fn run_on(
         inputs,
         weights: &shares[r],
     };
+    // A value lives until its last reader has run.
+    let mut last = vec![usize::MAX; g.nodes.len()];
+    for (i, n) in g.nodes.iter().enumerate().filter(|(i, _)| needed[*i]) {
+        for a in &n.args {
+            last[a.0 as usize] = i;
+        }
+    }
+    for o in &e.outputs {
+        last[o.node.0 as usize] = usize::MAX;
+    }
     let mut values: Vec<Vec<Option<Tensor>>> = vec![vec![None; g.nodes.len()]; ranks];
     for (i, n) in g.nodes.iter().enumerate() {
         if !needed[i] {
@@ -326,6 +336,11 @@ fn run_on(
             }
             values[r][i] = Some(out);
         }
+        for a in n.args.iter().filter(|a| last[a.0 as usize] == i) {
+            for held in &mut values {
+                held[a.0 as usize] = None;
+            }
+        }
     }
     let mut outputs = Vec::with_capacity(e.outputs.len());
     for o in &e.outputs {
@@ -370,7 +385,6 @@ impl Context<'_> {
             }
             Op::Input { .. } => Err(Error::Unsupported("another entry's input".into())),
             Op::Weight(i) => Ok(self.weights[*i as usize].clone()),
-            Op::Matmul if args[1].shape.len() > 2 => lacks("batched matmul"),
             Op::Matmul => cpu::matmul(num, args[0], args[1]),
             Op::Attend(a) if a.picked => lacks("attention over picked keys"),
             Op::Attend(a) if a.ragged => {
@@ -380,13 +394,14 @@ impl Context<'_> {
             Op::Mask(_) => lacks("masks"),
             Op::Row(row) => self.stages(num, &row.0, args),
             Op::Select(Select::Gather) => cpu::gather(args[0], args[1]),
+            Op::Select(Select::Take) => cpu::take(args[0], args[1]),
             Op::Select(Select::TopK { k }) => top_k(args[0], self.sizes.expr(k)?),
-            Op::Select(s) => lacks(&format!("{s:?}")),
             Op::Append(_) => lacks("kept rows outside a launch"),
             Op::View(View::Concat) => concat(args[0], args[1]),
             Op::View(v) => self.view(v, args[0]),
             Op::Cast(dtype) => Ok(args[0].cast(*dtype)?),
-            Op::Mean(axis) => cpu::mean(num, args[0], *axis as usize),
+            Op::Mean(axis) => cpu::mean(num, args[0], *axis as usize, None),
+            Op::Mix(axis) => cpu::mean(num, args[0], *axis as usize, Some(args[1])),
         }
     }
 

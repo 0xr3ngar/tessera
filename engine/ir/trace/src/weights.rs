@@ -50,6 +50,13 @@ pub struct Embed(pub(crate) Tensor);
 /// `#[shape(Count, In, Out)]`, stored `[Count, Out, In]`.
 pub struct Linears(pub(crate) Tensor);
 
+impl Linears {
+    /// Output rows `start..start + len` of every matrix.
+    pub fn rows(&self, start: impl Into<DimExpr>, len: impl Into<DimExpr>) -> Linears {
+        Linears(self.0.slice(1, start, len))
+    }
+}
+
 /// A field a model leaves out. It declares nothing.
 impl Weights for () {
     fn declare(_: &Model, _: &mut Vec<PathSeg>, _: &[DimExpr]) -> Self {}

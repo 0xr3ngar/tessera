@@ -19,6 +19,7 @@ lower = { workspace = true }
 [dev-dependencies]
 frontend-settings = { workspace = true }
 kernels = { workspace = true }
+testkit = { workspace = true }
 interp = { workspace = true }
 gpukit = { workspace = true }
 run = { workspace = true }

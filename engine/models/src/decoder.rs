@@ -1,10 +1,10 @@
-//! Decoders with grouped-query attention, RoPE and SwiGLU MLPs.
+//! Decoders: grouped-query attention, RoPE, a dense or routed MLP.
 
 use crate::shared::{Attend, Side, Stack, step_ports, swiglu, tokens};
 use trace::DimName::*;
 use trace::{
-    Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Mask, Model, Norm, Pairs,
-    Role, Size, Tensor, TensorType, Weights,
+    Act, Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Linears, Mask, Model,
+    Norm, Pairs, Role, Size, Tensor, TensorType, Weights,
 };
 
 /// What a query or key head passes through before RoPE.
@@ -26,11 +26,89 @@ impl HeadNorm for () {
     }
 }
 
+/// The second half of a layer, over the normed rows.
+pub trait Mlp: Weights {
+    const KIND: Composite;
+    fn apply(&self, m: &Model, h: &Tensor) -> Tensor;
+}
+
+/// A SwiGLU MLP every row passes through.
+#[derive(Weights)]
+pub struct Swiglu {
+    #[shape(Hidden, Ffn)]
+    pub gate: Linear,
+    #[shape(Hidden, Ffn)]
+    pub up: Linear,
+    #[shape(Ffn, Hidden)]
+    pub down: Linear,
+}
+
+impl Mlp for Swiglu {
+    const KIND: Composite = Composite::Mlp;
+
+    fn apply(&self, _: &Model, h: &Tensor) -> Tensor {
+        swiglu(h, [&self.gate, &self.up, &self.down])
+    }
+}
+
+/// Each row's `TopK` of `Experts` SwiGLU MLPs, softmax-weighted.
+#[derive(Weights)]
+pub struct Moe {
+    #[shape(Hidden, Experts)]
+    pub router: Linear,
+    /// Each expert's gate rows, then its up rows.
+    #[shape(Experts, Hidden, Ffn * 2)]
+    pub input: Linears,
+    #[shape(Experts, Ffn, Hidden)]
+    pub output: Linears,
+}
+
+impl Mlp for Moe {
+    const KIND: Composite = Composite::Moe;
+
+    fn apply(&self, m: &Model, h: &Tensor) -> Tensor {
+        let scores = h.matmul(&self.router);
+        let ids = scores.top_k(TopK);
+        let gates = scores.take(&ids).softmax();
+        // One output row per pick, each on its own expert.
+        let on = |set: &Linears, x: &Tensor| x.matmul_rows(&m.pick(set, &ids));
+        let gate = on(&self.input.rows(0u64, Ffn), h).act(Act::Silu);
+        let inner = gate.mul(&on(&self.input.rows(Ffn, Ffn), h));
+        let picks = h.ty().rank() as u32 - 1;
+        on(&self.output, &inner).mix(picks, &gates)
+    }
+}
+
+/// Multipliers on the stream. One is a no-op.
+#[derive(Clone, Copy, Debug)]
+pub struct Scales {
+    pub embed: f32,
+    /// On the scores, in place of `1 / sqrt(head_dim)`.
+    pub attention: Option<f32>,
+    pub residual: f32,
+    pub logits: f32,
+}
+
+impl Default for Scales {
+    fn default() -> Self {
+        Self {
+            embed: 1.0,
+            attention: None,
+            residual: 1.0,
+            logits: 1.0,
+        }
+    }
+}
+
 pub struct Config {
     pub stack: Stack,
     pub kv_heads: u64,
     pub rope_theta: f32,
     pub eps: f32,
+    /// Experts per layer and per row. Zero means dense.
+    pub experts: u64,
+    pub top_k: u64,
+    pub scales: Scales,
 }
 
 impl Config {
@@ -41,6 +119,9 @@ impl Config {
             kv_heads: 8,
             rope_theta: 1e6,
             eps: 1e-6,
+            experts: 0,
+            top_k: 0,
+            scales: Scales::default(),
         }
     }
 
@@ -51,6 +132,27 @@ impl Config {
             kv_heads: 5,
             rope_theta: 1e5,
             eps: 1e-5,
+            experts: 0,
+            top_k: 0,
+            scales: Scales::default(),
+        }
+    }
+
+    /// Granite 3.1 1B-A400M: a Llama routing 8 of 32 experts.
+    pub fn granite(max_seqs: u64, max_context: u64) -> Self {
+        Self {
+            stack: Stack::sized([49_155, 1024, 24, 16, 64, 512], max_seqs, max_context),
+            kv_heads: 8,
+            rope_theta: 1.5e6,
+            eps: 1e-6,
+            experts: 32,
+            top_k: 8,
+            scales: Scales {
+                embed: 12.0,
+                attention: Some(1.0 / 64.0),
+                residual: 0.22,
+                logits: 1.0 / 6.0,
+            },
         }
     }
 
@@ -61,16 +163,23 @@ impl Config {
             kv_heads: 2,
             rope_theta: 1e4,
             eps: 1e-6,
+            experts: 0,
+            top_k: 0,
+            scales: Scales::default(),
         }
     }
 
     pub fn dims(&self) -> Vec<Dim> {
-        self.stack.dims(&[(KvHeads, self.kv_heads)])
+        let mut own = vec![(KvHeads, self.kv_heads)];
+        if self.experts > 0 {
+            own.extend([(Experts, self.experts), (TopK, self.top_k)]);
+        }
+        self.stack.dims(&own)
     }
 }
 
 #[derive(Weights)]
-pub struct Layer<N: HeadNorm> {
+pub struct Layer<N: HeadNorm, M: Mlp> {
     #[shape(Hidden)]
     pub ln1: Norm,
     #[shape(Hidden, Heads * HeadDim)]
@@ -87,21 +196,16 @@ pub struct Layer<N: HeadNorm> {
     pub o: Linear,
     #[shape(Hidden)]
     pub ln2: Norm,
-    #[shape(Hidden, Ffn)]
-    pub gate: Linear,
-    #[shape(Hidden, Ffn)]
-    pub up: Linear,
-    #[shape(Ffn, Hidden)]
-    pub down: Linear,
+    pub mlp: M,
 }
 
 /// The embedding table is also the output head.
 #[derive(Weights)]
-pub struct Decoder<N: HeadNorm> {
+pub struct Decoder<N: HeadNorm, M: Mlp> {
     #[shape(Vocab, Hidden)]
     pub embed: Embed,
     #[shape(Layers)]
-    pub layers: Vec<Layer<N>>,
+    pub layers: Vec<Layer<N, M>>,
     #[shape(Hidden)]
     pub norm: Norm,
 }
@@ -120,10 +224,18 @@ struct Pass<'a> {
     slots: Option<&'a Tensor>,
 }
 
-pub fn forward<N: HeadNorm>(
+/// `x` times `by`, with nothing traced for one.
+fn scaled(x: Tensor, by: f32) -> Tensor {
+    match by == 1.0 {
+        true => x,
+        false => x.scale(by),
+    }
+}
+
+pub fn forward<N: HeadNorm, M: Mlp>(
     m: &Model,
     c: &Config,
-    w: &Decoder<N>,
+    w: &Decoder<N, M>,
     tokens: &Tensor,
     positions: &Tensor,
 ) -> Tensor {
@@ -140,28 +252,34 @@ pub fn forward<N: HeadNorm>(
 
 impl Pass<'_> {
     /// With `kept`, each layer also reads earlier launches' rows.
-    fn logits<N: HeadNorm>(
+    fn logits<N: HeadNorm, M: Mlp>(
         &self,
-        w: &Decoder<N>,
+        w: &Decoder<N, M>,
         tokens: &Tensor,
         kept: Option<&[Cache]>,
     ) -> Tensor {
         let (m, c) = (self.m, self.c);
-        let mut x = m.embed(tokens, &w.embed);
+        let s = &c.scales;
+        let mut x = scaled(m.embed(tokens, &w.embed), s.embed);
         for (i, l) in w.layers.iter().enumerate() {
             let h = x.rms_norm(&l.ln1, c.eps);
             let attend = || [self.attention(l, &h, kept.map(|k| &k[i]))];
             let [attn] = m.composite(Composite::Attention, attend);
-            x = x.add(&attn);
+            x = scaled(attn, s.residual).add(&x);
             let h = x.rms_norm(&l.ln2, c.eps);
-            let [mlp] = m.composite(Composite::Mlp, || [swiglu(&h, [&l.gate, &l.up, &l.down])]);
-            x = x.add(&mlp);
+            let [mlp] = m.composite(M::KIND, || [l.mlp.apply(m, &h)]);
+            x = scaled(mlp, s.residual).add(&x);
         }
-        x.rms_norm(&w.norm, c.eps).unembed(&w.embed)
+        scaled(x.rms_norm(&w.norm, c.eps).unembed(&w.embed), s.logits)
     }
 
     /// Queries and keys pass through `N` per head, then rotate.
-    fn attention<N: HeadNorm>(&self, l: &Layer<N>, h: &Tensor, kept: Option<&Cache>) -> Tensor {
+    fn attention<N: HeadNorm, M: Mlp>(
+        &self,
+        l: &Layer<N, M>,
+        h: &Tensor,
+        kept: Option<&Cache>,
+    ) -> Tensor {
         let (c, rows) = (self.c, self.rows);
         let lead: Vec<DimExpr> = match self.slots {
             Some(_) => vec![rows.into()],
@@ -174,7 +292,8 @@ impl Pass<'_> {
             Some(norm) => norm.apply(t, c.eps),
             None => t,
         };
-        let scale = 1.0 / (c.stack.head_dim as f32).sqrt();
+        let root = 1.0 / (c.stack.head_dim as f32).sqrt();
+        let scale = c.scales.attention.unwrap_or(root);
         heads.apply([&l.q, &l.k, &l.v], h, turn, |[q, k, v]| {
             match (kept, self.slots) {
                 (Some([keys, values]), Some(slots)) => {
@@ -189,24 +308,24 @@ impl Pass<'_> {
 }
 
 /// One forward entry: tokens and positions in, logits out.
-pub fn program<N: HeadNorm>(c: &Config) -> Graph {
+pub fn program<N: HeadNorm, M: Mlp>(c: &Config) -> Graph {
     let m = Model::new(c.dims());
-    let w: Decoder<N> = trace::declare(&m);
+    let w: Decoder<N, M> = trace::declare(&m);
     let [tokens, positions] = tokens(&m);
     let logits = forward(&m, c, &w, &tokens, &positions);
     m.finish([(Role::Logits, &logits)])
 }
 
 /// One step entry: rows in, each row's likeliest token out.
-pub fn stepper<N: HeadNorm>(c: &Config) -> Graph {
+pub fn stepper<N: HeadNorm, M: Mlp>(c: &Config) -> Graph {
     let mut dims = c.dims();
     let size = Size::Bounded(c.stack.max_context);
     dims.push(Dim { name: Rows, size });
     let m = Model::new(dims);
-    let w: Decoder<N> = trace::declare(&m);
+    let w: Decoder<N, M> = trace::declare(&m);
     let [tokens, positions, slots] = step_ports(&m);
     let ty = TensorType::new([Seqs, Context, KvHeads, HeadDim], DType::F32);
-    let cache = |_: &Layer<N>| [m.kept(ty.clone()), m.kept(ty.clone())];
+    let cache = |_: &Layer<N, M>| [m.kept(ty.clone()), m.kept(ty.clone())];
     let kept: Vec<Cache> = w.layers.iter().map(cache).collect();
     let (positions, rows) = (&positions, Rows);
     let pass = Pass {

@@ -1,11 +1,12 @@
-//! The lane schedule against the CPU interpreter, on the GPU.
+//! Lane and picked kernels against the CPU interpreter.
 
 // The other matmul rules come from here.
 use kernels as _;
 use linear as _;
 
-use gpukit::testing::{Noise, max_abs_diff};
-use graph::DimName::{self, Rows};
+use gpukit::testing::{Noise, cosine_f32, max_abs_diff};
+use graph::Dim;
+use graph::DimName::{self, Rows, Seqs};
 use interp::run;
 
 mod common;
@@ -13,8 +14,10 @@ use common::{Finish, finished, linear, noise, runs, terms};
 use frontend_settings::read as settings;
 use interp::Tensor;
 use lower::Pins;
+use lower::form::named;
 use lower::{Device, Dialect, Source, lower};
 use run::open;
+use testkit::{fill, graphs, weights};
 use trace::Act;
 
 #[test]
@@ -99,6 +102,46 @@ fn lanes_match_cpu() {
                 let want: Vec<f32> = (0..n).map(|c| ws[c * k + pick(r)]).collect();
                 assert_eq!(out, &want[..], "{label}: row {r}");
             }
+        }
+    }
+}
+
+/// Two of four experts per row, from one stacked set.
+#[test]
+fn picked_matches_cpu() {
+    let sizes: [(DimName, u64); 2] = [(Seqs, 2), (Rows, 5)];
+    let bounded = vec![Dim::bounded(Seqs, 4), Dim::bounded(Rows, 8)];
+    let g = graphs::routed(&bounded, [4, 64, 32]);
+    let mut noise = Noise(11);
+    let drawn = weights(&g, &mut noise);
+    let input = fill(&g, &g.entries[0].inputs[0].ty, &sizes, &mut noise).unwrap();
+    for settings in runs() {
+        for form in ["f32", "bf16", "q8_0"] {
+            let form = named(form).unwrap();
+            let device = Device::guess(&settings)
+                .favoring("picked")
+                .pinned(Pins::all(form));
+            // The interpreter sees the weights as the form keeps them.
+            let kept: Vec<Tensor> = (drawn.iter())
+                .map(|t| Tensor::f32(t.shape.clone(), form.roundtrip(t.floats().unwrap())))
+                .collect();
+            let want = run(&g, &kept, 0, std::slice::from_ref(&input)).unwrap();
+            let plan = lower(&g, 0, &sizes, &device).unwrap();
+            let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
+            assert!(names.iter().any(|n| n.starts_with("picked")), "{names:?}");
+            let mut runner = open(plan, &settings).unwrap();
+            for (at, w) in kept.iter().enumerate() {
+                runner.load(at as u32, w.view()).unwrap();
+            }
+            let got = runner.run(&[input.view()]).unwrap().remove(0);
+            let (got, want) = (got.floats().unwrap(), want[0].floats().unwrap());
+            let scale = want.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+            let (off, cos) = (max_abs_diff(got, want) / scale, cosine_f32(got, want));
+            assert!(
+                off < 1e-3 && cos > 0.9999,
+                "{}: off {off:e} cos {cos}",
+                form.name()
+            );
         }
     }
 }

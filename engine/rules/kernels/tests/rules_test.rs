@@ -53,6 +53,7 @@ fn each_rule_matches_cpu() {
         attention(),
         graphs::rotation(&d),
         graphs::table(&d, 32, 16),
+        graphs::picks(&d, 16),
     ];
     let ours: Vec<&lower::Rule> = rules()
         .into_iter()

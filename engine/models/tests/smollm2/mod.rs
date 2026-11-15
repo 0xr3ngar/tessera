@@ -1,7 +1,7 @@
 //! SmolLM2-360M: a Llama decoder with tied embeddings.
 
 use crate::common::{LOGITS, Spec, Stepper, decoder, small_stack, suite};
-use models::decoder::{Config, program, stepper};
+use models::decoder::{Config, Scales, Swiglu, program, stepper};
 use trace::Composite::{Attention, Mlp};
 use trace::Graph;
 
@@ -12,10 +12,13 @@ fn small_config() -> Config {
         kv_heads: 1,
         rope_theta: 1e4,
         eps: 1e-5,
+        experts: 0,
+        top_k: 0,
+        scales: Scales::default(),
     }
 }
 
-decoder!((), small_config(), Config::smollm2);
+decoder!((), Swiglu, small_config(), Config::smollm2);
 
 const SPEC: Spec = Spec {
     name: "smollm2",

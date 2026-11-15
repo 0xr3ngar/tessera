@@ -107,7 +107,7 @@ fn arity(op: &Op) -> usize {
         Op::Input { .. } | Op::Weight(_) => 0,
         Op::Select(Select::TopK { .. }) | Op::Mask(_) | Op::Cast(_) | Op::Mean(_) => 1,
         Op::Append(_) => 3,
-        Op::Matmul | Op::Select(_) | Op::View(View::Concat) => 2,
+        Op::Matmul | Op::Select(_) | Op::View(View::Concat) | Op::Mix(_) => 2,
         Op::Attend(a) => 3 + usize::from(a.picked) + 2 * usize::from(a.ragged),
         Op::Row(r) => 1 + r.0.iter().map(Stage::operands).sum::<usize>(),
         Op::View(_) => 1,
@@ -158,6 +158,7 @@ pub fn infer(g: &Graph, op: &Op, args: &[&TensorType]) -> Result<TensorType, Typ
         Op::View(View::Concat) => concat(&g.dims, args[0], args[1]),
         Op::View(v) => view(&g.dims, v, args[0]),
         Op::Mean(axis) => mean(*axis, args[0]),
+        Op::Mix(axis) => mix(&g.dims, *axis, args[0], args[1]),
         Op::Cast(dtype) => {
             // Rounding each rank's share is not rounding the sum.
             need(
@@ -182,11 +183,12 @@ pub fn infer(g: &Graph, op: &Op, args: &[&TensorType]) -> Result<TensorType, Typ
 
 fn matmul(dims: &[Dim], x: &TensorType, w: &TensorType) -> Result<TensorType, TypeError> {
     use Placement::*;
-    // Batch axes of `w` must lead `x` too.
+    // The batch axes of `x` lead those of `w`.
     let lead = w.rank().saturating_sub(2);
+    let own = x.rank().saturating_sub(1).min(lead);
     let fits = w.rank() >= 2
-        && x.rank() > lead
-        && same_shape(dims, &front(&x.shape, lead), &front(&w.shape, lead))?;
+        && x.rank() >= 1
+        && same_shape(dims, &front(&x.shape, own), &front(&w.shape, own))?;
     need(fits, ErrorKind::Shape, || {
         format!(
             "matmul takes x [.., K] and w [.., N, K], got {} and {}",
@@ -211,9 +213,10 @@ fn matmul(dims: &[Dim], x: &TensorType, w: &TensorType) -> Result<TensorType, Ty
     )?;
     let last = x.rank() as u32 - 1;
     let n = lead as u32;
+    let out_last = (lead + x.rank() - 1 - own) as u32;
     let placement = match (x.placement, w.placement) {
         (Replicated, Replicated) => Replicated,
-        (Replicated, Split { axis }) if axis == n => Split { axis: last },
+        (Replicated, Split { axis }) if axis == n => Split { axis: out_last },
         (Split { axis }, Replicated) if (n..last).contains(&axis) => Split { axis },
         (Partial, Replicated) => Partial,
         (Split { axis }, Split { axis: k }) if axis == last && k == n + 1 => Partial,
@@ -224,8 +227,9 @@ fn matmul(dims: &[Dim], x: &TensorType, w: &TensorType) -> Result<TensorType, Ty
             });
         }
     };
-    let mut shape = x.shape.0.clone();
-    *shape.last_mut().expect("rank checked") = w.shape.0[lead].clone();
+    let mut shape = w.shape.0[..lead].to_vec();
+    shape.extend_from_slice(&x.shape.0[own..x.rank() - 1]);
+    shape.push(w.shape.0[lead].clone());
     Ok(TensorType {
         shape: Shape(shape),
         dtype: x.dtype,
@@ -470,6 +474,28 @@ fn mean(axis: u32, x: &TensorType) -> Result<TensorType, TypeError> {
         shape: Shape(shape),
         ..x.clone()
     })
+}
+
+/// `x` without `axis`, each slice scaled by `w[.., axis]`.
+fn mix(dims: &[Dim], axis: u32, x: &TensorType, w: &TensorType) -> Result<TensorType, TypeError> {
+    let out = mean(axis, x)?;
+    let lead = axis as usize + 1;
+    let fits = w.rank() == lead && same_shape(dims, &front(&x.shape, lead), &w.shape)?;
+    need(fits, ErrorKind::Shape, || {
+        format!(
+            "mix weights {} do not match {} up to axis {axis}",
+            w.shape, x.shape
+        )
+    })?;
+    need(w.dtype == x.dtype, ErrorKind::DType, || {
+        "mix weights dtype differs".into()
+    })?;
+    need(
+        w.placement == Placement::Replicated,
+        ErrorKind::Placement,
+        || "mix weights must be replicated".into(),
+    )?;
+    Ok(out)
 }
 
 /// Whether a known `width` is a multiple of `block`.

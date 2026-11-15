@@ -279,6 +279,9 @@ fn tiled_needs(schedule: &Schedule) -> Needs {
 
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let (product, reads) = Product::find(tree, at)?;
+    if product.picked.is_some() {
+        return None;
+    }
     // Each schedule is one way, so the cheapest wins.
     let draft = |(choice, schedule): (usize, &Schedule)| {
         let tiled = Tiled {

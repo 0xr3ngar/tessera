@@ -901,6 +901,7 @@ dependencies = [
  "kernels",
  "lower",
  "run",
+ "testkit",
  "trace",
 ]
 

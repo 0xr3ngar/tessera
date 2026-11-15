@@ -72,6 +72,9 @@ const ROLES: &[(&str, &[&[&str]])] = &[
     ("gate", &[&["gate"], &["ffn", "gate"]]),
     ("up", &[&["up"], &["ffn", "up"]]),
     ("down", &[&["down"], &["ffn", "down"]]),
+    ("router", &[&["block", "sparse", "moe", "router", "layer"]]),
+    ("input", &[&["block", "sparse", "moe", "input", "linear"]]),
+    ("output", &[&["block", "sparse", "moe", "output", "linear"]]),
     (
         "ln1",
         &[&["input", "layernorm"], &["attn", "norm"], &["ln1"]],
