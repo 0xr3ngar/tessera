@@ -80,6 +80,9 @@ pub struct Device {
     /// The zones plans may span. Zone 0 is this GPU.
     #[serde(default)]
     pub cluster: Cluster,
+    /// Zones that each run the plan. Empty means one.
+    #[serde(default)]
+    pub ranks: Vec<u32>,
     /// The hardware as asked, with its table row.
     #[serde(default)]
     pub platform: Platform,
@@ -120,6 +123,7 @@ impl PartialEq for Device {
         self.name == other.name
             && self.fit == other.fit
             && self.cluster == other.cluster
+            && self.ranks == other.ranks
             && self.platform == other.platform
             && self.timed == other.timed
             && self.favor == other.favor
@@ -140,6 +144,7 @@ impl Default for Device {
             fit: None,
             pool: None,
             cluster: Cluster::default(),
+            ranks: Vec::new(),
             platform: Platform::default(),
             timed: BTreeMap::new(),
             favor: None,
@@ -237,6 +242,23 @@ impl Device {
         self.cluster.zones.len() as u32
     }
 
+    /// The same device, the plan copied into each zone.
+    pub fn ranked(mut self, zones: Vec<u32>) -> Self {
+        self.ranks = zones;
+        self.changed()
+    }
+
+    /// Copies of the plan that run together.
+    pub fn ranks(&self) -> usize {
+        self.ranks.len().max(1)
+    }
+
+    /// Seconds the ranks take to sum `bytes`, if linked.
+    pub fn all_reduce(&self, bytes: usize) -> Option<f64> {
+        let zones: Vec<usize> = self.ranks.iter().map(|z| *z as usize).collect();
+        self.cluster.all_reduce(&zones, bytes as f64)
+    }
+
     /// Seconds to move `bytes` between zones, if linked.
     pub fn transfer(&self, from: u32, to: u32, bytes: usize) -> Option<f64> {
         self.cluster
@@ -300,6 +322,7 @@ impl Device {
             let from = step.reads.first().map(|r| plan.zone(r.buffer));
             total.seconds += match from.filter(|z| *z != step.zone) {
                 Some(from) => self.transfer(from, step.zone, step.write.bytes()),
+                None if step.kernel.name() == "all_reduce" => self.all_reduce(step.write.bytes()),
                 None => Some(self.seconds_in(step.zone, &*step.kernel, step.write.len)),
             }
             .unwrap_or(f64::INFINITY);

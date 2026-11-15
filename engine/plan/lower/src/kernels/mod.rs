@@ -1,10 +1,12 @@
-//! The kernels lowering itself launches: maps, copies and appends.
+//! The kernels lowering itself launches: maps, copies, sums and appends.
 
+mod collective;
 mod map;
 mod moves;
 mod scatter;
 mod widen;
 
+pub use collective::AllReduce;
 pub use map::{Map, MapStage, add_operands, finish, operands};
 pub(crate) use moves::Move;
 pub(crate) use scatter::Scatter;

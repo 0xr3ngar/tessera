@@ -1,10 +1,10 @@
 //! Covers each tree node with the cheapest rule, per zone.
 
 use crate::cost::Device;
-use crate::kernels::Widen;
+use crate::kernels::{AllReduce, Widen};
 use crate::rule::{Draft, Read, Rule, ways};
 use crate::tree::{T, Term, Tree};
-use graph::{Op, View};
+use graph::{Op, Stage, View};
 
 /// The cheapest cover found at one node, in one zone.
 pub(crate) struct Choice {
@@ -120,6 +120,17 @@ impl Cover<'_> {
                 drafts: Vec::new(),
                 cost,
                 offered: Vec::new(),
+            });
+        }
+        if n.term == Term::Stage(Stage::AllReduce) {
+            let len = self.tree.elements(t);
+            let summed = self.device.all_reduce(self.tree.bytes(t))?;
+            let cost = summed + self.need(n.args[0], zone)?;
+            return Some(Choice {
+                rule: "all_reduce",
+                drafts: vec![Draft::new(AllReduce { len }, [n.args[0]], len)],
+                cost,
+                offered: vec!["all_reduce"],
             });
         }
         let kind = self.device.cluster.kind(zone as usize);

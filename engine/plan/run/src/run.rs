@@ -16,6 +16,8 @@ pub struct Base {
     pub(crate) held: Held,
     /// Runtime dimensions, as last bound.
     pub(crate) bound: HashMap<DimName, u32>,
+    /// Which copy of the plan this runner is.
+    pub rank: u32,
 }
 
 impl Base {
@@ -84,6 +86,17 @@ pub trait Run {
     /// How the hardware's tiles round.
     fn precision(&self) -> Precision;
 
+    /// This rank's part of weight `weight`, if it is split.
+    fn share<'a>(&self, weight: u32, data: View<'a>) -> Result<View<'a>, Error> {
+        let loaded = self.plan().weights.iter().find(|l| l.weight == weight);
+        let Some(share) = loaded.and_then(|l| l.share) else {
+            return Ok(data);
+        };
+        let axis = share.axis as usize;
+        let each = data.shape()[axis] / share.of as usize;
+        Ok(data.slice(axis, self.base().rank as usize * each, each))
+    }
+
     /// Uploads a weight as stored, widened where a slot differs.
     fn load_weight(&mut self, weight: u32, w: &Weight) -> Result<(), Error> {
         let Weight::Packed(form, bytes) = w else {
@@ -94,6 +107,16 @@ pub trait Run {
             .filter(|l| l.weight == weight)
             .map(|l| l.slot)
             .collect();
+        if self
+            .plan()
+            .weights
+            .iter()
+            .any(|l| l.weight == weight && l.share.is_some())
+        {
+            return Err(Error::Unsupported(
+                "a packed weight split over ranks".into(),
+            ));
+        }
         for slot in slots {
             if form.bytes(slot.len) != bytes.len() {
                 return Err(Error::Size(format!("weight {weight} as {}", form.name())));
@@ -151,8 +174,9 @@ pub trait Run {
         }
     }
 
-    /// Uploads one graph weight. Unused weights are ignored.
+    /// Uploads one graph weight, or this rank's slice of it.
     fn load(&mut self, weight: u32, data: View) -> Result<(), Error> {
+        let data = self.share(weight, data)?;
         let slots: Vec<Slot> = (self.plan().weights.iter())
             .filter(|l| l.weight == weight)
             .map(|l| l.slot)

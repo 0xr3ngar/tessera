@@ -6,11 +6,13 @@ mod device;
 mod held;
 #[cfg(any(target_os = "macos", feature = "cuda", feature = "rocm"))]
 mod kernels;
+mod loopback;
 #[cfg(target_os = "macos")]
 mod metal;
 mod run;
 
 pub use held::Held;
+pub use loopback::Loopback;
 pub use run::{Base, Run};
 
 use codegen::Precision;

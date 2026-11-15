@@ -31,7 +31,7 @@ pub use gpukit::{Limits, Platform};
 pub use kernel::{Kernel, KernelRef, Needs, UNPROVEN};
 pub use kernel_macro::Kernel;
 pub use mem::{Buffer, DType, Tensor, View, ViewMut};
-pub use plan::{Loaded, Output, Plan, Slot, Step};
+pub use plan::{Loaded, Output, Plan, Share, Slot, Step};
 pub use recipe::{Launching, Recipe};
 pub use rule::{Attn, Draft, RULES, Read, Rule, linked, rules};
 pub use schedule::{peak, schedule};

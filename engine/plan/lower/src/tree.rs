@@ -4,10 +4,11 @@ use crate::Error;
 use crate::extent::Extent;
 use crate::form::{Form, Pins};
 use crate::kernels::MapStage;
+use crate::plan::Share;
 use crate::select::Home;
 use crate::sites::Pattern;
 use codegen::kept::Layout;
-use graph::{DType, DimName, Graph, NodeId, Op, Shape, Stage};
+use graph::{DType, DimName, Graph, NodeId, Op, Placement, Shape, Stage};
 
 /// A node of the view. Arguments come before their readers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -52,6 +53,8 @@ pub struct Tree<'a> {
     pub(crate) sizes: Vec<(DimName, u64)>,
     /// Where kept rows lie.
     pub kept: &'static dyn Layout,
+    /// Ranks that each run the plan over their slice.
+    pub(crate) ranks: usize,
 }
 
 pub(crate) fn unsupported<T>(what: impl std::fmt::Debug) -> Result<T, Error> {
@@ -138,10 +141,10 @@ impl<'a> Tree<'a> {
         pins: &Pins,
         kept: &'static dyn Layout,
     ) -> Result<Self, Error> {
-        Self::upto(g, entry, sizes, &[], pins, kept)
+        Self::upto(g, entry, sizes, &[], pins, kept, 1)
     }
 
-    /// The same, with `upto` dimensions read at launch.
+    /// The same, with `upto` read at launch, over `ranks`.
     pub fn upto(
         g: &'a Graph,
         entry: usize,
@@ -149,6 +152,7 @@ impl<'a> Tree<'a> {
         upto: &[DimName],
         pins: &Pins,
         kept: &'static dyn Layout,
+        ranks: usize,
     ) -> Result<Self, Error> {
         let Some(e) = g.entries.get(entry) else {
             return unsupported(format_args!("entry {entry}"));
@@ -163,6 +167,7 @@ impl<'a> Tree<'a> {
             ports: Vec::new(),
             sizes: sizes.to_vec(),
             kept,
+            ranks,
         };
         for port in &e.inputs {
             let shape = sized(g, sizes, upto, &port.ty.shape)?;
@@ -173,7 +178,18 @@ impl<'a> Tree<'a> {
         let mut at: Vec<Option<T>> = vec![None; g.nodes.len()];
         for i in (0..g.nodes.len()).filter(|i| needed[*i]) {
             let n = &g.nodes[i];
-            let extents = sized(g, sizes, upto, &n.ty.shape)?;
+            let mut extents = sized(g, sizes, upto, &n.ty.shape)?;
+            if let Placement::Split { axis } = n.ty.placement
+                && ranks > 1
+            {
+                let a = axis as usize;
+                let whole = extents[a].most();
+                if !whole.is_multiple_of(ranks) || extents[a] != Extent::Fixed(whole) {
+                    let what = format!("axis {axis} of {} over {ranks} ranks", n.ty.shape);
+                    return Err(Error::Size(what));
+                }
+                extents[a] = Extent::Fixed(whole / ranks);
+            }
             let shape: Vec<usize> = extents.iter().map(Extent::most).collect();
             let from = NodeId(i as u32);
             let missing = || Error::Unsupported(format!("node {i} reads an unsupported node"));
@@ -210,7 +226,8 @@ impl<'a> Tree<'a> {
                 Op::Row(r) => {
                     let (mut cur, mut rest) = (args[0], args[1..].iter());
                     // One rank holds the whole sum already.
-                    for stage in r.0.iter().filter(|s| **s != Stage::AllReduce) {
+                    let summed = |s: &&Stage| ranks > 1 || **s != Stage::AllReduce;
+                    for stage in r.0.iter().filter(summed) {
                         let operand = (stage.operands() == 1).then(|| rest.next());
                         let operand = operand.flatten().copied();
                         let args = [cur].into_iter().chain(operand).collect();
@@ -235,6 +252,20 @@ impl<'a> Tree<'a> {
                 .push((t, shape.iter().map(Extent::most).collect()));
         }
         Ok(tree)
+    }
+
+    /// The part of a split weight this rank holds.
+    pub fn share(&self, t: T) -> Option<Share> {
+        let Term::Leaf(Home::Weight(w)) = self.node(t).term else {
+            return None;
+        };
+        let Placement::Split { axis } = self.g.weights[w as usize].ty.placement else {
+            return None;
+        };
+        (self.ranks > 1).then_some(Share {
+            axis,
+            of: self.ranks as u32,
+        })
     }
 
     pub fn len(&self) -> usize {

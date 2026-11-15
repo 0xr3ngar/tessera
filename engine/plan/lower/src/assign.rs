@@ -35,6 +35,7 @@ pub fn assign(s: &Selected, order: &[usize]) -> Plan {
     }
     let plan = Plan {
         id: Plan::fresh(),
+        ranks: s.ranks,
         ..Plan::default()
     };
     let mut b = Buffers {
@@ -48,7 +49,12 @@ pub fn assign(s: &Selected, order: &[usize]) -> Plan {
         match value.home {
             Home::Weight(weight) => {
                 let slot = b.alloc(Val(v as u32));
-                b.plan.weights.push(Loaded { weight, slot });
+                let share = value.share;
+                b.plan.weights.push(Loaded {
+                    weight,
+                    slot,
+                    share,
+                });
             }
             Home::Kept { index, room } => {
                 // The longest context fits, so the buffer never moves.
