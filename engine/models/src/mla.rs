@@ -1,6 +1,6 @@
-//! GLM-5.3: low-rank attention over indexed keys, and MoE.
+//! DeepSeek-style decoders: low-rank attention, MoE, indexed keys.
 
-use crate::shared::{Stack, rows, swiglu, tokens};
+use crate::shared::{Attend, Stack, rows, swiglu, tokens};
 use trace::DimName::*;
 use trace::{
     Act, Composite, Dim, DimExpr, Embed, Graph, Linear, Linears, Mask, Model, Norm, Pairs, Role,
@@ -12,7 +12,8 @@ pub struct Config {
     pub stack: Stack,
     /// Leading layers with a dense MLP.
     pub dense_layers: u64,
-    /// The part of `head_dim` that is rotated.
+    /// A head's unrotated key width, and its rotated width.
+    pub nope: u64,
     pub rope: u64,
     pub rope_theta: f32,
     pub q_latent: u64,
@@ -21,21 +22,34 @@ pub struct Config {
     pub experts: u64,
     pub top_k: u64,
     pub route_scale: f32,
-    pub index_heads: u64,
-    pub index_dim: u64,
-    pub index_keep: u64,
-    /// Past the dense layers, every n-th layer indexes.
-    pub index_every: u64,
+    /// Some layers score keys first. None read them all.
+    pub index: Option<Index>,
     pub eps: f32,
 }
 
+/// The indexer's shape, and which layers run one.
+pub struct Index {
+    pub heads: u64,
+    pub dim: u64,
+    pub keep: u64,
+    /// Past the dense layers, every n-th layer indexes.
+    pub every: u64,
+}
+
 impl Config {
-    /// The released checkpoint's sizes.
-    pub fn release(max_seqs: u64, max_context: u64) -> Self {
+    /// GLM-5.3 at its released sizes.
+    pub fn glm53(max_seqs: u64, max_context: u64) -> Self {
         let sizes = [154_880, 6144, 78, 64, 256, 2048];
+        let index = Index {
+            heads: 32,
+            dim: 128,
+            keep: 2048,
+            every: 4,
+        };
         Self {
             stack: Stack::sized(sizes, max_seqs, max_context),
             dense_layers: 3,
+            nope: 192,
             rope: 64,
             rope_theta: 8e6,
             q_latent: 2048,
@@ -44,50 +58,75 @@ impl Config {
             experts: 256,
             top_k: 8,
             route_scale: 2.5,
-            index_heads: 32,
-            index_dim: 128,
-            index_keep: 2048,
-            index_every: 4,
+            index: Some(index),
             eps: 1e-5,
+        }
+    }
+
+    /// DeepSeek-V3 at its released sizes. Experts are picked without groups.
+    pub fn deepseek_v3(max_seqs: u64, max_context: u64) -> Self {
+        let sizes = [129_280, 7168, 61, 128, 128, 2048];
+        Self {
+            stack: Stack::sized(sizes, max_seqs, max_context),
+            dense_layers: 3,
+            nope: 128,
+            rope: 64,
+            rope_theta: 1e4,
+            q_latent: 1536,
+            latent: 512,
+            dense_ffn: 18_432,
+            experts: 256,
+            top_k: 8,
+            route_scale: 2.5,
+            index: None,
+            eps: 1e-6,
         }
     }
 
     /// Whether layer `l` picks keys. Others reuse the last pick.
     pub fn indexes(&self, l: u64) -> bool {
+        let Some(index) = &self.index else {
+            return false;
+        };
         let dense = self.dense_layers;
-        l < dense || (l + 1 - dense).is_multiple_of(self.index_every)
+        l < dense || (l + 1 - dense).is_multiple_of(index.every)
     }
 
     pub fn dims(&self) -> Vec<Dim> {
         let layers = self.stack.layers;
         let indexing = (0..layers).filter(|&l| self.indexes(l)).count();
-        self.stack.dims(&[
-            (Nope, self.stack.head_dim - self.rope),
+        let mut own = vec![
+            (Nope, self.nope),
             (Rope, self.rope),
             (QLatent, self.q_latent),
             (Latent, self.latent),
             (DenseFfn, self.dense_ffn),
             (Experts, self.experts),
             (TopK, self.top_k),
-            (IndexHeads, self.index_heads),
-            (IndexDim, self.index_dim),
-            (IndexKeep, self.index_keep),
             (DenseLayers, self.dense_layers),
             (MoeLayers, layers - self.dense_layers),
             (IndexLayers, indexing as u64),
-        ])
+        ];
+        if let Some(i) = &self.index {
+            own.extend([
+                (IndexHeads, i.heads),
+                (IndexDim, i.dim),
+                (IndexKeep, i.keep),
+            ]);
+        }
+        self.stack.dims(&own)
     }
 }
 
 #[derive(Weights)]
-pub struct Mla {
+pub struct Attention {
     #[shape(Hidden)]
     pub norm: Norm,
     #[shape(Hidden, QLatent)]
     pub q_a: Linear,
     #[shape(QLatent)]
     pub q_norm: Norm,
-    #[shape(QLatent, Heads * HeadDim)]
+    #[shape(QLatent, Heads * (Nope + Rope))]
     pub q_b: Linear,
     #[shape(Hidden, Latent + Rope)]
     pub kv_a: Linear,
@@ -154,11 +193,11 @@ pub struct Moe {
 
 /// Layer `l` uses `dense[l]`, or `moe[l - DenseLayers]`.
 #[derive(Weights)]
-pub struct Glm53 {
+pub struct Mla {
     #[shape(Vocab, Hidden)]
     pub embed: Embed,
     #[shape(Layers)]
-    pub attn: Vec<Mla>,
+    pub attn: Vec<Attention>,
     /// One per indexing layer, in layer order.
     #[shape(IndexLayers)]
     pub indexers: Vec<Indexer>,
@@ -174,7 +213,7 @@ pub struct Glm53 {
     pub head: Linear,
 }
 
-pub fn forward(m: &Model, c: &Config, w: &Glm53, tokens: &Tensor, positions: &Tensor) -> Tensor {
+pub fn forward(m: &Model, c: &Config, w: &Mla, tokens: &Tensor, positions: &Tensor) -> Tensor {
     let mut x = m.embed(tokens, &w.embed);
     let mut indexers = w.indexers.iter();
     let mut keys: Option<Tensor> = None;
@@ -182,12 +221,16 @@ pub fn forward(m: &Model, c: &Config, w: &Glm53, tokens: &Tensor, positions: &Te
         let h = x.rms_norm(&a.norm, c.eps);
         let at = [&h, positions];
         let reused = keys.clone().filter(|_| !c.indexes(l as u64));
-        let attn = match reused {
-            Some(k) => m.composite(Composite::Attention, || [mla(m, c, a, at, |_| k).0]),
-            None => {
+        let attn = match (reused, &c.index) {
+            (Some(k), _) => m.composite(Composite::Attention, || [mla(m, c, a, at, |_| Some(k)).0]),
+            (None, None) => m.composite(Composite::Attention, || [mla(m, c, a, at, |_| None).0]),
+            (None, Some(_)) => {
                 let ix = indexers.next().expect("an indexer per indexing layer");
-                let pick = |qr: &Tensor| pick_keys(c, ix, qr, &h);
-                let [out, k] = m.composite(Composite::Attention, || mla(m, c, a, at, pick).into());
+                let pick = |qr: &Tensor| Some(pick_keys(c, ix, qr, &h));
+                let [out, k] = m.composite(Composite::Attention, || {
+                    let (out, k) = mla(m, c, a, at, pick);
+                    [out, k.expect("picked keys")]
+                });
                 keys = Some(k);
                 [out]
             }
@@ -206,34 +249,33 @@ pub fn forward(m: &Model, c: &Config, w: &Glm53, tokens: &Tensor, positions: &Te
     x.rms_norm(&w.norm, c.eps).matmul(&w.head)
 }
 
-/// Returns the output and the keys each query read.
+/// The output, and the keys read when picked.
 fn mla(
     m: &Model,
     c: &Config,
-    w: &Mla,
+    w: &Attention,
     [h, positions]: [&Tensor; 2],
-    keys: impl FnOnce(&Tensor) -> Tensor,
-) -> (Tensor, Tensor) {
+    keys: impl FnOnce(&Tensor) -> Option<Tensor>,
+) -> (Tensor, Option<Tensor>) {
+    let shape = [Heads.into(), Heads.into(), HeadDim.into()];
+    let heads = Attend::new(&w.o, rows([]), shape);
     let turn = |t: Tensor| t.rope(positions, c.rope_theta, Pairs::Adjacent);
     let qr = h.matmul(&w.q_a).rms_norm(&w.q_norm, c.eps);
     let keys = keys(&qr);
-    let q = qr.matmul(&w.q_b).reshape([Seqs, Context, Heads, HeadDim]);
+    let q = heads.split(qr.matmul(&w.q_b), Heads, Nope + Rope);
     let q = q.slice(3, 0u64, Nope).concat(&turn(q.slice(3, Nope, Rope)));
     let kv = h.matmul(&w.kv_a);
     let latent = kv.slice(2, 0u64, Latent).rms_norm(&w.kv_norm, c.eps);
     // Every head shares one rotary key part.
-    let shared = turn(kv.slice(2, Latent, Rope))
-        .reshape(rows([DimExpr::Const(1), Rope.into()]))
-        .expand(2, Heads);
-    let per_head = latent
-        .matmul(&w.kv_b)
-        .reshape(rows([Heads.into(), Nope + HeadDim]));
-    let k = per_head.slice(3, 0u64, Nope).concat(&shared);
+    let shared = heads.split(turn(kv.slice(2, Latent, Rope)), 1u64, Rope);
+    let per_head = heads.split(latent.matmul(&w.kv_b), Heads, Nope + HeadDim);
+    let k = per_head
+        .slice(3, 0u64, Nope)
+        .concat(&shared.expand(2, Heads));
     let v = per_head.slice(3, Nope, HeadDim);
-    let scale = 1.0 / (c.stack.head_dim as f32).sqrt();
-    let out = m.attend(Mask::Causal, scale, [&q, &k, &v], Some(&keys));
-    let out = out.reshape(rows([Heads * HeadDim])).matmul(&w.o);
-    (out, keys)
+    let scale = 1.0 / ((c.nope + c.rope) as f32).sqrt();
+    let out = m.attend(Mask::Causal, scale, [&q, &k, &v], keys.as_ref());
+    (heads.merge(out), keys)
 }
 
 /// Each query's best `IndexKeep` visible keys.
@@ -273,7 +315,7 @@ fn moe(m: &Model, c: &Config, w: &Moe, h: &Tensor) -> Tensor {
 /// One forward entry: tokens and positions in, logits out.
 pub fn program(c: &Config) -> Graph {
     let m = Model::new(c.dims());
-    let w: Glm53 = trace::declare(&m);
+    let w: Mla = trace::declare(&m);
     let [tokens, positions] = tokens(&m);
     let logits = forward(&m, c, &w, &tokens, &positions);
     m.finish([(Role::Logits, &logits)])

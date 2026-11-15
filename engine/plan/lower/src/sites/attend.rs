@@ -25,6 +25,10 @@ impl Pattern for Attend {
         };
         let wide = |t: T| &tree.node(t).shape;
         let (q, k, v) = (node.args[0], node.args[1], node.args[2]);
+        // Kernels read one head width for all three.
+        if wide(v).last() != wide(q).last() {
+            return None;
+        }
         if a.ragged {
             let (&[queries, heads, width], &[seqs, _, kv_heads, _]) = (&wide(q)[..], &wide(k)[..])
             else {

@@ -3,12 +3,12 @@
 mod regions_test;
 
 use crate::common::{Spec, suite};
-use models::glm53::{Config, program};
+use models::mla::{Config, program};
 use trace::Composite::{Attention, Mlp, Moe};
 use trace::Graph;
 
 pub fn release() -> Graph {
-    program(&Config::release(8, 425_984))
+    program(&Config::glm53(8, 425_984))
 }
 
 const SPEC: Spec = Spec {

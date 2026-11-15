@@ -71,9 +71,14 @@ pub fn forward(m: &Model, c: &Config, w: &Gpt, tokens: &Tensor, positions: &Tens
 fn attention(m: &Model, c: &Config, l: &Layer, h: &Tensor) -> Tensor {
     let lead = vec![Seqs.into(), Context.into()];
     let shape = [Heads.into(), Heads.into(), HeadDim.into()];
-    let heads = Attend::new([&l.wq, &l.wk, &l.wv, &l.wproj], lead, shape);
+    let heads = Attend::new(&l.wproj, lead, shape);
     let scale = 1.0 / (c.stack.head_dim as f32).sqrt();
-    heads.apply(h, |t, _| t, |qkv| m.attend(Mask::Causal, scale, qkv, None))
+    heads.apply(
+        [&l.wq, &l.wk, &l.wv],
+        h,
+        |t, _| t,
+        |qkv| m.attend(Mask::Causal, scale, qkv, None),
+    )
 }
 
 /// One forward entry: tokens and positions in, logits out.

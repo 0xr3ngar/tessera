@@ -98,7 +98,7 @@ struct Keys<'a> {
 }
 
 impl Keys<'_> {
-    /// Adds query `q` over the keys at `at` into `o`.
+    /// Adds query `q` over the key rows `at` into `o`.
     fn row(
         &self,
         q: &[f32],
@@ -106,14 +106,14 @@ impl Keys<'_> {
         p: &mut Vec<f32>,
         o: &mut [f32],
     ) {
-        let d = q.len();
+        let (d, dv) = (q.len(), o.len());
         p.clear();
         for j in at.clone() {
-            p.push(self.acc.dot(q, &self.k[j..j + d]) * self.scale);
+            p.push(self.acc.dot(q, &self.k[j * d..(j + 1) * d]) * self.scale);
         }
         softmax(self.acc, p);
         for (j, &pj) in at.zip(p.iter()) {
-            for (oi, &vi) in o.iter_mut().zip(&self.v[j..j + d]) {
+            for (oi, &vi) in o.iter_mut().zip(&self.v[j * dv..(j + 1) * dv]) {
                 *oi = self.acc.add(*oi, pj * vi);
             }
         }
@@ -126,7 +126,7 @@ pub(crate) fn attend(n: &Numerics, a: &Attend, qkv: [&Tensor; 3]) -> Result<Tens
     let [seqs, ctx, heads, d] = q.shape[..] else {
         return Err(Error::Mismatch("attention wants rank 4".into()));
     };
-    let (keys, kv_heads) = (k.shape[1], k.shape[2]);
+    let (keys, kv_heads, dv) = (k.shape[1], k.shape[2], v.shape[3]);
     let group = heads / kv_heads;
     let past = past_keys(a, ctx, keys)?;
     let qs = q.floats()?;
@@ -137,20 +137,21 @@ pub(crate) fn attend(n: &Numerics, a: &Attend, qkv: [&Tensor; 3]) -> Result<Tens
         k,
         v,
     };
-    let mut out = vec![0.0; qs.len()];
+    let mut out = vec![0.0; seqs * ctx * heads * dv];
     let mut p = Vec::with_capacity(keys);
     for s in 0..seqs {
         for t in 0..ctx {
             for h in 0..heads {
-                let qo = ((s * ctx + t) * heads + h) * d;
-                let kv_at = |j: usize| ((s * keys + j) * kv_heads + h / group) * d;
+                let row = (s * ctx + t) * heads + h;
+                let kv_at = |j: usize| (s * keys + j) * kv_heads + h / group;
                 let (from, to) = seen(a.mask, past + t, keys);
                 let at = (from..to).map(kv_at);
-                kv.row(&qs[qo..qo + d], at, &mut p, &mut out[qo..qo + d]);
+                let o = &mut out[row * dv..(row + 1) * dv];
+                kv.row(&qs[row * d..(row + 1) * d], at, &mut p, o);
             }
         }
     }
-    Ok(Tensor::f32(q.shape.clone(), out))
+    Ok(Tensor::f32(vec![seqs, ctx, heads, dv], out))
 }
 
 /// Each query row reads its slot up to its position.
@@ -166,7 +167,7 @@ pub(crate) fn attend_rows(
             "ragged attention wants rank 3 queries".into(),
         ));
     };
-    let (keys, kv_heads) = (k.shape[1], k.shape[2]);
+    let (keys, kv_heads, dv) = (k.shape[1], k.shape[2], v.shape[3]);
     let group = heads / kv_heads;
     let qs = q.floats()?;
     let (k, v) = (k.floats()?, v.floats()?);
@@ -177,7 +178,7 @@ pub(crate) fn attend_rows(
         v,
     };
     let (slots, positions) = (slots.indices()?, positions.indices()?);
-    let mut out = vec![0.0; qs.len()];
+    let mut out = vec![0.0; rows * heads * dv];
     let mut p = Vec::with_capacity(keys);
     for r in 0..rows {
         let (s, seen) = (slots[r], positions[r] + 1);
@@ -186,13 +187,14 @@ pub(crate) fn attend_rows(
             return Err(Error::Mismatch(msg));
         }
         for h in 0..heads {
-            let qo = (r * heads + h) * d;
-            let kv_at = |j: usize| ((s * keys + j) * kv_heads + h / group) * d;
+            let row = r * heads + h;
+            let kv_at = |j: usize| (s * keys + j) * kv_heads + h / group;
             let at = (0..seen).map(kv_at);
-            kv.row(&qs[qo..qo + d], at, &mut p, &mut out[qo..qo + d]);
+            let o = &mut out[row * dv..(row + 1) * dv];
+            kv.row(&qs[row * d..(row + 1) * d], at, &mut p, o);
         }
     }
-    Ok(Tensor::f32(q.shape.clone(), out))
+    Ok(Tensor::f32(vec![rows, heads, dv], out))
 }
 
 pub(crate) fn stage(

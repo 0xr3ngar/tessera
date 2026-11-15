@@ -120,10 +120,14 @@ fn decode_and_constants() {
             ragged: false,
         })
     };
-    let tys = vec![q, kv.clone(), kv];
+    let tys = vec![q.clone(), kv.clone(), kv.clone()];
     assert!(result(tys.clone(), attend(0.5)).is_ok());
     let err = result(tys, attend(f32::INFINITY)).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Value);
+    // Values narrower than keys shape the output.
+    let narrow = f32s([Seqs, Context, Heads, Hidden], Replicated);
+    let out = result(vec![q, kv, narrow], attend(0.5)).unwrap();
+    assert_eq!(out.shape, Shape::from([Seqs, Rows, Heads, Hidden]));
     let row = f32s([Rows, Hidden], Replicated);
     let nan = Op::Row(Row(vec![Stage::Scale(f32::NAN)]));
     assert_eq!(placed(vec![row], nan), Err(ErrorKind::Value));

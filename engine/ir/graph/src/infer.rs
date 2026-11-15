@@ -256,8 +256,9 @@ fn attend(dims: &[Dim], a: &[&TensorType]) -> Result<TensorType, TypeError> {
         ErrorKind::Shape,
         || "attention takes [Seqs, Context, Heads, HeadDim] tensors".into(),
     )?;
+    // Values may be narrower than keys, as in MLA.
     need(
-        same_shape(dims, &k.shape, &v.shape)?,
+        same_shape(dims, &front(&k.shape, 3), &front(&v.shape, 3))?,
         ErrorKind::Shape,
         || format!("keys {} and values {} differ", k.shape, v.shape),
     )?;
@@ -300,7 +301,15 @@ fn attend(dims: &[Dim], a: &[&TensorType]) -> Result<TensorType, TypeError> {
             || "key lists must be replicated".into(),
         )?;
     }
-    Ok(q.clone())
+    Ok(valued(q, v))
+}
+
+/// Queries' type with the values' width.
+fn valued(q: &TensorType, v: &TensorType) -> TensorType {
+    let mut out = q.clone();
+    let width = v.shape.0.last().expect("rank checked").clone();
+    *out.shape.0.last_mut().expect("rank checked") = width;
+    out
 }
 
 /// Positions must lead `x`, which keeps whole pairs.
@@ -607,7 +616,7 @@ fn attend_rows(dims: &[Dim], a: &[&TensorType]) -> Result<TensorType, TypeError>
         || "ragged attention takes [Rows, Heads, HeadDim] queries over kept rows".into(),
     )?;
     need(
-        same_shape(dims, &k.shape, &v.shape)?,
+        same_shape(dims, &front(&k.shape, 3), &front(&v.shape, 3))?,
         ErrorKind::Shape,
         || format!("keys {} and values {} differ", k.shape, v.shape),
     )?;
@@ -627,7 +636,7 @@ fn attend_rows(dims: &[Dim], a: &[&TensorType]) -> Result<TensorType, TypeError>
         "ragged attention needs replicated tensors".into()
     })?;
     row_ids(dims, &q.shape, a[3], a[4])?;
-    Ok(q.clone())
+    Ok(valued(q, v))
 }
 
 /// Rows go to kept `[Seqs, Context, ..]` by slot and position.

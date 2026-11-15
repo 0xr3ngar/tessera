@@ -168,24 +168,22 @@ impl Pass<'_> {
             None => vec![Seqs.into(), rows.into()],
         };
         let shape = [Heads.into(), KvHeads.into(), HeadDim.into()];
-        let heads = Attend::new([&l.q, &l.k, &l.v, &l.o], lead, shape);
-        let turn = |t: Tensor, side: Side| {
-            let norm = match side {
-                Side::Query => &l.q_norm,
-                Side::Key => &l.k_norm,
-                Side::Value => return t,
-            };
-            let normed = norm.apply(t, c.eps);
-            normed.rope(self.positions, c.rope_theta, Pairs::Halves)
+        let heads =
+            Attend::new(&l.o, lead, shape).rotary(self.positions, c.rope_theta, Pairs::Halves);
+        let turn = |t: Tensor, side: Side| match side.of([&l.q_norm, &l.k_norm]) {
+            Some(norm) => norm.apply(t, c.eps),
+            None => t,
         };
         let scale = 1.0 / (c.stack.head_dim as f32).sqrt();
-        heads.apply(h, turn, |[q, k, v]| match (kept, self.slots) {
-            (Some([keys, values]), Some(slots)) => {
-                let by = [slots, self.positions];
-                let (k, v) = (k.append(keys, by), v.append(values, by));
-                self.m.attend_rows(scale, [q, &k, &v], by)
+        heads.apply([&l.q, &l.k, &l.v], h, turn, |[q, k, v]| {
+            match (kept, self.slots) {
+                (Some([keys, values]), Some(slots)) => {
+                    let by = [slots, self.positions];
+                    let (k, v) = (k.append(keys, by), v.append(values, by));
+                    self.m.attend_rows(scale, [q, &k, &v], by)
+                }
+                _ => self.m.attend(Mask::Causal, scale, [q, k, v], None),
             }
-            _ => self.m.attend(Mask::Causal, scale, [q, k, v], None),
         })
     }
 }
