@@ -51,7 +51,8 @@ fn open_on(seed: u64, slots: u64, recipe: Recipe) -> (Graph, Vec<Tensor>, Engine
     let c = Config::toy(slots, 16);
     let g = stepper::<Norm>(&c);
     let weights = weights(&g, &mut Noise(seed));
-    let mut engine = Engine::open(stepper::<Norm>(&c), 16, &recipe, &settings::read()).unwrap();
+    let mut engine =
+        Engine::open(stepper::<Norm>(&c), 16, &recipe, &frontend_settings::read()).unwrap();
     let stored: Vec<Weight> = weights.iter().cloned().map(Weight::Floats).collect();
     engine.load(&stored).unwrap();
     (g, weights, engine)

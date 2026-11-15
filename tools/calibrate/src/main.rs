@@ -105,7 +105,7 @@ fn plans(settings: &Settings) -> Result<(), Box<dyn Error>> {
 }
 
 fn main() -> ExitCode {
-    let settings = settings::read();
+    let settings = frontend_settings::read();
     let arg = std::env::args().nth(1);
     match match arg.as_deref() {
         Some("probe") => probe(&settings),

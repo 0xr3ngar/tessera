@@ -10,11 +10,11 @@ use interp::run;
 
 mod common;
 use common::{Finish, finished, linear, noise, runs, terms};
+use frontend_settings::read as settings;
 use interp::Tensor;
 use lower::Pins;
 use lower::{Device, Dialect, Source, lower};
 use run::open;
-use settings::read as settings;
 use trace::Act;
 
 #[test]

@@ -11,5 +11,5 @@ Crate | Description
 [checkpoint](checkpoint) | Reads weights from safetensors files
 [eval](eval) | Measures a model under a recipe: speed per batch, parity against a reference
 [serve](serve) | An HTTP front end: text in, streamed text out, over the engine
-[settings](settings) | Settings read once from the environment, passed down
+[frontend-settings](settings) | Settings read once from the environment, passed down
 [tasks](tasks) | Text in, answers out: generation and tagging over a loaded model

@@ -169,7 +169,7 @@ fn reference(dir: &Path) -> Result<(Vec<u32>, Vec<u32>), Failure> {
 
 fn evaluate(args: &Args) -> Result<Report, Failure> {
     let slots = args.m.iter().copied().max().unwrap_or(1) as u64;
-    let settings = settings::read();
+    let settings = frontend_settings::read();
     let rules = match &settings.names {
         Some(path) => bundle::names::rules(&std::fs::read_to_string(path)?)?,
         None => Vec::new(),

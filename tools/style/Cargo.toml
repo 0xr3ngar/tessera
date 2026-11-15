@@ -9,6 +9,6 @@ publish.workspace = true
 [dependencies]
 findings = { workspace = true }
 fancy-regex = "0.14"
-settings = { workspace = true }
+frontend-settings = { workspace = true }
 tasks = { workspace = true }
 ureq = "2"

@@ -2,13 +2,13 @@
 
 use kernels as _;
 
+use frontend_settings::read as settings;
 use graph::DimName::{Context, HeadDim, Heads, Hidden, Rows, Seqs, Vocab};
 use graph::{DType, Dim, DimName, Graph, NodeId, TensorType, verify};
 use interp::{Tensor, run};
 use lower::form::{BF16_FORM, F32_FORM};
 use lower::{Device, Limits, Pins, Plan, Platform, View, cut, lower, rules};
 use run::open;
-use settings::read as settings;
 use testkit::{Noise, fill, max_abs_diff};
 use trace::{Act, Embed, EntryKind, Mask, Model, Norm, Pairs, Port, Role, Weights, declare};
 

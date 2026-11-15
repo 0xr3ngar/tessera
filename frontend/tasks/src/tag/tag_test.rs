@@ -9,11 +9,11 @@ type Case = (String, Vec<(String, String)>);
 /// Matches spaCy's tags on the texts in `$TESSERA_SPACY/tags.json`.
 #[test]
 fn spacy_tags() {
-    let Some(dir) = settings::read().reference("spacy") else {
+    let Some(dir) = frontend_settings::read().reference("spacy") else {
         eprintln!("TESSERA_SPACY unset: skipped");
         return;
     };
-    let mut tagger = Tagger::open(&dir, &settings::read()).unwrap();
+    let mut tagger = Tagger::open(&dir, &frontend_settings::read()).unwrap();
     let cases: Vec<Case> =
         serde_json::from_slice(&std::fs::read(dir.join("tags.json")).unwrap()).unwrap();
     let (mut wrong, mut tokens) = (0, 0);

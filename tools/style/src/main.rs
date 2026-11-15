@@ -37,7 +37,7 @@ impl Checker {
     fn new(pipeline: &Path) -> Result<Self, String> {
         Ok(Self {
             rules: rules::load(Path::new(RULES))?,
-            tagger: Tagger::open(pipeline, &settings::read())
+            tagger: Tagger::open(pipeline, &frontend_settings::read())
                 .map_err(|e| format!("{}: {e}", pipeline.display()))?,
             patterns: tags::load(Path::new(TAGS))?,
         })

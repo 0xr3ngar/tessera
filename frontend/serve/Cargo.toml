@@ -21,7 +21,7 @@ engine = { workspace = true }
 bundle = { workspace = true }
 lower = { workspace = true }
 serde = { version = "1", features = ["derive"] }
-settings = { workspace = true }
+frontend-settings = { workspace = true }
 tasks = { workspace = true }
 tokio = { version = "1", features = ["net", "rt-multi-thread", "sync"] }
 tokio-stream = "0.1"

@@ -23,3 +23,4 @@ Crate | Description
 [sim](plan/sim) | Analytic models of GPUs: what a launch should cost
 [kernels](rules/kernels) | Kernels and the lowering rules that propose them
 [linear](rules/linear) | Generated matmul kernels, registered as lowering rules
+[engine-settings](settings) | Knobs the front end sets once and the engine reads

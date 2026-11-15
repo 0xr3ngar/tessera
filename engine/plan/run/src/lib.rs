@@ -14,7 +14,7 @@ pub use held::Held;
 pub use run::{Base, Run};
 
 use codegen::Precision;
-use gpukit::Settings;
+use engine_settings::Settings;
 use gpukit::backend::Backend;
 use lower::{Error, Plan};
 

@@ -1,7 +1,7 @@
 use crate::probe::{Kind, Probe, Reading, fit, links, read, suite};
 use crate::{Grid, headroom, judge};
+use frontend_settings::read as settings;
 use lower::{Device, Settings, rules};
-use settings::read as settings;
 use sim::Chip;
 use testkit::scratch;
 
