@@ -5,20 +5,24 @@ use quote::{format_ident, quote};
 use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{Data, DeriveInput, Error, Expr, Fields, Ident, Token, parenthesized, token};
+use syn::{
+    AngleBracketedGenericArguments as Generics, Data, DeriveInput, Error, Expr, Fields,
+    GenericArgument, Ident, Token, parenthesized, parse_quote, token,
+};
 
 /// Keys that take `= expr`.
-const VALUES: [&str; 13] = [
+const VALUES: [&str; 14] = [
     "name", "threads", "sizes", "work", "needs", "order", "load", "accepts", "guess", "runs_on",
-    "source", "launches", "crate",
+    "source", "launches", "crate", "variant",
 ];
 
 /// Keys that stand alone.
 const FLAGS: [&str; 3] = ["shared", "overwrites", "unproven"];
 
-/// `key`, `key = expr` or `key(args)`.
+/// `key`, `key = expr` or `key(args)`. A kernel may take `::<..>`.
 struct Entry {
     key: Ident,
+    generics: Option<Generics>,
     value: Value,
 }
 
@@ -31,6 +35,10 @@ enum Value {
 impl Parse for Entry {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let key = Ident::parse_any(input)?;
+        let generics = match input.peek(Token![::]) {
+            true => Some(input.parse()?),
+            false => None,
+        };
         let value = if input.peek(Token![=]) {
             input.parse::<Token![=]>()?;
             Value::Expr(input.parse()?)
@@ -41,7 +49,11 @@ impl Parse for Entry {
         } else {
             Value::Flag
         };
-        Ok(Entry { key, value })
+        Ok(Entry {
+            key,
+            generics,
+            value,
+        })
     }
 }
 
@@ -127,8 +139,42 @@ fn applied(e: &Expr, args: &[Tokens]) -> Tokens {
     }
 }
 
-/// The kernel function and build arguments, if named.
-fn kernel_fn(entries: &mut Vec<Entry>) -> Result<Option<(Ident, Vec<Expr>)>, Error> {
+/// The kernel function, its const generics and build arguments.
+struct KernelFn {
+    name: Ident,
+    generics: Option<Generics>,
+    build: Vec<Expr>,
+}
+
+impl KernelFn {
+    /// The `_ir` call. A `variant` picks the last const generic.
+    fn body(&self, variant: Option<&Expr>) -> Tokens {
+        let ir = format_ident!("{}_ir", self.name);
+        let build = &self.build;
+        let with = |value: bool| {
+            let mut g = self.generics.clone().unwrap_or_else(|| parse_quote!(::<>));
+            g.colon2_token = Some(Default::default());
+            g.args.push(GenericArgument::Const(parse_quote!(#value)));
+            g
+        };
+        match variant {
+            None => {
+                let generics = &self.generics;
+                quote!(#ir #generics (#(#build),*))
+            }
+            Some(v) => {
+                let (yes, no) = (with(true), with(false));
+                quote!(match #v {
+                    true => #ir #yes (#(#build),*),
+                    false => #ir #no (#(#build),*),
+                })
+            }
+        }
+    }
+}
+
+/// The kernel function, if named first.
+fn kernel_fn(entries: &mut Vec<Entry>) -> Result<Option<KernelFn>, Error> {
     if entries.first().is_none_or(Entry::is_key) {
         return Ok(None);
     }
@@ -138,7 +184,11 @@ fn kernel_fn(entries: &mut Vec<Entry>) -> Result<Option<(Ident, Vec<Expr>)>, Err
         Value::Call(args) => args.into_iter().collect(),
         Value::Expr(_) => return Err(unknown(&first.key)),
     };
-    Ok(Some((first.key, build)))
+    Ok(Some(KernelFn {
+        name: first.key,
+        generics: first.generics,
+        build,
+    }))
 }
 
 /// Scalar arguments by field name, and the default sizes.
@@ -184,14 +234,15 @@ pub fn derive(input: DeriveInput) -> Result<Tokens, Error> {
     let (arms, sizes) = fields_of(&input, &krate)?;
     let name = match (line.expr("name"), &kernel) {
         (Some(e), _) => quote!(#e),
-        (None, Some((f, _))) => {
-            let name = f.to_string();
+        (None, Some(k)) => {
+            let name = k.name.to_string();
             quote!(#name)
         }
         (None, None) => return Err(Error::new_spanned(attr, "give `name = ...`")),
     };
-    let source = source(&line, kernel.as_ref(), &krate, attr)?;
-    let launches = launches(&line, kernel.as_ref(), &krate, &arms, ty, attr)?;
+    let body = kernel.as_ref().map(|k| k.body(line.expr("variant")));
+    let source = source(&line, body.as_ref(), &krate, attr)?;
+    let launches = launches(&line, body.as_ref(), &krate, &arms, ty, attr)?;
     let sizes = match line.expr("sizes") {
         Some(e) => quote!((#e).to_vec()),
         None => quote!(vec![#(#sizes),*]),
@@ -215,9 +266,11 @@ pub fn derive(input: DeriveInput) -> Result<Tokens, Error> {
     let runs_on = line
         .expr("runs_on")
         .map(|e| quote!(fn runs_on(&self) -> #krate::ZoneKind { #e }));
+    // An expression may read `body`, the kernel's tree.
     let load = line.expr("load").map(|e| {
         let call = applied(e, &[quote!(self), quote!(len)]);
-        quote!(fn load(&self, len: usize) -> Option<#krate::Load> { #call })
+        let body = body.as_ref().map(|b| quote!(let body = #b;));
+        quote!(fn load(&self, len: usize) -> Option<#krate::Load> { #body #call })
     });
     let accepts = line.expr("accepts").map(|e| {
         let call = applied(e, &[quote!(self), quote!(input), quote!(form)]);
@@ -250,17 +303,16 @@ pub fn derive(input: DeriveInput) -> Result<Tokens, Error> {
 /// `source`, else the kernel function's tree under `plan_<name>`.
 fn source(
     line: &Line,
-    kernel: Option<&(Ident, Vec<Expr>)>,
+    body: Option<&Tokens>,
     krate: &Tokens,
     attr: &syn::Attribute,
 ) -> Result<Tokens, Error> {
-    let body = match (line.expr("source"), kernel) {
+    let body = match (line.expr("source"), body) {
         (Some(e), _) => applied(e, &[quote!(self)]),
-        (None, Some((f, build))) => {
-            let ir = format_ident!("{f}_ir");
+        (None, Some(body)) => {
             quote! {
                 let entry = format!("plan_{}", #krate::Kernel::name(self));
-                #krate::Source::named(#ir(#(#build),*), entry)
+                #krate::Source::named(#body, entry)
             }
         }
         (None, None) => {
@@ -274,7 +326,7 @@ fn source(
 /// `launches`, else one launch over the kernel function's arguments.
 fn launches(
     line: &Line,
-    kernel: Option<&(Ident, Vec<Expr>)>,
+    body: Option<&Tokens>,
     krate: &Tokens,
     arms: &[Tokens],
     ty: &Ident,
@@ -288,18 +340,17 @@ fn launches(
         let call = applied(e, &[quote!(self), quote!(step)]);
         return Ok(quote!(fn launches(&self, #step) -> Vec<#krate::Launch> { #call }));
     }
-    let Some((f, build)) = kernel else {
+    let Some(body) = body else {
         let note = "name the kernel function first, or give `launches = ...`";
         return Err(Error::new_spanned(attr, note));
     };
     let threads = (line.expr("threads"))
         .ok_or_else(|| Error::new_spanned(attr, "give `threads = ...` or `launches = ...`"))?;
-    let ir = format_ident!("{f}_ir");
     let overwrites = line.flag("overwrites");
     let ty_name = ty.to_string();
     Ok(quote! {
         fn launches(&self, #step) -> Vec<#krate::Launch> {
-            let body = #ir(#(#build),*);
+            let body = #body;
             let scalar = |name: &str| -> #krate::Arg {
                 match name {
                     #(#arms)*

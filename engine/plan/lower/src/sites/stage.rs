@@ -52,4 +52,9 @@ impl Stage {
             .chain(self.operand.map(|(o, _)| o))
             .collect()
     }
+
+    /// The row, then its operand, or the row again unread.
+    pub fn padded(&self) -> [T; 2] {
+        [self.x, self.operand.map_or(self.x, |(o, _)| o)]
+    }
 }
