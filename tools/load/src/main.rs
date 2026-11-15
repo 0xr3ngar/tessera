@@ -1,13 +1,12 @@
 use load::{Config, USAGE};
 use std::process::ExitCode;
 
-#[tokio::main]
-async fn main() -> ExitCode {
+fn main() -> ExitCode {
     let Some(config) = Config::parse(std::env::args().skip(1)) else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
-    match load::run(&config).await {
+    match load::run(&config) {
         Ok(report) => {
             println!(
                 "{}",

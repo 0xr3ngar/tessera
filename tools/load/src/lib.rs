@@ -1,10 +1,12 @@
+//! Concurrent streamed completions against tessera-serve.
+
 mod http;
 
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use http::Sample;
+use serde::Serialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread;
 use std::time::Instant;
-use tokio::task::JoinSet;
 
 pub type Failure = Box<dyn std::error::Error + Send + Sync>;
 
@@ -68,7 +70,6 @@ impl Config {
     }
 
     fn validate(&self) -> Result<(), Failure> {
-        http::Endpoint::parse(&self.url)?;
         if self.clients.is_empty() || self.clients.contains(&0) {
             return Err("clients must be positive".into());
         }
@@ -87,7 +88,7 @@ impl Config {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Span {
     pub p50: f64,
     pub p95: f64,
@@ -112,7 +113,7 @@ impl Span {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Run {
     pub clients: usize,
     pub requests: usize,
@@ -123,7 +124,7 @@ pub struct Run {
     pub latency_ms: Span,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Report {
     pub url: String,
     pub prompt_words: usize,
@@ -141,44 +142,45 @@ pub fn prompt(words: usize) -> String {
         .join(" ")
 }
 
-async fn sweep(
-    endpoint: &http::Endpoint,
+/// Runs `clients` workers: a shared queue, or `rounds` each.
+fn sweep(
+    agent: &ureq::Agent,
+    url: &str,
     body: &str,
     config: &Config,
     clients: usize,
 ) -> Result<Run, Failure> {
-    let pending = Arc::new(AtomicUsize::new(config.requests.unwrap_or(0)));
-    let mut workers = JoinSet::new();
+    let left = AtomicUsize::new(config.requests.unwrap_or(0));
+    let more = |done: usize| match config.requests {
+        Some(_) => {
+            (left.try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))).is_ok()
+        }
+        None => done < config.rounds,
+    };
+    let worker = || -> Result<Vec<Sample>, Failure> {
+        let mut samples = Vec::new();
+        while more(samples.len()) {
+            samples.push(http::complete(agent, url, body)?);
+        }
+        Ok(samples)
+    };
     let start = Instant::now();
-    for _ in 0..clients {
-        let endpoint = endpoint.clone();
-        let body = body.to_owned();
-        let pending = pending.clone();
-        let queued = config.requests.is_some();
-        let rounds = config.rounds;
-        workers.spawn(async move {
-            let mut samples = Vec::new();
-            loop {
-                if queued {
-                    if pending
-                        .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
-                        .is_err()
-                    {
-                        break;
-                    }
-                } else if samples.len() == rounds {
-                    break;
-                }
-                samples.push(endpoint.complete(&body).await?);
-            }
-            Ok::<_, Failure>(samples)
-        });
-    }
-    let mut samples = Vec::new();
-    while let Some(result) = workers.join_next().await {
-        samples.extend(result??);
-    }
+    let results = thread::scope(|s| {
+        let mut workers = Vec::new();
+        for _ in 0..clients {
+            workers.push(s.spawn(worker));
+        }
+        let mut results = Vec::new();
+        for w in workers {
+            results.push(w.join().expect("a worker panicked"));
+        }
+        results
+    });
     let elapsed_s = start.elapsed().as_secs_f64();
+    let mut samples = Vec::new();
+    for result in results {
+        samples.extend(result?);
+    }
     let tokens = samples.iter().map(|s| s.tokens).sum();
     Ok(Run {
         clients,
@@ -191,9 +193,11 @@ async fn sweep(
     })
 }
 
-pub async fn run(config: &Config) -> Result<Report, Failure> {
+/// Checks health, warms up, then sweeps each client count.
+pub fn run(config: &Config) -> Result<Report, Failure> {
     config.validate()?;
-    let endpoint = http::Endpoint::parse(&config.url)?;
+    let agent = ureq::Agent::new();
+    let url = config.url.trim_end_matches('/');
     let prompt = config
         .prompt
         .clone()
@@ -204,13 +208,13 @@ pub async fn run(config: &Config) -> Result<Report, Failure> {
         "stream": true,
     })
     .to_string();
-    endpoint.health().await?;
+    http::health(&agent, url)?;
     for _ in 0..config.warmup {
-        endpoint.complete(&body).await?;
+        http::complete(&agent, url, &body)?;
     }
     let mut runs = Vec::new();
     for clients in &config.clients {
-        runs.push(sweep(&endpoint, &body, config, *clients).await?);
+        runs.push(sweep(&agent, url, &body, config, *clients)?);
     }
     Ok(Report {
         url: config.url.clone(),
