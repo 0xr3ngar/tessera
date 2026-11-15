@@ -88,7 +88,7 @@ impl fmt::Display for Error {
             Error::Gpu(e) => write!(f, "gpu: {e}"),
             Error::Memory(e) => write!(f, "memory: {e}"),
             Error::Unbound => write!(f, "a runtime dimension has no value"),
-            Error::Io(e) => write!(f, "stored samples: {e}"),
+            Error::Io(e) => write!(f, "io: {e}"),
         }
     }
 }
