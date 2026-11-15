@@ -1264,6 +1264,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ranks"
+version = "0.1.0"
+dependencies = [
+ "bundle",
+ "checkpoint",
+ "comm",
+ "frontend-settings",
+ "graph",
+ "interp",
+ "kernels",
+ "linear",
+ "lower",
+ "models",
+ "run",
+ "sim",
+ "trace",
+]
+
+[[package]]
 name = "rayon"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
