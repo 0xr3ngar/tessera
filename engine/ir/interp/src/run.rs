@@ -311,7 +311,7 @@ fn run_on(
         {
             let sum = all_reduce(&num, &outs)?;
             let rest = &row.0[at + 1..];
-            // The stages past the sum take no operands here.
+            // Stages past the sum are operand-free.
             outs = (0..ranks)
                 .map(|r| ctx(r).stages(&num, rest, &[&sum]))
                 .collect::<Result<_, _>>()?;
