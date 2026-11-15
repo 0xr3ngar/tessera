@@ -66,6 +66,24 @@ pub struct Stack {
 }
 
 impl Stack {
+    /// `[vocab, hidden, layers, heads, head_dim, ffn]`, then the launch bounds.
+    pub fn sized(
+        [vocab, hidden, layers, heads, head_dim, ffn]: [u64; 6],
+        max_seqs: u64,
+        max_context: u64,
+    ) -> Self {
+        Self {
+            vocab,
+            hidden,
+            layers,
+            heads,
+            head_dim,
+            ffn,
+            max_seqs,
+            max_context,
+        }
+    }
+
     /// These dimensions, followed by the model's `own`.
     pub(crate) fn dims(&self, own: &[(DimName, u64)]) -> Vec<Dim> {
         let bounded = Dim::bounded;

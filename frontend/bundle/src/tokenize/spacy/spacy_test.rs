@@ -66,7 +66,7 @@ type Case = (String, Vec<(String, bool)>);
 /// Matches spaCy on the texts in `$TESSERA_SPACY/tokens.json`.
 #[test]
 fn spacy_parity() {
-    let Some(dir) = settings::read().spacy else {
+    let Some(dir) = settings::read().reference("spacy") else {
         eprintln!("TESSERA_SPACY unset: skipped");
         return;
     };

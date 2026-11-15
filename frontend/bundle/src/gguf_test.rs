@@ -1,12 +1,13 @@
 use crate::gguf::pins;
-use crate::names_test::gguf_name as tensor_name;
+use crate::names_test::tensor_name;
 use checkpoint::{GgufTensor, GgufType, Meta, write_gguf};
 use engine::{Engine, Row};
 use graph::Graph;
 use interp::Tensor;
 use lower::form::{F32_FORM, Form, named};
 use lower::{Pick, Recipe, Settings, Weight};
-use models::qwen3::{Config, stepper};
+use models::decoder::{Config, stepper};
+use trace::Norm;
 
 struct Fixture {
     meta: Vec<(String, Meta)>,
@@ -21,7 +22,7 @@ impl Fixture {
     fn new(form: &'static dyn Form) -> Self {
         let mut c = Config::toy(2, 8);
         c.stack.hidden = 32;
-        let g = stepper(&c);
+        let g = stepper::<Norm>(&c);
         let mut meta = vec![("general.architecture".into(), Meta::Str("qwen3".into()))];
         for (key, n) in [
             ("embedding_length", c.stack.hidden),
@@ -56,7 +57,7 @@ impl Fixture {
                 let axis = |e: &graph::DimExpr| e.poly(&g.dims).unwrap().as_const().unwrap();
                 let dims: Vec<u64> = w.ty.shape.0.iter().rev().map(axis).collect();
                 let n = dims.iter().product::<u64>() as usize;
-                let name = tensor_name(&w.path).unwrap();
+                let name = tensor_name(&w.path, true).unwrap();
                 let norm = name.contains("norm");
                 let values: Vec<f32> = (0..n)
                     .map(|i| {
@@ -126,7 +127,7 @@ fn compare(form: &'static dyn Form) {
     assert_eq!(pins.weights.name(), form.name());
     assert_eq!(pins.named.len(), 5);
     for w in &loaded.graph.weights {
-        let norm = tensor_name(&w.path).unwrap().contains("norm");
+        let norm = tensor_name(&w.path, true).unwrap().contains("norm");
         assert_eq!(
             pins.form(&w.path).name(),
             if norm { "f32" } else { form.name() }
@@ -192,7 +193,7 @@ fn tied_output() {
 
 #[test]
 fn mixed_pins() {
-    let graph = stepper(&Config::toy(2, 8));
+    let graph = stepper::<Norm>(&Config::toy(2, 8));
     let base = named("q8_0").unwrap();
     let mut forms = vec![base; graph.weights.len()];
     forms[0] = F32_FORM;

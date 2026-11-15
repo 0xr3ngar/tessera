@@ -1,11 +1,30 @@
-//! Qwen3: grouped-query attention with RoPE, and SwiGLU MLPs.
+//! Decoders with grouped-query attention, RoPE and SwiGLU MLPs.
 
 use crate::shared::{Stack, step_ports, swiglu, tokens};
 use trace::DimName::*;
 use trace::{
     Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Mask, Model, Norm, Pairs,
-    PathSeg, Role, Size, Tensor, TensorType, Weights,
+    Role, Size, Tensor, TensorType, Weights,
 };
+
+/// What a query or key head passes through before RoPE.
+pub trait HeadNorm: Weights {
+    fn apply(&self, x: Tensor, eps: f32) -> Tensor;
+}
+
+/// Qwen3 norms each head.
+impl HeadNorm for Norm {
+    fn apply(&self, x: Tensor, eps: f32) -> Tensor {
+        x.rms_norm(self, eps)
+    }
+}
+
+/// Llama does not.
+impl HeadNorm for () {
+    fn apply(&self, x: Tensor, _: f32) -> Tensor {
+        x
+    }
+}
 
 pub struct Config {
     pub stack: Stack,
@@ -15,40 +34,10 @@ pub struct Config {
 }
 
 impl Config {
-    /// The 0.6B checkpoint's sizes.
-    pub fn small(max_seqs: u64, max_context: u64) -> Self {
-        let stack = Stack {
-            vocab: 151_936,
-            hidden: 1024,
-            layers: 28,
-            heads: 16,
-            head_dim: 128,
-            ffn: 3072,
-            max_seqs,
-            max_context,
-        };
-        Self {
-            stack,
-            kv_heads: 8,
-            rope_theta: 1e6,
-            eps: 1e-6,
-        }
-    }
-
-    /// The same layout, small enough to run in tests.
+    /// A layout small enough to run in tests.
     pub fn toy(max_seqs: u64, max_context: u64) -> Self {
-        let stack = Stack {
-            vocab: 32,
-            hidden: 16,
-            layers: 2,
-            heads: 4,
-            head_dim: 8,
-            ffn: 32,
-            max_seqs,
-            max_context,
-        };
         Self {
-            stack,
+            stack: Stack::sized([32, 16, 2, 4, 8, 32], max_seqs, max_context),
             kv_heads: 2,
             rope_theta: 1e4,
             eps: 1e-6,
@@ -61,7 +50,7 @@ impl Config {
 }
 
 #[derive(Weights)]
-pub struct Layer {
+pub struct Layer<N: HeadNorm> {
     #[shape(Hidden)]
     pub ln1: Norm,
     #[shape(Hidden, Heads * HeadDim)]
@@ -71,9 +60,9 @@ pub struct Layer {
     #[shape(Hidden, KvHeads * HeadDim)]
     pub v: Linear,
     #[shape(HeadDim)]
-    pub q_norm: Norm,
+    pub q_norm: N,
     #[shape(HeadDim)]
-    pub k_norm: Norm,
+    pub k_norm: N,
     #[shape(Heads * HeadDim, Hidden)]
     pub o: Linear,
     #[shape(Hidden)]
@@ -88,11 +77,11 @@ pub struct Layer {
 
 /// The embedding table is also the output head.
 #[derive(Weights)]
-pub struct Qwen3 {
+pub struct Decoder<N: HeadNorm> {
     #[shape(Vocab, Hidden)]
     pub embed: Embed,
     #[shape(Layers)]
-    pub layers: Vec<Layer>,
+    pub layers: Vec<Layer<N>>,
     #[shape(Hidden)]
     pub norm: Norm,
 }
@@ -111,7 +100,13 @@ struct Pass<'a> {
     slots: Option<&'a Tensor>,
 }
 
-pub fn forward(m: &Model, c: &Config, w: &Qwen3, tokens: &Tensor, positions: &Tensor) -> Tensor {
+pub fn forward<N: HeadNorm>(
+    m: &Model,
+    c: &Config,
+    w: &Decoder<N>,
+    tokens: &Tensor,
+    positions: &Tensor,
+) -> Tensor {
     let rows = Context;
     let pass = Pass {
         m,
@@ -125,7 +120,12 @@ pub fn forward(m: &Model, c: &Config, w: &Qwen3, tokens: &Tensor, positions: &Te
 
 impl Pass<'_> {
     /// With `kept`, each layer also reads earlier launches' rows.
-    fn logits(&self, w: &Qwen3, tokens: &Tensor, kept: Option<&[Cache]>) -> Tensor {
+    fn logits<N: HeadNorm>(
+        &self,
+        w: &Decoder<N>,
+        tokens: &Tensor,
+        kept: Option<&[Cache]>,
+    ) -> Tensor {
         let (m, c) = (self.m, self.c);
         let mut x = m.embed(tokens, &w.embed);
         for (i, l) in w.layers.iter().enumerate() {
@@ -140,8 +140,8 @@ impl Pass<'_> {
         x.rms_norm(&w.norm, c.eps).unembed(&w.embed)
     }
 
-    /// Queries and keys are normed per head, then rotated.
-    fn attention(&self, l: &Layer, h: &Tensor, kept: Option<&Cache>) -> Tensor {
+    /// Queries and keys pass through `N` per head, then rotate.
+    fn attention<N: HeadNorm>(&self, l: &Layer<N>, h: &Tensor, kept: Option<&Cache>) -> Tensor {
         let (c, rows) = (self.c, self.rows);
         let split = |w: &Linear, heads: DimName| {
             let shaped: Vec<DimExpr> = match self.slots {
@@ -150,8 +150,8 @@ impl Pass<'_> {
             };
             h.matmul(w).reshape(shaped)
         };
-        let turn = |t: Tensor, norm: &Norm| {
-            let normed = t.rms_norm(norm, c.eps);
+        let turn = |t: Tensor, norm: &N| {
+            let normed = norm.apply(t, c.eps);
             normed.rope(self.positions, c.rope_theta, Pairs::Halves)
         };
         let q = turn(split(&l.q, Heads), &l.q_norm);
@@ -175,24 +175,24 @@ impl Pass<'_> {
 }
 
 /// One forward entry: tokens and positions in, logits out.
-pub fn program(c: &Config) -> Graph {
+pub fn program<N: HeadNorm>(c: &Config) -> Graph {
     let m = Model::new(c.dims());
-    let w: Qwen3 = trace::declare(&m);
+    let w: Decoder<N> = trace::declare(&m);
     let [tokens, positions] = tokens(&m);
     let logits = forward(&m, c, &w, &tokens, &positions);
     m.finish([(Role::Logits, &logits)])
 }
 
 /// One step entry: rows in, each row's likeliest token out.
-pub fn stepper(c: &Config) -> Graph {
+pub fn stepper<N: HeadNorm>(c: &Config) -> Graph {
     let mut dims = c.dims();
     let size = Size::Bounded(c.stack.max_context);
     dims.push(Dim { name: Rows, size });
     let m = Model::new(dims);
-    let w: Qwen3 = trace::declare(&m);
+    let w: Decoder<N> = trace::declare(&m);
     let [tokens, positions, slots] = step_ports(&m);
     let ty = TensorType::new([Seqs, Context, KvHeads, HeadDim], DType::F32);
-    let cache = |_: &Layer| [m.kept(ty.clone()), m.kept(ty.clone())];
+    let cache = |_: &Layer<N>| [m.kept(ty.clone()), m.kept(ty.clone())];
     let kept: Vec<Cache> = w.layers.iter().map(cache).collect();
     let (positions, rows) = (&positions, Rows);
     let pass = Pass {
@@ -205,26 +205,4 @@ pub fn stepper(c: &Config) -> Graph {
     let logits = pass.logits(&w, &tokens, Some(&kept));
     let ids = logits.top_k(1u64).reshape([Rows]);
     m.finish([(Role::Tokens, &ids), (Role::Logits, &logits)])
-}
-
-/// The released checkpoint's tensor name for a weight path.
-pub fn tensor_name(path: &[PathSeg]) -> Option<String> {
-    use PathSeg::{Field, Index};
-    let name = match path {
-        [Field(f)] if f == "embed" => "embed_tokens".into(),
-        [Field(f)] if f == "norm" => "norm".into(),
-        [Field(layers), Index(i), Field(f)] if layers == "layers" => {
-            let part = match f.as_str() {
-                "ln1" => "input_layernorm",
-                "ln2" => "post_attention_layernorm",
-                "q_norm" | "k_norm" => &format!("self_attn.{f}"),
-                "q" | "k" | "v" | "o" => &format!("self_attn.{f}_proj"),
-                "gate" | "up" | "down" => &format!("mlp.{f}_proj"),
-                _ => return None,
-            };
-            format!("layers.{i}.{part}")
-        }
-        _ => return None,
-    };
-    Some(format!("model.{name}.weight"))
 }

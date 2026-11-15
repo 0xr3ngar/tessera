@@ -1,34 +1,46 @@
-//! Qwen3-0.6B on the GPU: timing, cost and decoding.
+//! A decoder on the GPU: timing, cost and decoding.
 
-use super::{GOLDEN, LOGITS, release};
-use crate::common::{interpreted, kernels, loaded, seconds, table};
+use super::{Spec, Tolerance, interpreted, kernels, loaded, seconds, table};
 use calibrate::{headroom, measure};
 use interp::Tensor;
-use lower::{Cache, Device, Pins, Plan, Settings, View, lower, select};
-use models::qwen3::{Config, stepper};
+use lower::{Cache, Device, Form, Pins, Plan, Settings, View, lower, select};
 use run::Run;
 use std::time::Instant;
 use testkit::{argmax, max_abs_diff};
 use trace::DimName::{self, Context, Rows, Segments, Seqs};
 use trace::Graph;
 
-/// Read from the directory `TESSERA_QWEN3` names.
+/// The model's reference, as its golden run reads it.
 struct Fixture {
     settings: Settings,
     weights: Vec<Tensor>,
     tokens: Vec<u32>,
     want: Vec<f32>,
+    /// How closely `want` must be matched.
+    tolerance: &'static Tolerance,
+    /// The form plans keep the checkpoint in.
+    form: &'static dyn Form,
 }
 
-fn fixture(g: &Graph) -> Option<Fixture> {
-    let mut reference = GOLDEN.reference("qwen3", g)?;
+fn fixture(spec: &Spec, g: &Graph) -> Option<Fixture> {
+    let golden = spec.golden.as_ref()?;
+    let logits = golden.checks.iter().find(|c| c.name == "logits")?;
+    let mut reference = golden.reference(spec.name, g)?;
     let mut one = reference.cases.remove(0);
     Some(Fixture {
         settings: settings::read(),
         weights: reference.weights,
         want: one.outputs.remove("logits").unwrap(),
         tokens: one.tokens,
+        tolerance: &logits.tolerance,
+        form: golden.form,
     })
+}
+
+impl Fixture {
+    fn vocab(&self) -> usize {
+        self.want.len() / self.tokens.len()
+    }
 }
 
 /// Rows of logits `tokens` give on the interpreter.
@@ -36,29 +48,30 @@ fn logits(g: &Graph, c: &Fixture, tokens: &[u32]) -> Vec<f32> {
     interpreted(g, &c.weights, 1, tokens)
 }
 
-/// Each position must pick the reference's top token.
+/// Each position must match the reference as its check says.
 fn close(label: &str, got: &[f32], c: &Fixture) {
-    LOGITS.tolerance.check(label, got, &c.want, c.tokens.len());
+    c.tolerance.check(label, got, &c.want, c.tokens.len());
 }
 
-#[test]
-fn gpu_checks() {
+/// Both entries on this host's GPU, against the reference.
+pub fn gpu(spec: &Spec) {
+    let Some(stepper) = &spec.stepper else { return };
     if settings::read().gpu().is_none() {
         return eprintln!("no GPU here; skipped");
     }
-    let g = release();
-    let Some(c) = fixture(&g) else {
-        return eprintln!("TESSERA_QWEN3 is not set; skipped");
+    let g = (spec.release)();
+    let Some(c) = fixture(spec, &g) else {
+        return eprintln!("{}: no reference here; skipped", spec.name);
     };
     let mut gpu = Gpu::open(&g, &c);
     forward::check(&mut gpu, &g);
-    decode::check(&mut gpu, &g);
+    decode::check(&mut gpu, &g, (stepper.release)());
     gpu.save();
 }
 
-/// The checkpoint is bf16, so plans read it as stored.
-fn pinned(settings: &Settings) -> Device {
-    Device::guess(settings).pinned(Pins::all(lower::form::BF16_FORM))
+/// Plans read the checkpoint as stored.
+fn pinned(c: &Fixture) -> Device {
+    Device::guess(&c.settings).pinned(Pins::all(c.form))
 }
 
 /// Plans for either entry on one runner. Weights load once.
@@ -135,10 +148,10 @@ fn room(device: &Device, plan: &Plan, steps: &[f64]) {
 impl<'a> Gpu<'a> {
     fn open(g: &Graph, c: &'a Fixture) -> Self {
         let first = prompt(&c.tokens);
-        let plan = lower(g, 0, &first.sizes(), &pinned(&c.settings)).unwrap();
+        let plan = lower(g, 0, &first.sizes(), &pinned(c)).unwrap();
         let runner = loaded(plan, g, &c.weights, &c.settings);
         let device = Device::stored(runner.platform(), &c.settings).unwrap();
-        let device = device.pinned(pinned(&c.settings).pins);
+        let device = device.pinned(pinned(c).pins);
         let (name, samples) = (runner.device(), device.samples());
         eprintln!("{name}: {samples} stored samples");
         Self {
@@ -229,10 +242,10 @@ mod forward {
     }
 
     /// Prints what the plan chose, its estimate and its time.
-    fn report(r: &Timed, device: &Device) {
+    fn report(r: &Timed, device: &Device, vocab: usize) {
         let timed: f64 = r.steps.iter().sum();
         let cost = device.cost(&r.plan);
-        let (n, whole) = (r.out.len() / 151_936, r.whole);
+        let (n, whole) = (r.out.len() / vocab, r.whole);
         eprintln!("plan, {n} tokens: {whole:.3} s with logits read back");
         let (all, estimate) = (cost.launches, cost.seconds);
         eprintln!("  {all} launches: estimated {estimate:.3} s, timed {timed:.3} s");
@@ -250,11 +263,9 @@ mod forward {
     /// The plan should not lose to favoring any one rule.
     fn compare(gpu: &mut Gpu, g: &Graph, planned: &Timed) {
         let timed = |r: &Timed| r.steps.iter().sum::<f64>();
-        let tokens = repeat(gpu.c, planned.out.len() / 151_936);
+        let tokens = repeat(gpu.c, planned.out.len() / gpu.c.vocab());
         let sizes = prompt(&tokens).sizes();
-        let contested = select(g, 0, &sizes, &pinned(&gpu.c.settings))
-            .unwrap()
-            .contested;
+        let contested = select(g, 0, &sizes, &pinned(gpu.c)).unwrap().contested;
         let mut least = f64::INFINITY;
         for rule in contested {
             let device = gpu.device.clone().favoring(rule);
@@ -278,7 +289,7 @@ mod forward {
         }
         let device = gpu.device.clone();
         let short = run(gpu, g, &c.tokens, &device);
-        report(&short, &device);
+        report(&short, &device, c.vocab());
         compare(gpu, g, &short);
         close("plan", &short.out, c);
         // Past the reference's length, the CPU is the check.
@@ -288,7 +299,7 @@ mod forward {
         assert!(off < 1e-3, "the plan and the interpreter disagree");
         // Causal, so a long run's first rows match the reference.
         let long = run(gpu, g, &long, &device);
-        report(&long, &device);
+        report(&long, &device, c.vocab());
         compare(gpu, g, &long);
         close("plan, start of 512", &long.out[..c.want.len()], c);
     }
@@ -376,9 +387,8 @@ mod decode {
         assert!(lead < 1e-3, "{label}: {chosen} trails the best by {lead}");
     }
 
-    pub fn check(gpu: &mut Gpu, forward: &Graph) {
-        let text = stepper(&Config::small(1, 1024)).to_json();
-        let g = Graph::from_json(&text).unwrap();
+    pub fn check(gpu: &mut Gpu, forward: &Graph, step: Graph) {
+        let g = Graph::from_json(&step.to_json()).unwrap();
         assert_eq!(g.weights, forward.weights);
         let c = gpu.c;
         // A prompt, then single rows at a few lengths.
@@ -403,7 +413,7 @@ mod decode {
         eprintln!("  last token: estimated {estimate:.2} ms, timed {timed:.2} ms");
         table(&last, &steps);
         room(&device, &last, &steps);
-        let vocab = c.want.len() / c.tokens.len();
+        let vocab = c.vocab();
         for (row, id) in c.want.chunks(vocab).zip(&planned.prompt) {
             likeliest("prefill", row, *id);
         }
@@ -420,7 +430,7 @@ mod decode {
             past: 15,
             tokens: &[0],
         };
-        let pinned = pinned(&gpu.c.settings);
+        let pinned = pinned(gpu.c);
         let contested = select(&g, 0, &one.sizes(), &pinned).unwrap().contested;
         let mut most = 0.0f64;
         for rule in contested {

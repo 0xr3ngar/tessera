@@ -4,7 +4,7 @@ mod golden_test;
 mod rotation_test;
 mod rows_test;
 
-use crate::common::{Check, Compare, Golden, Source, Spec, Tolerance, small_stack, suite};
+use crate::common::{Check, Compare, Golden, Spec, Tolerance, small_stack, suite};
 use lower::form::F32_FORM;
 use models::Rotated;
 use models::eg2::{Config, probe, program};
@@ -47,7 +47,7 @@ const CLOSE: Tolerance = Tolerance {
 };
 
 pub const GOLDEN: Golden = Golden {
-    source: Source::Files(|s| s.eg2.clone()),
+    record: None,
     form: F32_FORM,
     checks: &[
         Check {
@@ -69,6 +69,7 @@ const SPEC: Spec = Spec {
     release,
     parameters: 271_002_648,
     regions: &[(Attention, 24), (Mlp, 24)],
+    stepper: None,
     small: Some(small),
     files: &[
         (include_str!("manifests/hf.json"), release),

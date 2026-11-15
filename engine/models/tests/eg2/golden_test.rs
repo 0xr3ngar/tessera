@@ -100,7 +100,7 @@ fn reference_checks() {
         return eprintln!("TESSERA_EG2 is not set; skipped");
     };
     let settings = settings::read();
-    let dir = settings.eg2.clone().unwrap();
+    let dir = settings.reference("eg2").unwrap();
     let cases = &reference.cases;
     if dir.join("exlr8").is_dir() || dir.join("exlr8.repo").is_file() {
         check_exlr8(&dir, &g, &cases[..1]);

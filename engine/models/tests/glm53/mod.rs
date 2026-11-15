@@ -16,6 +16,7 @@ const SPEC: Spec = Spec {
     release,
     parameters: 743_377_019_904,
     regions: &[(Attention, 78), (Mlp, 3), (Moe, 75)],
+    stepper: None,
     small: None,
     files: &[],
     golden: None,

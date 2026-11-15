@@ -1,17 +1,54 @@
 use crate::names::{Unresolved, resolve, rules};
 use checkpoint::{Slice, Stored};
-use graph::Graph;
-use models::qwen3::{Config, stepper, tensor_name};
+use graph::{Graph, PathSeg};
+use models::decoder::{Config, stepper};
+use trace::Norm;
 
 fn graph() -> Graph {
-    stepper(&Config::toy(1, 8))
+    stepper::<Norm>(&Config::toy(1, 8))
 }
 
-/// Every weight as `spell` names it, sized to fit.
-fn offered(g: &Graph, spell: impl Fn(&str) -> String) -> Vec<Slice> {
+/// Each field's Hugging Face and GGUF spellings.
+const SPELLINGS: [(&str, &str, &str); 13] = [
+    ("embed", "model.embed_tokens", "token_embd"),
+    ("norm", "model.norm", "output_norm"),
+    ("ln1", "input_layernorm", "attn_norm"),
+    ("ln2", "post_attention_layernorm", "ffn_norm"),
+    ("q", "self_attn.q_proj", "attn_q"),
+    ("k", "self_attn.k_proj", "attn_k"),
+    ("v", "self_attn.v_proj", "attn_v"),
+    ("o", "self_attn.o_proj", "attn_output"),
+    ("q_norm", "self_attn.q_norm", "attn_q_norm"),
+    ("k_norm", "self_attn.k_norm", "attn_k_norm"),
+    ("gate", "mlp.gate_proj", "ffn_gate"),
+    ("up", "mlp.up_proj", "ffn_up"),
+    ("down", "mlp.down_proj", "ffn_down"),
+];
+
+/// A weight path's name, Hugging Face's or GGUF's.
+pub(crate) fn tensor_name(path: &[PathSeg], gguf: bool) -> Option<String> {
+    use PathSeg::{Field, Index};
+    let (field, layer) = match path {
+        [Field(f)] => (f, None),
+        [Field(layers), Index(i), Field(f)] if layers == "layers" => (f, Some(i)),
+        _ => return None,
+    };
+    let (_, hf, ggml) = SPELLINGS.iter().find(|(name, ..)| name == field)?;
+    let (name, blocks) = match gguf {
+        true => (ggml, "blk"),
+        false => (hf, "model.layers"),
+    };
+    Some(match layer {
+        Some(i) => format!("{blocks}.{i}.{name}.weight"),
+        None => format!("{name}.weight"),
+    })
+}
+
+/// Every weight in one spelling, sized to fit.
+fn offered(g: &Graph, gguf: bool) -> Vec<Slice> {
     let mut out = Vec::new();
     for w in &g.weights {
-        let name = spell(&tensor_name(&w.path).unwrap());
+        let name = tensor_name(&w.path, gguf).unwrap();
         let axis = |e: &graph::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
         out.push(Slice {
             name,
@@ -22,34 +59,11 @@ fn offered(g: &Graph, spell: impl Fn(&str) -> String) -> Vec<Slice> {
     out
 }
 
-/// GGUF's spelling of a Hugging Face name.
-pub(crate) fn gguf(hf: &str) -> String {
-    let swaps = [
-        ("model.layers.", "blk."),
-        ("self_attn.q_proj", "attn_q"),
-        ("self_attn.k_proj", "attn_k"),
-        ("self_attn.v_proj", "attn_v"),
-        ("self_attn.o_proj", "attn_output"),
-        ("self_attn.q_norm", "attn_q_norm"),
-        ("self_attn.k_norm", "attn_k_norm"),
-        ("mlp.gate_proj", "ffn_gate"),
-        ("mlp.up_proj", "ffn_up"),
-        ("mlp.down_proj", "ffn_down"),
-        ("input_layernorm", "attn_norm"),
-        ("post_attention_layernorm", "ffn_norm"),
-        ("model.embed_tokens", "token_embd"),
-        ("model.norm", "output_norm"),
-    ];
-    swaps
-        .iter()
-        .fold(hf.to_string(), |s, (a, b)| s.replace(a, b))
-}
-
 #[test]
 fn both_spellings_resolve() {
     let g = graph();
-    for spell in [|s: &str| s.to_string(), gguf] {
-        let slices = offered(&g, spell);
+    for gguf in [false, true] {
+        let slices = offered(&g, gguf);
         let names: Vec<String> = resolve(&g, &slices, &[])
             .unwrap()
             .into_iter()
@@ -63,7 +77,7 @@ fn both_spellings_resolve() {
 #[test]
 fn refuses_doubt() {
     let g = graph();
-    let mut slices = offered(&g, |s| s.to_string());
+    let mut slices = offered(&g, false);
     let q = slices
         .iter()
         .find(|s| s.name.contains("0.self_attn.q_proj"))
@@ -93,17 +107,18 @@ fn refuses_doubt() {
 #[test]
 fn rules_decide() {
     let g = graph();
-    let mut slices = offered(&g, |s| s.to_string());
+    let mut slices = offered(&g, false);
     slices
         .iter_mut()
         .for_each(|s| s.name = s.name.replace("q_proj", "query"));
     assert!(resolve(&g, &slices, &[]).is_err());
     let repo = rules(r#"{"layers.*.q": "model.layers.*.self_attn.query"}"#).unwrap();
     let names = resolve(&g, &slices, &[&repo]).unwrap();
+    let q = "model.layers.0.self_attn.q_proj.weight";
     let at = g
         .weights
         .iter()
-        .position(|w| tensor_name(&w.path).unwrap().contains("0.self_attn.q_proj"));
+        .position(|w| tensor_name(&w.path, false).unwrap() == q);
     assert_eq!(
         names[at.unwrap()].name,
         "model.layers.0.self_attn.query.weight"
@@ -118,9 +133,4 @@ fn rules_decide() {
             .to_string()
             .contains("norm: model.layers.0.self_attn.query.weight")
     );
-}
-
-/// GGUF's name for a weight path.
-pub(crate) fn gguf_name(path: &[graph::PathSeg]) -> Option<String> {
-    Some(gguf(&tensor_name(path)?))
 }

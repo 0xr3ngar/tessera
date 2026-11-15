@@ -4,7 +4,8 @@ use super::{Spec, inputs, interpreted, loaded, settings};
 use bundle::names::repo;
 use checkpoint::{File, Offer};
 use interp::Tensor;
-use lower::{Device, Form, Pins, Settings, Weight, lower};
+use lower::form::BF16_FORM;
+use lower::{Device, Form, Pins, Weight, lower};
 use run::Run;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -14,20 +15,13 @@ use trace::Graph;
 
 /// A recorded reference, and how closely to match it.
 pub struct Golden {
-    pub source: Source,
+    /// Values the test itself holds, else the model's reference directory.
+    pub record: Option<fn(&Graph) -> Reference>,
     /// The form the plan keeps weights in.
     pub form: &'static dyn Form,
     pub checks: &'static [Check],
     /// The plan runs on a host with no GPU too.
     pub anywhere: bool,
-}
-
-/// Where a reference comes from.
-pub enum Source {
-    /// A reference directory, where the settings name one.
-    Files(fn(&Settings) -> Option<PathBuf>),
-    /// Values the test itself holds.
-    Record(fn(&Graph) -> Reference),
 }
 
 /// One recorded output, and the graph output it matches.
@@ -47,6 +41,25 @@ pub enum Compare {
     /// Row `n - 1` is the mean row of `probe(n)`.
     Layers(fn(u64) -> Graph, &'static [u64]),
 }
+
+/// Each position must pick the reference's top token.
+const TOP_TOKEN: Check = Check {
+    name: "logits",
+    compare: Compare::Tokens,
+    tolerance: Tolerance {
+        max_abs: 1e-3,
+        cos: 0.99999,
+        top: true,
+    },
+};
+
+/// A bf16 checkpoint, checked by its logits.
+pub const LOGITS: Golden = Golden {
+    record: None,
+    form: BF16_FORM,
+    checks: &[TOP_TOKEN],
+    anywhere: false,
+};
 
 /// What a reference holds: weights, and inputs with outputs.
 pub struct Reference {
@@ -183,10 +196,10 @@ impl Tolerance {
 impl Golden {
     /// The reference for `g`, where this host has it.
     pub fn reference(&self, model: &str, g: &Graph) -> Option<Reference> {
-        let dir = match self.source {
-            Source::Record(read) => return Some(read(g)),
-            Source::Files(dir) => dir(&settings())?,
-        };
+        if let Some(read) = self.record {
+            return Some(read(g));
+        }
+        let dir = settings().reference(model)?;
         let file = dir.join("model.safetensors");
         Some(Reference {
             weights: safetensors(model, g, &file),

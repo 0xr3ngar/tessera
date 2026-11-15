@@ -20,12 +20,13 @@ use interp::Tensor;
 use lower::form::{BF16_FORM, F32_FORM, Form};
 use lower::{Pins, Weight};
 use models::Stack;
-use models::qwen3::{Config, stepper};
+use models::decoder::{self, Config};
 use names::Rule;
 use serde::Deserialize;
 use std::error::Error;
 use std::path::Path;
 use tokenize::hf::Hf;
+use trace::Norm;
 
 /// What the graph needs from a Hugging Face `config.json`.
 #[derive(Deserialize)]
@@ -36,7 +37,8 @@ struct HfConfig {
     num_hidden_layers: u64,
     num_attention_heads: u64,
     num_key_value_heads: u64,
-    head_dim: u64,
+    /// Older files leave it out: `hidden_size / num_attention_heads`.
+    head_dim: Option<u64>,
     intermediate_size: u64,
     rope_theta: f32,
     rms_norm_eps: f32,
@@ -111,7 +113,21 @@ fn floats(
     Ok(Weight::Floats(Tensor::f32(shape, v)))
 }
 
-/// Reads a Qwen3 directory: `slots` sequences of `context` rows.
+/// The step graph for an architecture name.
+pub(crate) fn stepper(arch: &str, c: &Config) -> Option<Graph> {
+    Some(match arch {
+        "qwen3" => decoder::stepper::<Norm>(c),
+        "llama" => decoder::stepper::<()>(c),
+        _ => return None,
+    })
+}
+
+/// A head's width, where a file leaves it out.
+pub(crate) fn head_dim(given: Option<u64>, hidden: u64, heads: u64) -> u64 {
+    given.unwrap_or(hidden / heads)
+}
+
+/// Reads a model directory: `slots` sequences of `context` rows.
 pub fn load(dir: &Path, slots: u64, context: u64) -> Result<Bundle, Box<dyn Error + Send + Sync>> {
     load_named(dir, slots, context, &[])
 }
@@ -127,16 +143,13 @@ pub fn load_named(
         return gguf::load(dir, slots, context, user);
     }
     let hf: HfConfig = serde_json::from_str(&std::fs::read_to_string(dir.join("config.json"))?)?;
-    if hf.model_type != "qwen3" {
-        return Err(format!("{} is not a model this engine traces", hf.model_type).into());
-    }
     let config = Config {
         stack: Stack {
             vocab: hf.vocab_size,
             hidden: hf.hidden_size,
             layers: hf.num_hidden_layers,
             heads: hf.num_attention_heads,
-            head_dim: hf.head_dim,
+            head_dim: head_dim(hf.head_dim, hf.hidden_size, hf.num_attention_heads),
             ffn: hf.intermediate_size,
             max_seqs: slots,
             max_context: context,
@@ -145,7 +158,8 @@ pub fn load_named(
         rope_theta: hf.rope_theta,
         eps: hf.rms_norm_eps,
     };
-    let graph = stepper(&config);
+    let graph = stepper(&hf.model_type, &config)
+        .ok_or_else(|| format!("{} is not a model this engine traces", hf.model_type))?;
     let file = File::open(&dir.join("model.safetensors"))?;
     let (weights, pins) = pull(&graph, &file, config.stack.layers, &[user])?;
     let tokenizer = Hf::open(&dir.join("tokenizer.json"))?;
