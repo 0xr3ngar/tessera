@@ -38,6 +38,7 @@ Crate | Description
 [trace-derive](engine/ir/trace-derive) | #[derive(Weights)] for model descriptions
 [models](engine/models) | Model descriptions, traced into graphs
 [codegen](engine/plan/codegen) | Generates kernel text for every dialect, and counts what it costs
+[comm](engine/plan/comm) | Moves bytes between ranks: the transport trait and TCP sockets
 [kernel-macro](engine/plan/kernel-macro) | #[kernel]: a Rust function body as a kernel tree
 [lower](engine/plan/lower) | Lowers a graph to a plan of kernel launches
 [run](engine/plan/run) | Runs lowered plans on the host, Metal, CUDA or ROCm

@@ -244,6 +244,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "comm"
+version = "0.1.0"
+
+[[package]]
 name = "compact_str"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -957,6 +961,7 @@ name = "lower"
 version = "0.1.0"
 dependencies = [
  "codegen",
+ "comm",
  "engine-settings",
  "frontend-settings",
  "gpukit",
@@ -1065,6 +1070,7 @@ version = "0.1.0"
 dependencies = [
  "bundle",
  "checkpoint",
+ "comm",
  "frontend-settings",
  "graph",
  "interp",
@@ -1364,6 +1370,7 @@ name = "run"
 version = "0.1.0"
 dependencies = [
  "codegen",
+ "comm",
  "engine-settings",
  "gpukit",
  "graph",

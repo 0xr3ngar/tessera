@@ -29,6 +29,7 @@ calibrate = { path = "tools/calibrate" }
 checkpoint = { path = "frontend/checkpoint" }
 gemm = { path = "engine/gpu/gemm" }
 codegen = { path = "engine/plan/codegen" }
+comm = { path = "engine/plan/comm" }
 engine = { path = "engine/engine" }
 engine-settings = { path = "engine/settings" }
 findings = { path = "tools/findings" }

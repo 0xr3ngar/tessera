@@ -1,11 +1,12 @@
 //! The toy decoder over two ranks matches one.
 
+use comm::Sockets;
 use frontend_settings::read as settings;
 use graph::{Graph, Placement, shard};
 use interp::{Tensor, run, run_ranks};
 use lower::{Cluster, Device, Link, Pick, Plan, View, Zone, ZoneKind, lower};
 use models::decoder::{Config, Swiglu, program};
-use run::{Loopback, Rank, Sockets};
+use run::{Loopback, Rank};
 use sim::Tag;
 use std::net::TcpListener;
 use testkit::{Noise, fill, max_abs_diff};

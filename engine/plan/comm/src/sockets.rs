@@ -1,34 +1,10 @@
-//! Ranks in separate processes, exchanging bytes over sockets.
+//! TCP between every pair of ranks.
 
-use crate::Run;
-use crate::open;
-use engine_settings::Settings;
-use lower::{Error, Plan};
-use mem::{Tensor, View};
+use crate::{Error, Transport};
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
-
-/// Moves bytes between ranks. One round trip per call.
-pub trait Transport {
-    fn rank(&self) -> u32;
-    fn ranks(&self) -> u32;
-    /// Every rank's bytes, in rank order, `mine` among them.
-    fn exchange(&mut self, mine: &[u8]) -> Result<Vec<Vec<u8>>, Error>;
-}
-
-/// The parts summed in rank order. Every rank agrees.
-pub(crate) fn summed<'a>(parts: impl Iterator<Item = &'a [f32]>) -> Vec<f32> {
-    let mut sum: Option<Vec<f32>> = None;
-    for part in parts {
-        sum = Some(match sum {
-            None => part.to_vec(),
-            Some(s) => s.iter().zip(part).map(|(a, b)| a + b).collect(),
-        });
-    }
-    sum.expect("a rank")
-}
 
 /// TCP to every other rank. Lower ranks call, higher answer.
 pub struct Sockets {
@@ -42,7 +18,7 @@ const PATIENCE: Duration = Duration::from_secs(10);
 
 impl Sockets {
     /// Joins rank `rank` of `addrs`, listening on `listener`.
-    pub fn join(rank: u32, listener: TcpListener, addrs: &[SocketAddr]) -> io::Result<Self> {
+    pub fn join(rank: u32, listener: TcpListener, addrs: &[SocketAddr]) -> Result<Self, Error> {
         let mut peers: Vec<Option<TcpStream>> = (0..addrs.len()).map(|_| None).collect();
         for (r, addr) in addrs.iter().enumerate().take(rank as usize) {
             let mut stream = call(*addr)?;
@@ -56,7 +32,7 @@ impl Sockets {
             stream.read_exact(&mut who)?;
             let who = u32::from_le_bytes(who) as usize;
             if who <= rank as usize || who >= addrs.len() || peers[who].is_some() {
-                return Err(io::Error::other(format!("rank {who} called twice")));
+                return Err(Error::Join(format!("rank {who} called rank {rank}")));
             }
             peers[who] = Some(stream);
         }
@@ -129,55 +105,5 @@ impl Transport for Sockets {
             Ok(())
         })?;
         Ok(out)
-    }
-}
-
-/// One rank: its runner and its way to the others.
-pub struct Rank<T: Transport> {
-    runner: Box<dyn Run>,
-    transport: T,
-}
-
-impl<T: Transport> Rank<T> {
-    /// A runner for the transport's rank of `plan`.
-    pub fn open(plan: Plan, settings: &Settings, transport: T) -> Result<Self, Error> {
-        if plan.ranks.max(1) != transport.ranks() {
-            let what = format!("a plan over {} ranks on {}", plan.ranks, transport.ranks());
-            return Err(Error::Unsupported(what));
-        }
-        let mut runner = open(plan, settings)?;
-        runner.base_mut().rank = transport.rank();
-        Ok(Self { runner, transport })
-    }
-
-    pub fn runner(&self) -> &dyn Run {
-        &*self.runner
-    }
-
-    /// Takes this rank's slice of the whole weight.
-    pub fn load(&mut self, weight: u32, data: View) -> Result<(), Error> {
-        self.runner.load(weight, data)
-    }
-
-    /// Runs every step. Sums wait for every rank.
-    pub fn run(&mut self, inputs: &[View]) -> Result<Vec<Tensor>, Error> {
-        self.runner.feed(inputs)?;
-        let steps = self.runner.plan().steps.clone();
-        for (i, step) in steps.iter().enumerate() {
-            if step.kernel.name() != "all_reduce" {
-                self.runner.submit(i..i + 1)?;
-                continue;
-            }
-            let part = self.runner.read(step.reads[0])?;
-            let parts = self.transport.exchange(part.bytes())?;
-            let floats = |p: &Vec<u8>| Tensor::from_bytes(vec![p.len() / 4], mem::DType::F32, p);
-            let parts: Vec<Tensor> = parts.iter().map(floats).collect();
-            let sum = summed(parts.iter().map(|p| p.floats().expect("floats")));
-            let sum = Tensor::f32(vec![step.write.len], sum);
-            self.runner.write(step.write, sum.view())?;
-        }
-        let outputs = self.runner.plan().outputs.clone();
-        let read = |o: &lower::Output| Ok(self.runner.read(o.slot)?.reshaped(o.shape.clone()));
-        outputs.iter().map(read).collect()
     }
 }
