@@ -20,6 +20,8 @@ testkit = { workspace = true }
 codegen = { workspace = true }
 settings = { workspace = true }
 graph = { workspace = true }
+engine = { workspace = true }
+models = { workspace = true }
 trace = { workspace = true }
 lower = { workspace = true }
 sim = { workspace = true }
