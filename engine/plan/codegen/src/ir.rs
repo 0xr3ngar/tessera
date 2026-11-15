@@ -302,6 +302,18 @@ pub enum Param {
     },
 }
 
+impl Param {
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Param::Buffer { name, .. }
+            | Param::Scalar { name, .. }
+            | Param::Shared { name, .. }
+            | Param::Tiles { name }
+            | Param::Array { name, .. } => name,
+        }
+    }
+}
+
 /// A whole kernel, before any dialect.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Body {
@@ -382,7 +394,7 @@ impl Printer<'_> {
         let mut n = 0;
         while taken(self, &c) {
             n += 1;
-            c = format!("{name}_{n}");
+            c = format!("{name}__{n}");
         }
         let last = self.scope.last_mut().expect("a scope");
         last.insert(name.into(), (kind, c.clone()));

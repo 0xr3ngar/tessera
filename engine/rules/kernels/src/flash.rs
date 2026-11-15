@@ -38,24 +38,79 @@ thread_local! {
     static TREES: RefCell<HashMap<(u32, bool), Body>> = RefCell::new(HashMap::new());
 }
 
-/// Stages `cw` columns from `d0` of the group's query rows.
-#[kernel]
-fn stage_q(
-    q_s: &mut Shared<f32>,
-    q: Buf<F32>,
+/// Group memory and tile sums the key stream passes through.
+#[derive(Group)]
+struct Stream {
+    q_s: Shared<f32>,
+    /// A chunk of keys, then a slice of values transposed.
+    kv_s: Shared<f32>,
+    p_s: Shared<f32>,
+    alpha_s: Shared<f32>,
+    l_s: Shared<f32>,
+    /// Row r sees keys `[from, to)`. Spare rows see none.
+    from_s: Shared<u32>,
+    to_s: Shared<u32>,
+    s_t: Tiles,
+    o00: Tiles,
+    o01: Tiles,
+    o10: Tiles,
+    o11: Tiles,
+    /// Each row's peak and sum.
+    state: [f32; 2],
+}
+
+/// The query block and head one group serves.
+#[derive(Group)]
+struct Head {
     q0: u32,
     queries: u32,
     heads: u32,
-    h: u32,
-    d0: u32,
-    #[build] cw: u32,
-    #[build] w: u32,
-) {
+    head: u32,
+    kv_heads: u32,
+    kvh: u32,
+}
+
+/// The head and query block of group `at`, slices aside.
+#[kernel]
+fn head_at(at: u32, queries: u32, heads: u32, kv_heads: u32) -> Head {
+    Head {
+        q0: (at / heads) * BQ,
+        queries,
+        heads,
+        head: at % heads,
+        kv_heads,
+        kvh: (at % heads) / (heads / kv_heads),
+    }
+}
+
+/// The stream's memory and sums, staging `cw` columns.
+#[kernel]
+fn stream(#[build] cw: u32) -> Stream {
+    Stream {
+        q_s: shared::<f32>(BQ * (cw + PAD)),
+        kv_s: shared::<f32>(cw * (BK + PAD)),
+        p_s: shared::<f32>(BQ * (BK + PAD)),
+        alpha_s: shared::<f32>(BQ),
+        l_s: shared::<f32>(BQ),
+        from_s: shared::<u32>(BQ),
+        to_s: shared::<u32>(BQ),
+        s_t: tiles(16, 16),
+        o00: tiles(16, 16),
+        o01: tiles(16, 16),
+        o10: tiles(16, 16),
+        o11: tiles(16, 16),
+        state: [0.0f32; 2],
+    }
+}
+
+/// Stages `cw` columns from `d0` of the group's query rows.
+#[kernel]
+fn stage_q(st: &mut Stream, q: Buf<F32>, hd: &Head, d0: u32, #[build] cw: u32, #[build] w: u32) {
     for i in (lid()..BQ * cw).by(THREADS) {
         let r = i / cw;
         let d = i % cw;
-        q_s[r * (cw + PAD) + d] = if q0 + r < queries {
-            q[((q0 + r) * heads + h) as u64 * w as u64 + (d0 + d) as u64]
+        st.q_s[r * (cw + PAD) + d] = if hd.q0 + r < hd.queries {
+            q[((hd.q0 + r) * hd.heads + hd.head) as u64 * w as u64 + (d0 + d) as u64]
         } else {
             0.0
         };
@@ -65,13 +120,12 @@ fn stage_q(
 /// Stages `cw` columns from `d0` of the rows at `at`.
 #[kernel]
 fn stage_kv<const TRANSPOSED: bool>(
-    kv_s: &mut Shared<f32>,
+    st: &mut Stream,
     src: Buf<F32>,
+    hd: &Head,
     at: u32,
     k0: u32,
     count: u32,
-    kv_heads: u32,
-    kvh: u32,
     d0: u32,
     #[build] cw: u32,
     #[build] w: u32,
@@ -80,77 +134,66 @@ fn stage_kv<const TRANSPOSED: bool>(
         let t = i / cw;
         let d = i % cw;
         let v = if k0 + t < count {
-            src[((at + t) * kv_heads + kvh) as u64 * w as u64 + (d0 + d) as u64]
+            src[((at + t) * hd.kv_heads + hd.kvh) as u64 * w as u64 + (d0 + d) as u64]
         } else {
             0.0
         };
         if TRANSPOSED {
-            kv_s[d * (BK + PAD) + t] = v;
+            st.kv_s[d * (BK + PAD) + t] = v;
         } else {
-            kv_s[t * (cw + PAD) + d] = v;
+            st.kv_s[t * (cw + PAD) + d] = v;
         }
     }
 }
 
 /// Adds `cw` staged columns to the score tiles.
 #[kernel]
-fn score_chunk(
-    s_t: &mut Tiles,
-    q_s: &Shared<f32>,
-    kv_s: &Shared<f32>,
-    simd: u32,
-    #[build] cw: u32,
-) {
+fn score_chunk(st: &mut Stream, simd: u32, #[build] cw: u32) {
     if simd < 2 {
-        s_t.block(q_s, simd * 16 * (cw + PAD), kv_s, 0, cw + PAD, cw);
+        st.s_t
+            .block(&st.q_s, simd * 16 * (cw + PAD), &st.kv_s, 0, cw + PAD, cw);
     }
 }
 
 /// Writes the scores to `p_s`. Unseen keys get -inf.
 #[kernel]
-fn scores(
-    s_t: &Tiles,
-    p_s: &mut Shared<f32>,
-    from_s: &Shared<u32>,
-    to_s: &Shared<u32>,
-    simd: u32,
-    k0: u32,
-) {
+fn scores(st: &mut Stream, simd: u32, k0: u32) {
     if simd < 2 {
-        s_t.each(|r, c, v| {
+        st.s_t.each(|r, c, v| {
             let t = k0 + c;
             let row = simd * 16 + r;
-            let seen = t >= from_s[row] && t < to_s[row];
-            p_s[row * (BK + PAD) + c] = if seen { v } else { f32::NEG_INFINITY };
+            let seen = t >= st.from_s[row] && t < st.to_s[row];
+            st.p_s[row * (BK + PAD) + c] = if seen { v } else { f32::NEG_INFINITY };
         });
     }
 }
 
 /// A row's softmax step. `state` holds its peak and sum.
 #[kernel]
-fn soften(p_s: &mut Shared<f32>, alpha_s: &mut Shared<f32>, state: &mut [f32; 2], row: u32) {
-    if lid() < BQ {
+fn soften(st: &mut Stream) {
+    let row = lid();
+    if row < BQ {
         let mut top = f32::NEG_INFINITY;
         for c in 0..BK {
-            top = max(top, p_s[row * (BK + PAD) + c]);
+            top = max(top, st.p_s[row * (BK + PAD) + c]);
         }
-        let m_new = max(state[0], top);
+        let m_new = max(st.state[0], top);
         // A row that has seen nothing keeps zero sums.
         let safe = if m_new == f32::NEG_INFINITY {
             0.0
         } else {
             m_new
         };
-        let alpha = exp(state[0] - safe);
+        let alpha = exp(st.state[0] - safe);
         let mut sum = 0.0f32;
         for c in 0..BK {
-            let p = exp(p_s[row * (BK + PAD) + c] - safe);
-            p_s[row * (BK + PAD) + c] = p;
+            let p = exp(st.p_s[row * (BK + PAD) + c] - safe);
+            st.p_s[row * (BK + PAD) + c] = p;
             sum += p;
         }
-        state[1] = state[1] * alpha + sum;
-        state[0] = m_new;
-        alpha_s[row] = alpha;
+        st.state[1] = st.state[1] * alpha + sum;
+        st.state[0] = m_new;
+        st.alpha_s[row] = alpha;
     }
 }
 
@@ -176,25 +219,93 @@ fn write_pair(
     top: &Tiles,
     bottom: &Tiles,
     mut out: BufMut<F32>,
-    l_s: &Shared<f32>,
-    from_s: &Shared<u32>,
-    to_s: &Shared<u32>,
-    q0: u32,
-    heads: u32,
-    h: u32,
+    st: &Stream,
+    hd: &Head,
     col: u32,
     #[build] w: u32,
 ) {
     top.each(|r, c, v| {
-        if to_s[r] > from_s[r] {
-            out[((q0 + r) * heads + h) as u64 * w as u64 + (col + c) as u64] = v / l_s[r];
+        if st.to_s[r] > st.from_s[r] {
+            let at = ((hd.q0 + r) * hd.heads + hd.head) as u64 * w as u64;
+            out[at + (col + c) as u64] = v / st.l_s[r];
         }
     });
     bottom.each(|r, c, v| {
-        if to_s[16 + r] > from_s[16 + r] {
-            out[((q0 + 16 + r) * heads + h) as u64 * w as u64 + (col + c) as u64] = v / l_s[16 + r];
+        if st.to_s[16 + r] > st.from_s[16 + r] {
+            let at = ((hd.q0 + 16 + r) * hd.heads + hd.head) as u64 * w as u64;
+            out[at + (col + c) as u64] = v / st.l_s[16 + r];
         }
     });
+}
+
+/// Softens a scored block, then folds in its values.
+#[kernel]
+fn take_block(
+    st: &mut Stream,
+    values: Buf<F32>,
+    hd: &Head,
+    at: u32,
+    k0: u32,
+    count: u32,
+    d0: u32,
+    #[build] cw: u32,
+    #[build] w: u32,
+) {
+    let simd = lid() / LANES as u32;
+    scores(st, simd, k0);
+    barrier();
+    soften(st);
+    barrier();
+    stage_kv::<true>(st, values, hd, at, k0, count, d0, cw, w);
+    barrier();
+    // Each SIMD group owns up to two column pieces.
+    if simd * 16 < cw {
+        let col = simd * 16 * (BK + PAD);
+        fold_pair(
+            &mut st.o00,
+            &mut st.o01,
+            &st.p_s,
+            &st.kv_s,
+            &st.alpha_s,
+            col,
+        );
+    }
+    if (simd + 4) * 16 < cw {
+        let col = (simd + 4) * 16 * (BK + PAD);
+        fold_pair(
+            &mut st.o10,
+            &mut st.o11,
+            &st.p_s,
+            &st.kv_s,
+            &st.alpha_s,
+            col,
+        );
+    }
+    barrier();
+}
+
+/// Writes the four tile sums over the sums in `state`.
+#[kernel]
+fn write_all(
+    st: &mut Stream,
+    mut out: BufMut<F32>,
+    hd: &Head,
+    d0: u32,
+    #[build] cw: u32,
+    #[build] w: u32,
+) {
+    let simd = lid() / LANES as u32;
+    if lid() < BQ {
+        st.l_s[lid()] = st.state[1];
+    }
+    barrier();
+    // The first column, then each SIMD group's pieces.
+    if simd * 16 < cw {
+        write_pair(&st.o00, &st.o01, out, st, hd, d0 + simd * 16, w);
+    }
+    if (simd + 4) * 16 < cw {
+        write_pair(&st.o10, &st.o11, out, st, hd, d0 + (simd + 4) * 16, w);
+    }
 }
 
 /// Lanes keep their output shares across the key stream.
@@ -219,22 +330,11 @@ fn flash(
     let slices = w / cw;
     let group = gid() / THREADS;
     let slice = group % slices;
-    let rest = group / slices;
-    let h = rest % heads;
-    let q0 = (rest / heads) * BQ;
-    let kvh = h / (heads / kv_heads);
+    let hd = head_at(group / slices, queries, heads, kv_heads);
     let row = lid();
-    let mut q_s = shared::<f32>(BQ * (cw + PAD));
-    // A chunk of keys, then the slice of values transposed.
-    let mut kv_s = shared::<f32>(cw * (BK + PAD));
-    let mut p_s = shared::<f32>(BQ * (BK + PAD));
-    let mut alpha_s = shared::<f32>(BQ);
-    let mut l_s = shared::<f32>(BQ);
-    // Row r sees keys `[from, to)`. Spare rows see none.
-    let mut from_s = shared::<u32>(BQ);
-    let mut to_s = shared::<u32>(BQ);
+    let mut st = stream(cw);
     if lid() < BQ {
-        let r = q0 + row;
+        let r = hd.q0 + row;
         let position = past + r;
         let live = r < queries && position < keys;
         let from = if position > back { position - back } else { 0 };
@@ -243,87 +343,40 @@ fn flash(
         } else {
             keys
         };
-        from_s[row] = if live { from } else { 0 };
-        to_s[row] = if live { to } else { 0 };
+        st.from_s[row] = if live { from } else { 0 };
+        st.to_s[row] = if live { to } else { 0 };
     }
     barrier();
     // The key blocks any row of the group sees.
     let mut lo = keys;
     let mut hi = 0u32;
     for r in 0..BQ {
-        if to_s[r] > from_s[r] {
-            if from_s[r] < lo {
-                lo = from_s[r];
+        if st.to_s[r] > st.from_s[r] {
+            if st.from_s[r] < lo {
+                lo = st.from_s[r];
             }
-            if to_s[r] > hi {
-                hi = to_s[r];
+            if st.to_s[r] > hi {
+                hi = st.to_s[r];
             }
         }
     }
-    let mut s_t = tiles(16, 16);
-    let mut o00 = tiles(16, 16);
-    let mut o01 = tiles(16, 16);
-    let mut o10 = tiles(16, 16);
-    let mut o11 = tiles(16, 16);
-    let mut state = [0.0f32; 2];
-    state[0] = f32::NEG_INFINITY;
-    // Each SIMD group owns up to two column pieces.
-    let first = simd * 16 < cw;
-    let second = (simd + 4) * 16 < cw;
+    st.state[0] = f32::NEG_INFINITY;
+    // The slice's first column.
+    let start = slice * cw;
     for b in lo / BK..(hi + BK - 1) / BK {
         let k0 = b * BK;
-        s_t.zero();
+        st.s_t.zero();
         for c in 0..slices {
             let d0 = c * cw;
-            stage_q(&mut q_s, q, q0, queries, heads, h, d0, cw, w);
-            stage_kv::<false>(&mut kv_s, k, k0, k0, keys, kv_heads, kvh, d0, cw, w);
+            stage_q(&mut st, q, &hd, d0, cw, w);
+            stage_kv::<false>(&mut st, k, &hd, k0, k0, keys, d0, cw, w);
             barrier();
-            score_chunk(&mut s_t, &q_s, &kv_s, simd, cw);
+            score_chunk(&mut st, simd, cw);
             barrier();
         }
-        scores(&s_t, &mut p_s, &from_s, &to_s, simd, k0);
-        barrier();
-        soften(&mut p_s, &mut alpha_s, &mut state, row);
-        barrier();
-        let d0 = slice * cw;
-        stage_kv::<true>(&mut kv_s, values, k0, k0, keys, kv_heads, kvh, d0, cw, w);
-        barrier();
-        if first {
-            fold_pair(
-                &mut o00,
-                &mut o01,
-                &p_s,
-                &kv_s,
-                &alpha_s,
-                simd * 16 * (BK + PAD),
-            );
-        }
-        if second {
-            fold_pair(
-                &mut o10,
-                &mut o11,
-                &p_s,
-                &kv_s,
-                &alpha_s,
-                (simd + 4) * 16 * (BK + PAD),
-            );
-        }
-        barrier();
+        take_block(&mut st, values, &hd, k0, k0, keys, start, cw, w);
     }
-    if lid() < BQ {
-        l_s[row] = state[1];
-    }
-    barrier();
-    // The slice's first column, then each SIMD group's pieces.
-    let d0 = slice * cw;
-    if first {
-        let col = d0 + simd * 16;
-        write_pair(&o00, &o01, out, &l_s, &from_s, &to_s, q0, heads, h, col, w);
-    }
-    if second {
-        let col = d0 + (simd + 4) * 16;
-        write_pair(&o10, &o11, out, &l_s, &from_s, &to_s, q0, heads, h, col, w);
-    }
+    write_all(&mut st, out, &hd, start, cw, w);
 }
 
 /// Ragged rows: a pass per slot in the block.
@@ -342,50 +395,31 @@ fn flash_rows(
     #[build] w: u32,
 ) {
     let simd = lid() / LANES as u32;
-    let group = gid() / THREADS;
-    let h = group % heads;
-    let q0 = (group / heads) * BQ;
-    let kvh = h / (heads / kv_heads);
+    let hd = head_at(gid() / THREADS, queries, heads, kv_heads);
     let row = lid();
-    let mut q_s = shared::<f32>(BQ * (w + PAD));
-    // Keys, then the values transposed, in one slot.
-    let mut kv_s = shared::<f32>(w * (BK + PAD));
-    let mut p_s = shared::<f32>(BQ * (BK + PAD));
-    let mut alpha_s = shared::<f32>(BQ);
-    let mut l_s = shared::<f32>(BQ);
-    // Rows the pass serves: one past the position. Else zero.
-    let mut seen_s = shared::<u32>(BQ);
-    let mut from_s = shared::<u32>(BQ);
+    // A pass serves one slot's rows, up to their positions.
+    let mut st = stream(w);
     if lid() < BQ {
-        from_s[row] = 0;
+        st.from_s[row] = 0;
     }
-    stage_q(&mut q_s, q, q0, queries, heads, h, 0, w, w);
-    let mut s_t = tiles(16, 16);
-    let mut o00 = tiles(16, 16);
-    let mut o01 = tiles(16, 16);
-    let mut o10 = tiles(16, 16);
-    let mut o11 = tiles(16, 16);
-    let mut state = [0.0f32; 2];
-    // Each SIMD group owns up to two column pieces.
-    let first = simd * 16 < w;
-    let second = (simd + 4) * 16 < w;
+    stage_q(&mut st, q, &hd, 0, w, w);
     for pass in 0..BQ {
-        let lead = q0 + pass;
+        let lead = hd.q0 + pass;
         let live = lead < queries;
         let slot = if live { slots[lead as u64] } else { 0 };
         // An earlier row's slot was served on its pass.
         let mut fresh = live;
         if live {
             for j in 0..pass {
-                if slots[(q0 + j) as u64] == slot {
+                if slots[(hd.q0 + j) as u64] == slot {
                     fresh = false;
                 }
             }
         }
         if fresh {
             if lid() < BQ {
-                let r = q0 + row;
-                seen_s[row] = if r < queries && slots[r as u64] == slot {
+                let r = hd.q0 + row;
+                st.to_s[row] = if r < queries && slots[r as u64] == slot {
                     positions[r as u64] + 1
                 } else {
                     0
@@ -394,64 +428,29 @@ fn flash_rows(
             barrier();
             let mut last = 0u32;
             for r in 0..BQ {
-                if seen_s[r] > last {
-                    last = seen_s[r];
+                if st.to_s[r] > last {
+                    last = st.to_s[r];
                 }
             }
             if last > keys {
                 last = keys;
             }
-            state[0] = f32::NEG_INFINITY;
-            state[1] = 0.0;
-            o00.zero();
-            o01.zero();
-            o10.zero();
-            o11.zero();
+            st.state[0] = f32::NEG_INFINITY;
+            st.state[1] = 0.0;
+            st.o00.zero();
+            st.o01.zero();
+            st.o10.zero();
+            st.o11.zero();
             for b in 0..(last + BK - 1) / BK {
                 let k0 = b * BK;
                 let at = kept_row(slot, k0);
-                stage_kv::<false>(&mut kv_s, k, at, k0, last, kv_heads, kvh, 0, w, w);
+                stage_kv::<false>(&mut st, k, &hd, at, k0, last, 0, w, w);
                 barrier();
-                s_t.zero();
-                score_chunk(&mut s_t, &q_s, &kv_s, simd, w);
-                scores(&s_t, &mut p_s, &from_s, &seen_s, simd, k0);
-                barrier();
-                soften(&mut p_s, &mut alpha_s, &mut state, row);
-                barrier();
-                stage_kv::<true>(&mut kv_s, values, at, k0, last, kv_heads, kvh, 0, w, w);
-                barrier();
-                if first {
-                    fold_pair(
-                        &mut o00,
-                        &mut o01,
-                        &p_s,
-                        &kv_s,
-                        &alpha_s,
-                        simd * 16 * (BK + PAD),
-                    );
-                }
-                if second {
-                    let col = (simd + 4) * 16 * (BK + PAD);
-                    fold_pair(&mut o10, &mut o11, &p_s, &kv_s, &alpha_s, col);
-                }
-                barrier();
+                st.s_t.zero();
+                score_chunk(&mut st, simd, w);
+                take_block(&mut st, values, &hd, at, k0, last, 0, w, w);
             }
-            if lid() < BQ {
-                l_s[row] = state[1];
-            }
-            barrier();
-            if first {
-                let col = simd * 16;
-                write_pair(
-                    &o00, &o01, out, &l_s, &from_s, &seen_s, q0, heads, h, col, w,
-                );
-            }
-            if second {
-                let col = (simd + 4) * 16;
-                write_pair(
-                    &o10, &o11, out, &l_s, &from_s, &seen_s, q0, heads, h, col, w,
-                );
-            }
+            write_all(&mut st, out, &hd, 0, w, w);
             barrier();
         }
     }
