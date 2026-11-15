@@ -21,6 +21,7 @@ run = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
-gpukit = { workspace = true }
 models = { workspace = true }
 settings = { workspace = true }
+testkit = { workspace = true }
+trace = { workspace = true }

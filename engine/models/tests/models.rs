@@ -5,4 +5,5 @@ mod eg2;
 mod glm53;
 mod nanogpt;
 mod qwen3;
+mod smollm2;
 mod tagger;

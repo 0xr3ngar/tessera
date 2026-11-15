@@ -20,6 +20,7 @@ const SPEC: Spec = Spec {
     release,
     parameters: 1_570_514,
     regions: &[],
+    stepper: None,
     small: None,
     files: &[],
     golden: None,

@@ -5,9 +5,13 @@ use kernels as _;
 use linear as _;
 
 mod golden;
+mod gpu;
+mod step;
 
-pub use golden::{Case, Check, Compare, Golden, Reference, Source, Tolerance, golden};
+pub use golden::{Case, Check, Compare, Golden, LOGITS, Reference, Tolerance, golden};
 pub use golden::{pulled, unit};
+pub use gpu::gpu;
+pub use step::steps;
 
 use bundle::names::{repo, resolve};
 use checkpoint::{Slice, Stored};
@@ -30,10 +34,18 @@ pub struct Spec {
     pub regions: &'static [(Composite, usize)],
     /// A graph small enough for the host executor.
     pub small: Option<fn() -> Graph>,
+    /// The step entries of a model that decodes.
+    pub stepper: Option<Stepper>,
     /// Real files' slices, each with the graph it feeds.
     pub files: &'static [Manifest],
     /// Outputs a reference recorded.
     pub golden: Option<Golden>,
+}
+
+/// Step graphs: one beside `small`, one at release sizes.
+pub struct Stepper {
+    pub small: fn() -> Graph,
+    pub release: fn() -> Graph,
 }
 
 /// Tokens and positions, `[seqs, len]` each.
@@ -66,17 +78,27 @@ pub type Manifest = (&'static str, fn() -> Graph);
 
 /// Two layers of two heads, for a faux run.
 pub fn small_stack(hidden: u64, head_dim: u64, ffn: u64) -> models::Stack {
-    models::Stack {
-        vocab: 64,
-        hidden,
-        layers: 2,
-        heads: 2,
-        head_dim,
-        ffn,
-        max_seqs: 1,
-        max_context: 16,
-    }
+    models::Stack::sized([64, hidden, 2, 2, head_dim, ffn], 4, 16)
 }
+
+/// A decoder's graphs: `decoder!(HeadNorm, small config, release config fn)`.
+macro_rules! decoder {
+    ($norm:ty, $small:expr, $release:expr) => {
+        fn small() -> Graph {
+            program::<$norm>(&$small)
+        }
+
+        fn release() -> Graph {
+            program::<$norm>(&$release(8, 40_960))
+        }
+
+        const STEPPER: Stepper = Stepper {
+            small: || stepper::<$norm>(&$small),
+            release: || stepper::<$norm>(&$release(1, 1024)),
+        };
+    };
+}
+pub(crate) use decoder;
 
 /// The tests every model runs: `suite!(SPEC)`.
 macro_rules! suite {
@@ -104,6 +126,16 @@ macro_rules! suite {
         #[test]
         fn golden() {
             crate::common::golden(&$spec);
+        }
+
+        #[test]
+        fn steps() {
+            crate::common::steps(&$spec);
+        }
+
+        #[test]
+        fn gpu() {
+            crate::common::gpu(&$spec);
         }
     };
 }

@@ -1,31 +1,37 @@
-//! Qwen3-0.6B on the GPU against the reference.
+//! A decoder on the GPU against the reference.
 
-use super::{GOLDEN, LOGITS, release};
-use crate::common::{interpreted, loaded};
+use super::{Spec, Tolerance, interpreted, loaded};
 use interp::Tensor;
-use lower::{Cache, Device, Pins, Settings, View, lower};
-use models::qwen3::{Config, stepper};
+use lower::{Cache, Device, Form, Pins, Settings, View, lower};
 use run::Run;
 use testkit::{argmax, max_abs_diff};
 use trace::DimName::{self, Context, Rows, Segments, Seqs};
 use trace::Graph;
 
-/// Read from the directory `TESSERA_QWEN3` names.
+/// The model's reference, as its golden run reads it.
 struct Fixture {
     settings: Settings,
     weights: Vec<Tensor>,
     tokens: Vec<u32>,
     want: Vec<f32>,
+    /// How closely `want` must be matched.
+    tolerance: &'static Tolerance,
+    /// The form plans keep the checkpoint in.
+    form: &'static dyn Form,
 }
 
-fn fixture(g: &Graph) -> Option<Fixture> {
-    let mut reference = GOLDEN.reference("qwen3", g)?;
+fn fixture(spec: &Spec, g: &Graph) -> Option<Fixture> {
+    let golden = spec.golden.as_ref()?;
+    let logits = golden.checks.iter().find(|c| c.name == "logits")?;
+    let mut reference = golden.reference(spec.name, g)?;
     let mut one = reference.cases.remove(0);
     Some(Fixture {
         settings: settings::read(),
         weights: reference.weights,
         want: one.outputs.remove("logits").unwrap(),
         tokens: one.tokens,
+        tolerance: &logits.tolerance,
+        form: golden.form,
     })
 }
 
@@ -34,28 +40,29 @@ fn logits(g: &Graph, c: &Fixture, tokens: &[u32]) -> Vec<f32> {
     interpreted(g, &c.weights, 1, tokens)
 }
 
-/// Each position must pick the reference's top token.
+/// Each position must match the reference as its check says.
 fn close(label: &str, got: &[f32], c: &Fixture) {
-    LOGITS.tolerance.check(label, got, &c.want, c.tokens.len());
+    c.tolerance.check(label, got, &c.want, c.tokens.len());
 }
 
-#[test]
-fn gpu_checks() {
+/// Both entries on this host's GPU, against the reference.
+pub fn gpu(spec: &Spec) {
+    let Some(stepper) = &spec.stepper else { return };
     if settings::read().gpu().is_none() {
         return eprintln!("no GPU here; skipped");
     }
-    let g = release();
-    let Some(c) = fixture(&g) else {
-        return eprintln!("TESSERA_QWEN3 is not set; skipped");
+    let g = (spec.release)();
+    let Some(c) = fixture(spec, &g) else {
+        return eprintln!("{}: no reference here; skipped", spec.name);
     };
     let mut gpu = Gpu::open(&g, &c);
     forward::check(&mut gpu, &g);
-    decode::check(&mut gpu, &g);
+    decode::check(&mut gpu, &g, (stepper.release)());
 }
 
-/// The checkpoint is bf16, so plans read it as stored.
-fn pinned(settings: &Settings) -> Device {
-    Device::guess(settings).pinned(Pins::all(lower::form::BF16_FORM))
+/// Plans read the checkpoint as stored.
+fn pinned(c: &Fixture) -> Device {
+    Device::guess(&c.settings).pinned(Pins::all(c.form))
 }
 
 /// Plans for either entry on one runner. Weights load once.
@@ -108,10 +115,10 @@ fn prompt(tokens: &[u32]) -> Span<'_> {
 impl<'a> Gpu<'a> {
     fn open(g: &Graph, c: &'a Fixture) -> Self {
         let first = prompt(&c.tokens);
-        let plan = lower(g, 0, &first.sizes(), &pinned(&c.settings)).unwrap();
+        let plan = lower(g, 0, &first.sizes(), &pinned(c)).unwrap();
         let runner = loaded(plan, g, &c.weights, &c.settings);
         let device = Device::stored(runner.platform(), &c.settings).unwrap();
-        let device = device.pinned(pinned(&c.settings).pins);
+        let device = device.pinned(pinned(c).pins);
         let (name, samples) = (runner.device(), device.samples());
         eprintln!("{name}: {samples} stored samples");
         Self {
@@ -217,9 +224,8 @@ mod decode {
         assert!(lead < 1e-3, "{label}: {chosen} trails the best by {lead}");
     }
 
-    pub fn check(gpu: &mut Gpu, forward: &Graph) {
-        let text = stepper(&Config::small(1, 1024)).to_json();
-        let g = Graph::from_json(&text).unwrap();
+    pub fn check(gpu: &mut Gpu, forward: &Graph, step: Graph) {
+        let g = Graph::from_json(&step.to_json()).unwrap();
         assert_eq!(g.weights, forward.weights);
         let c = gpu.c;
         let device = gpu.device.clone();

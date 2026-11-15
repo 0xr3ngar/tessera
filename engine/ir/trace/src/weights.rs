@@ -50,6 +50,11 @@ pub struct Embed(pub(crate) Tensor);
 /// `#[shape(Count, In, Out)]`, stored `[Count, Out, In]`.
 pub struct Linears(pub(crate) Tensor);
 
+/// A field a model leaves out. It declares nothing.
+impl Weights for () {
+    fn declare(_: &Model, _: &mut Vec<PathSeg>, _: &[DimExpr]) -> Self {}
+}
+
 fn leaf(m: &Model, path: &[PathSeg], shape: Vec<DimExpr>, want: usize) -> Tensor {
     assert_eq!(
         shape.len(),

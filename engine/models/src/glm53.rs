@@ -32,18 +32,9 @@ pub struct Config {
 impl Config {
     /// The released checkpoint's sizes.
     pub fn release(max_seqs: u64, max_context: u64) -> Self {
-        let stack = Stack {
-            vocab: 154_880,
-            hidden: 6144,
-            layers: 78,
-            heads: 64,
-            head_dim: 256,
-            ffn: 2048,
-            max_seqs,
-            max_context,
-        };
+        let sizes = [154_880, 6144, 78, 64, 256, 2048];
         Self {
-            stack,
+            stack: Stack::sized(sizes, max_seqs, max_context),
             dense_layers: 3,
             rope: 64,
             rope_theta: 8e6,

@@ -2,13 +2,13 @@
 
 use crate::names::Rule;
 use crate::tokenize::hf::Hf;
-use crate::{Bundle, Template};
+use crate::{Bundle, Template, head_dim, stepper};
 use checkpoint::Gguf;
 use graph::{Graph, PathSeg};
 use lower::Pins;
 use lower::form::{F32_FORM, Form, named};
 use models::Stack;
-use models::qwen3::{Config, stepper};
+use models::decoder::Config;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -28,6 +28,7 @@ fn config(gguf: &Gguf, arch: &str, slots: u64, context: u64) -> Result<Config, F
             .ok_or_else(|| format!("missing or invalid {arch}.{key}"))
     };
     let hidden = integer("embedding_length")?;
+    let heads = integer("attention.head_count")?;
     let vocab = match gguf.u64(&format!("{arch}.vocab_size")) {
         Some(n) => n,
         None => gguf.elements("token_embd.weight")? as u64 / hidden,
@@ -37,8 +38,8 @@ fn config(gguf: &Gguf, arch: &str, slots: u64, context: u64) -> Result<Config, F
             vocab,
             hidden,
             layers: integer("block_count")?,
-            heads: integer("attention.head_count")?,
-            head_dim: integer("attention.key_length")?,
+            heads,
+            head_dim: head_dim(integer("attention.key_length").ok(), hidden, heads),
             ffn: integer("feed_forward_length")?,
             max_seqs: slots,
             max_context: context,
@@ -174,14 +175,10 @@ pub(crate) fn load(
     let arch = gguf
         .str("general.architecture")
         .ok_or("a GGUF file names its architecture")?;
-    // The one place a model is chosen.
-    let (graph, layers) = match arch {
-        "qwen3" => {
-            let config = config(&gguf, arch, slots, context)?;
-            (stepper(&config), config.stack.layers)
-        }
-        other => return Err(format!("{other} is not a model this engine traces").into()),
-    };
+    let config = config(&gguf, arch, slots, context)?;
+    let graph = stepper(arch, &config)
+        .ok_or_else(|| format!("{arch} is not a model this engine traces"))?;
+    let layers = config.stack.layers;
     if gguf.has("output.weight")
         && gguf.bytes("output.weight")? != gguf.bytes("token_embd.weight")?
     {

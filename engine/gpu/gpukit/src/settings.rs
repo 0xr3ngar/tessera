@@ -1,6 +1,7 @@
 //! Knobs the front end sets once and passes down.
 
 use crate::backend::{self, Backend};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Where plans run.
@@ -20,12 +21,8 @@ pub struct Settings {
     pub host_lanes: usize,
     /// Where calibrate keeps cost samples. `None` stores nothing.
     pub costs: Option<PathBuf>,
-    /// The Qwen3 reference files the parity test reads.
-    pub qwen3: Option<PathBuf>,
-    /// The EmbeddingGemma 2 reference files the parity test reads.
-    pub eg2: Option<PathBuf>,
-    /// The spaCy pipeline and tokens the parity test reads.
-    pub spacy: Option<PathBuf>,
+    /// Each model's reference files, by name, for the parity tests.
+    pub references: BTreeMap<String, PathBuf>,
     /// A JSON file of weight-name rules, applied last.
     pub names: Option<PathBuf>,
     /// The GPU whose tile rounding the host imitates.
@@ -38,9 +35,7 @@ impl Default for Settings {
             backend: Pick::Auto,
             host_lanes: 32,
             costs: None,
-            qwen3: None,
-            eg2: None,
-            spacy: None,
+            references: BTreeMap::new(),
             names: None,
             emulate: None,
         }
@@ -57,6 +52,11 @@ fn ready(backend: Backend) -> bool {
 }
 
 impl Settings {
+    /// The reference files for `model`, where this host has them.
+    pub fn reference(&self, model: &str) -> Option<PathBuf> {
+        self.references.get(model).cloned()
+    }
+
     /// The GPU plans run on, or `None` for the host.
     pub fn gpu(&self) -> Option<Backend> {
         match self.backend {

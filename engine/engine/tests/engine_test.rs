@@ -1,23 +1,12 @@
 //! The engine's decode loop against the interpreter.
 
 use engine::{Batch, Engine, Event, Fair, Reason, Request, Row};
-use gpukit::testing::Noise;
 use graph::Graph;
 use interp::{Store, Tensor, run_kept};
 use lower::{Recipe, Weight, kept, rules};
-use models::qwen3::{Config, stepper};
-
-fn weights(g: &Graph, noise: &mut Noise) -> Vec<Tensor> {
-    let size = |e: &graph::DimExpr| e.poly(&g.dims).unwrap().as_const().unwrap() as usize;
-    let fill = |w: &graph::Weight| {
-        let shape: Vec<usize> = w.ty.shape.0.iter().map(size).collect();
-        Tensor::f32(
-            shape.clone(),
-            (0..shape.iter().product()).map(|_| noise.draw()).collect(),
-        )
-    };
-    g.weights.iter().map(fill).collect()
-}
+use models::decoder::{Config, stepper};
+use testkit::{Noise, weights};
+use trace::Norm;
 
 /// The interpreter's likeliest id per row of one launch.
 fn step(g: &Graph, weights: &[Tensor], store: &mut Store, rows: &[Row]) -> Vec<u32> {
@@ -60,9 +49,9 @@ fn open(seed: u64, slots: u64) -> (Graph, Vec<Tensor>, Engine) {
 
 fn open_on(seed: u64, slots: u64, recipe: Recipe) -> (Graph, Vec<Tensor>, Engine) {
     let c = Config::toy(slots, 16);
-    let g = stepper(&c);
+    let g = stepper::<Norm>(&c);
     let weights = weights(&g, &mut Noise(seed));
-    let mut engine = Engine::open(stepper(&c), 16, &recipe, &settings::read()).unwrap();
+    let mut engine = Engine::open(stepper::<Norm>(&c), 16, &recipe, &settings::read()).unwrap();
     let stored: Vec<Weight> = weights.iter().cloned().map(Weight::Floats).collect();
     engine.load(&stored).unwrap();
     (g, weights, engine)

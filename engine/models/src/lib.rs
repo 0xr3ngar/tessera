@@ -1,9 +1,9 @@
 //! Model descriptions, traced into graphs.
 
+pub mod decoder;
 pub mod eg2;
 pub mod glm53;
 pub mod nanogpt;
-pub mod qwen3;
 mod shared;
 pub mod tagger;
 

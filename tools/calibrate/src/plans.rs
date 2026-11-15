@@ -6,12 +6,12 @@ use graph::DimName::{self, Context, Rows, Segments, Seqs};
 use graph::Graph;
 use lower::form::BF16_FORM;
 use lower::{Device, Error, Pins, Plan, Recipe, Settings, Tensor, View, Weight, lower, select};
-use models::{eg2, qwen3};
+use models::{decoder, eg2};
 use run::{Run, open};
 use std::collections::BTreeMap;
 use std::time::Instant;
 use testkit::{Noise, fill, weights};
-use trace::Linear;
+use trace::{Linear, Norm};
 
 /// Rows in each forward launch, short to long.
 const LENGTHS: [u64; 3] = [16, 64, 256];
@@ -30,8 +30,8 @@ struct Subject {
 /// Checks that missed. The run reports them and fails.
 type Misses = Vec<String>;
 
-fn qwen3_config(max_context: u64) -> qwen3::Config {
-    let mut c = qwen3::Config::small(1, max_context);
+fn qwen3_config(max_context: u64) -> decoder::Config {
+    let mut c = decoder::Config::qwen3(1, max_context);
     (c.stack.layers, c.stack.vocab) = (8, 32_768);
     c
 }
@@ -42,7 +42,7 @@ fn subjects() -> [Subject; 2] {
     [
         Subject {
             name: "qwen3",
-            graph: qwen3::program(&qwen3_config(1024)),
+            graph: decoder::program::<Norm>(&qwen3_config(1024)),
             // The real checkpoint is bf16.
             pins: Pins::all(BF16_FORM),
         },
@@ -286,7 +286,7 @@ fn rate(g: &Graph, w: &[Weight], recipe: &Recipe, settings: &Settings) -> Result
 
 /// Greedy decoding on qwen3, one launch a token.
 fn decode(settings: &Settings, misses: &mut Misses) -> Result<(), Error> {
-    let graph = qwen3::stepper(&qwen3_config(CONTEXT as u64));
+    let graph = decoder::stepper::<Norm>(&qwen3_config(CONTEXT as u64));
     let pins = Pins::all(BF16_FORM);
     let s = Subject {
         name: "qwen3 decode",

@@ -1,7 +1,7 @@
 //! A step entry's ragged rows against whole forward passes.
 
+use super::Spec;
 use interp::{Store, Tensor, run, run_kept};
-use models::qwen3::{Config, program, stepper};
 use testkit::{Noise, argmax, max_abs_diff, weights};
 
 const SEQS: usize = 2;
@@ -42,10 +42,12 @@ fn launches() -> [Vec<(usize, usize)>; 3] {
     ]
 }
 
-#[test]
-fn steps_match_forward() {
-    let c = Config::toy(4, 16);
-    let (forward, step) = (program(&c), stepper(&c));
+/// The small step graph, launch by launch, against `small`.
+pub fn steps(spec: &Spec) {
+    let (Some(small), Some(stepper)) = (spec.small, &spec.stepper) else {
+        return;
+    };
+    let (forward, step) = (small(), (stepper.small)());
     assert_eq!(forward.weights, step.weights);
     assert_eq!(step.kept.len(), 2 * 2, "keys and values per layer");
     let mut noise = Noise(3);
