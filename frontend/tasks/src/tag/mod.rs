@@ -22,7 +22,7 @@ use std::path::Path;
 
 /// The fewest rows a launch carries.
 const LEAST: usize = 8;
-/// An id past every row, which gathers zeros.
+/// An id past every row. It gathers zeros.
 const NONE: u32 = u32::MAX;
 
 pub struct Tagger {

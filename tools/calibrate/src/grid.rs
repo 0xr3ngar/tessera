@@ -86,9 +86,10 @@ fn rows(width: u64) -> Graph {
     let port = || floats([Rows, Hidden]);
     let [x, y] = m.entry(EntryKind::Forward, [port(), port()]);
     let gated = x.rms_norm(&w.norm, 1e-6).act(Act::Silu).mul(&y.rms(1e-6));
-    let sum = y.add(&gated).center();
-    let ids = sum.act(Act::Sigmoid).unit_sum().softmax().top_k(1u64);
-    m.finish([(Role::Tokens, &ids), (Role::Logits, &sum.mean(0))])
+    let shares = y.add(&gated).act(Act::Sigmoid).unit_sum();
+    let centered = shares.center();
+    let ids = centered.softmax().top_k(1u64);
+    m.finish([(Role::Tokens, &ids), (Role::Logits, &centered.mean(0))])
 }
 
 /// A rotation, then causal attention.
