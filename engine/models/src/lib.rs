@@ -7,4 +7,4 @@ pub mod nanogpt;
 mod shared;
 pub mod tagger;
 
-pub use shared::{Dense, Rotated, Stack};
+pub use shared::{Attend, Dense, Rotated, Side, Stack};

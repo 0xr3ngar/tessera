@@ -52,6 +52,64 @@ impl Dense for Rotated {
     }
 }
 
+/// Which projection a head transform is applied to.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Query,
+    Key,
+    Value,
+}
+
+/// One attention block: its projections and head shape.
+pub struct Attend<'a, D: Dense> {
+    /// Query, key, value and output projections.
+    w: [&'a D; 4],
+    /// Axes before the heads: `[Seqs, Context]`, or `[Rows]`.
+    lead: Vec<DimExpr>,
+    heads: DimExpr,
+    kv_heads: DimExpr,
+    head_dim: DimExpr,
+}
+
+impl<'a, D: Dense> Attend<'a, D> {
+    /// `[q, k, v, o]` over `lead`, with `[heads, kv_heads, head_dim]`.
+    pub fn new(w: [&'a D; 4], lead: Vec<DimExpr>, shape: [DimExpr; 3]) -> Self {
+        let [heads, kv_heads, head_dim] = shape;
+        Self {
+            w,
+            lead,
+            heads,
+            kv_heads,
+            head_dim,
+        }
+    }
+
+    /// `lead`, then `rest`.
+    fn shape(&self, rest: impl IntoIterator<Item = DimExpr>) -> Vec<DimExpr> {
+        self.lead.iter().cloned().chain(rest).collect()
+    }
+
+    /// `h` through the heads: each side `turn`ed, then `attend`ed.
+    pub fn apply(
+        &self,
+        h: &Tensor,
+        turn: impl Fn(Tensor, Side) -> Tensor,
+        attend: impl FnOnce([&Tensor; 3]) -> Tensor,
+    ) -> Tensor {
+        let split = |w: &D, heads: &DimExpr| {
+            let shape = self.shape([heads.clone(), self.head_dim.clone()]);
+            w.apply(h).reshape(shape)
+        };
+        let [q, k, v, o] = self.w;
+        let q = turn(split(q, &self.heads), Side::Query);
+        let k = turn(split(k, &self.kv_heads), Side::Key);
+        let v = turn(split(v, &self.kv_heads), Side::Value);
+        let out = attend([&q, &k, &v]);
+        let width = self.heads.clone() * self.head_dim.clone();
+        o.apply(&out.reshape(self.shape([width])))
+    }
+}
+
 /// Sizes every decoder stack here declares.
 pub struct Stack {
     pub vocab: u64,

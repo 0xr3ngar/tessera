@@ -1,10 +1,8 @@
 //! A tiny GPT: learned positions, GELU MLPs, causal attention.
 
-use crate::shared::{Stack, tokens};
+use crate::shared::{Attend, Stack, tokens};
 use trace::DimName::*;
-use trace::{
-    Act, Composite, Dim, Embed, Graph, Linear, Mask, Model, Norm, Role, Shape, Tensor, Weights,
-};
+use trace::{Act, Composite, Dim, Embed, Graph, Linear, Mask, Model, Norm, Role, Tensor, Weights};
 
 pub struct Config {
     /// Its context bound is also the position table's length.
@@ -71,13 +69,11 @@ pub fn forward(m: &Model, c: &Config, w: &Gpt, tokens: &Tensor, positions: &Tens
 
 /// Causal multi-head attention and its output projection.
 fn attention(m: &Model, c: &Config, l: &Layer, h: &Tensor) -> Tensor {
-    let heads = Shape::from([Seqs, Context, Heads, HeadDim]);
-    let project = |w: &Linear| h.matmul(w).reshape(heads.clone());
+    let lead = vec![Seqs.into(), Context.into()];
+    let shape = [Heads.into(), Heads.into(), HeadDim.into()];
+    let heads = Attend::new([&l.wq, &l.wk, &l.wv, &l.wproj], lead, shape);
     let scale = 1.0 / (c.stack.head_dim as f32).sqrt();
-    let qkv = [&l.wq, &l.wk, &l.wv].map(project);
-    let [q, k, v] = &qkv;
-    let out = m.attend(Mask::Causal, scale, [q, k, v], None);
-    out.reshape([Seqs, Context, Hidden]).matmul(&l.wproj)
+    heads.apply(h, |t, _| t, |qkv| m.attend(Mask::Causal, scale, qkv, None))
 }
 
 /// One forward entry: tokens and positions in, logits out.
