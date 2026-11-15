@@ -78,6 +78,8 @@ pub enum Error {
     Unbound,
     /// A stored device file could not be read.
     Io(std::io::Error),
+    /// The ranks lost touch.
+    Comm(comm::Error),
 }
 
 impl fmt::Display for Error {
@@ -89,6 +91,7 @@ impl fmt::Display for Error {
             Error::Memory(e) => write!(f, "memory: {e}"),
             Error::Unbound => write!(f, "a runtime dimension has no value"),
             Error::Io(e) => write!(f, "io: {e}"),
+            Error::Comm(e) => write!(f, "comm: {e}"),
         }
     }
 }
@@ -104,6 +107,12 @@ impl From<gpukit::Error> for Error {
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
         Error::Io(e)
+    }
+}
+
+impl From<comm::Error> for Error {
+    fn from(e: comm::Error) -> Self {
+        Error::Comm(e)
     }
 }
 
