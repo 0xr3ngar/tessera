@@ -84,6 +84,24 @@ fn causal_first_row() {
 }
 
 #[test]
+fn narrow_values() {
+    let m = model();
+    let shape = [Seqs, Context, Heads, HeadDim];
+    let ports = [port(shape), port(shape), port([Seqs, Context, Heads, Rows])];
+    let [q, k, v] = m.entry(EntryKind::Forward, ports);
+    let out = m.attend(Mask::Causal, 0.5, [&q, &k, &v], None);
+    let g = m.finish([(Role::Logits, &out)]);
+    let [q, k, _] = qkv();
+    let v = ramp(vec![2, 4, 2, 1]);
+    let out = run(&g, &[], 0, &[q, k, v.clone()]).unwrap();
+    assert_eq!(out[0].shape, [2, 4, 2, 1]);
+    // The first query of each sequence sees one value.
+    let (o, v) = (out[0].floats().unwrap(), v.floats().unwrap());
+    assert_eq!(o[..2], v[..2]);
+    assert_eq!(o[8..10], v[8..10]);
+}
+
+#[test]
 fn bind_checks_weights() {
     let m = model();
     let w = m.weight(

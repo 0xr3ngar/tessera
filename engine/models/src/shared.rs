@@ -2,8 +2,8 @@
 
 use trace::DimName::*;
 use trace::{
-    Act, DType, Dim, DimExpr, DimName, EntryKind, Linear, Model, PathSeg, Port, Role, Tensor,
-    TensorType, Vector, Weights,
+    Act, DType, Dim, DimExpr, DimName, EntryKind, Linear, Model, Pairs, PathSeg, Port, Role,
+    Tensor, TensorType, Vector, Weights,
 };
 
 /// A matrix a row multiplies into, however it is stored.
@@ -60,28 +60,48 @@ pub enum Side {
     Value,
 }
 
-/// One attention block: its projections and head shape.
+impl Side {
+    /// The query's or the key's entry. Values have none.
+    pub fn of<T>(self, [q, k]: [T; 2]) -> Option<T> {
+        match self {
+            Side::Query => Some(q),
+            Side::Key => Some(k),
+            Side::Value => None,
+        }
+    }
+}
+
+/// One attention block's head shape and output projection.
 pub struct Attend<'a, D: Dense> {
-    /// Query, key, value and output projections.
-    w: [&'a D; 4],
+    o: &'a D,
     /// Axes before the heads: `[Seqs, Context]`, or `[Rows]`.
     lead: Vec<DimExpr>,
     heads: DimExpr,
     kv_heads: DimExpr,
+    /// A value's width. Keys match unless split by hand.
     head_dim: DimExpr,
+    /// Positions, theta and pairing, if queries and keys rotate.
+    rope: Option<(&'a Tensor, f32, Pairs)>,
 }
 
 impl<'a, D: Dense> Attend<'a, D> {
-    /// `[q, k, v, o]` over `lead`, with `[heads, kv_heads, head_dim]`.
-    pub fn new(w: [&'a D; 4], lead: Vec<DimExpr>, shape: [DimExpr; 3]) -> Self {
+    /// Projection `o` over `lead`, with `[heads, kv_heads, head_dim]`.
+    pub fn new(o: &'a D, lead: Vec<DimExpr>, shape: [DimExpr; 3]) -> Self {
         let [heads, kv_heads, head_dim] = shape;
         Self {
-            w,
+            o,
             lead,
             heads,
             kv_heads,
             head_dim,
+            rope: None,
         }
+    }
+
+    /// Queries and keys rotate after their `turn`.
+    pub fn rotary(mut self, positions: &'a Tensor, theta: f32, pairs: Pairs) -> Self {
+        self.rope = Some((positions, theta, pairs));
+        self
     }
 
     /// `lead`, then `rest`.
@@ -89,24 +109,53 @@ impl<'a, D: Dense> Attend<'a, D> {
         self.lead.iter().cloned().chain(rest).collect()
     }
 
-    /// `h` through the heads: each side `turn`ed, then `attend`ed.
+    /// `t` as `heads` of `width` each, over `lead`.
+    pub fn split(&self, t: Tensor, heads: impl Into<DimExpr>, width: impl Into<DimExpr>) -> Tensor {
+        t.reshape(self.shape([heads.into(), width.into()]))
+    }
+
+    /// `h` through `[q, k, v]`, each side `turn`ed, then rotated.
+    pub fn heads(
+        &self,
+        [q, k, v]: [&D; 3],
+        h: &Tensor,
+        turn: impl Fn(Tensor, Side) -> Tensor,
+    ) -> [Tensor; 3] {
+        let side = |w: &D, heads: &DimExpr, side: Side| {
+            let t = turn(
+                self.split(w.apply(h), heads.clone(), self.head_dim.clone()),
+                side,
+            );
+            match (self.rope, side) {
+                (Some((positions, theta, pairs)), Side::Query | Side::Key) => {
+                    t.rope(positions, theta, pairs)
+                }
+                _ => t,
+            }
+        };
+        [
+            side(q, &self.heads, Side::Query),
+            side(k, &self.kv_heads, Side::Key),
+            side(v, &self.kv_heads, Side::Value),
+        ]
+    }
+
+    /// Heads joined back into rows, then projected.
+    pub fn merge(&self, out: Tensor) -> Tensor {
+        let width = self.heads.clone() * self.head_dim.clone();
+        self.o.apply(&out.reshape(self.shape([width])))
+    }
+
+    /// `heads`, then `attend`, then `merge`.
     pub fn apply(
         &self,
+        w: [&D; 3],
         h: &Tensor,
         turn: impl Fn(Tensor, Side) -> Tensor,
         attend: impl FnOnce([&Tensor; 3]) -> Tensor,
     ) -> Tensor {
-        let split = |w: &D, heads: &DimExpr| {
-            let shape = self.shape([heads.clone(), self.head_dim.clone()]);
-            w.apply(h).reshape(shape)
-        };
-        let [q, k, v, o] = self.w;
-        let q = turn(split(q, &self.heads), Side::Query);
-        let k = turn(split(k, &self.kv_heads), Side::Key);
-        let v = turn(split(v, &self.kv_heads), Side::Value);
-        let out = attend([&q, &k, &v]);
-        let width = self.heads.clone() * self.head_dim.clone();
-        o.apply(&out.reshape(self.shape([width])))
+        let [q, k, v] = self.heads(w, h, turn);
+        self.merge(attend([&q, &k, &v]))
     }
 }
 

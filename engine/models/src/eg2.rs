@@ -193,21 +193,15 @@ fn attend<D: Dense>(
     };
     let h = x.rms_norm(&a.ln, c.eps);
     let lead = vec![Seqs.into(), Context.into()];
-    let heads = Attend::new(
-        [&a.q, &a.k, &a.v, &a.o],
-        lead,
-        [Heads.into(), kv_heads, head],
-    );
-    let turn = |t: Tensor, side: Side| {
-        let norm = match side {
-            Side::Query => &a.q_norm,
-            Side::Key => &a.k_norm,
-            Side::Value => return t.rms(c.eps),
-        };
-        let normed = t.rms_norm(norm, c.eps);
-        normed.rope(positions, theta, Pairs::Halves)
+    let heads = Attend::new(&a.o, lead, [Heads.into(), kv_heads, head]);
+    let heads = heads.rotary(positions, theta, Pairs::Halves);
+    let turn = |t: Tensor, side: Side| match side.of([&a.q_norm, &a.k_norm]) {
+        Some(norm) => t.rms_norm(norm, c.eps),
+        None => t.rms(c.eps),
     };
-    let out = heads.apply(&h, turn, |qkv| m.attend(mask, 1.0, qkv, None));
+    let out = heads.apply([&a.q, &a.k, &a.v], &h, turn, |qkv| {
+        m.attend(mask, 1.0, qkv, None)
+    });
     out.rms_norm(&a.post, c.eps)
 }
 
