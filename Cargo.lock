@@ -266,6 +266,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cpu"
+version = "0.1.0"
+dependencies = [
+ "graph",
+ "interp",
+ "lower",
+ "testkit",
+ "trace",
+]
+
+[[package]]
 name = "crc32fast"
 version = "1.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -411,6 +422,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 name = "engine"
 version = "0.1.0"
 dependencies = [
+ "cpu",
  "frontend-settings",
  "graph",
  "interp",
@@ -1074,6 +1086,7 @@ dependencies = [
  "bundle",
  "checkpoint",
  "comm",
+ "cpu",
  "frontend-settings",
  "graph",
  "interp",
@@ -1273,6 +1286,7 @@ dependencies = [
  "bundle",
  "checkpoint",
  "comm",
+ "cpu",
  "frontend-settings",
  "graph",
  "interp",

@@ -65,6 +65,13 @@ impl Cluster {
         }
     }
 
+    /// A single CPU, for native kernels.
+    pub fn cpu(name: &str) -> Self {
+        let mut c = Self::one(name);
+        c.zones[0].kind = ZoneKind::Cpu;
+        c
+    }
+
     /// Adds a zone. Returns its index.
     pub fn add(&mut self, zone: Zone) -> usize {
         self.zones.push(zone);

@@ -25,8 +25,10 @@ const PROT_READ_WRITE: c_int = 3;
 const MAP_SHARED: c_int = 1;
 /// Marks a file rank 0 laid out this run.
 const READY: u64 = 0x7465_7373_6572_6131;
-/// How long a rank waits for the others.
+/// How long a rank waits for the others to join.
 const PATIENCE: Duration = Duration::from_secs(10);
+/// How long a rank waits at a round.
+const ROUND: Duration = Duration::from_secs(300);
 
 /// Two slots per rank: a write never races a read.
 pub struct Shm {
@@ -169,7 +171,7 @@ impl Transport for Shm {
         let mut out = Vec::with_capacity(self.ranks as usize);
         for r in 0..self.ranks {
             while self.generation_of(r).load(Ordering::Acquire) < next {
-                if start.elapsed() > PATIENCE {
+                if start.elapsed() > ROUND {
                     return Err(Error::Join(format!("rank {r} never reached round {next}")));
                 }
                 thread::yield_now();

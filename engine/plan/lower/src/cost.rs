@@ -5,7 +5,7 @@ use crate::kernel::Kernel;
 use crate::plan::{Plan, Step};
 use crate::recipe::Recipe;
 use codegen::kept::Layout;
-use engine_settings::Settings;
+use engine_settings::{Pick, Settings};
 use gpukit::{Limits, Platform};
 use graph::Parts;
 use serde::{Deserialize, Serialize};
@@ -181,8 +181,14 @@ impl Device {
             None => Platform::host(Limits::host(settings.host_lanes)),
             Some(_) => Platform::assumed(Limits::assumed()),
         };
+        // Native kernels run where the zone is a CPU.
+        let cluster = match settings.backend {
+            Pick::Cpu => Cluster::cpu("cpu"),
+            _ => Cluster::default(),
+        };
         Self {
             platform,
+            cluster,
             ..Self::default()
         }
     }

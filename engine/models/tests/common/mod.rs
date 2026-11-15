@@ -1,6 +1,7 @@
 //! The per-model suite: what every model test runs alike.
 
 // Linking these registers their lowering rules.
+use cpu as _;
 use kernels as _;
 use linear as _;
 
@@ -20,7 +21,7 @@ use checkpoint::{Slice, Stored};
 use frontend_settings::read as settings;
 use interp::{Tensor, run};
 use lower::form::named;
-use lower::{Device, Pins, Plan, Settings, View, lower, rules};
+use lower::{Device, Pick, Pins, Plan, Settings, View, lower, rules};
 use run::{Run, open};
 use testkit::{Noise, cosine_f32, fill, max_abs_diff};
 use trace::DimName::{Context, Seqs};
@@ -144,6 +145,11 @@ macro_rules! suite {
         fn shards() {
             crate::common::shards(&$spec);
         }
+
+        #[test]
+        fn native() {
+            crate::common::native(&$spec);
+        }
     };
 }
 pub(crate) use suite;
@@ -205,7 +211,13 @@ fn faux_data(g: &Graph) -> (Vec<Tensor>, Vec<Tensor>) {
 }
 
 /// One plan on the faux data against the interpreter.
-fn faux_check(label: &str, g: &Graph, data: &(Vec<Tensor>, Vec<Tensor>), device: Device) {
+fn faux_check(
+    label: &str,
+    g: &Graph,
+    data: &(Vec<Tensor>, Vec<Tensor>),
+    settings: &Settings,
+    device: Device,
+) {
     let (weights, inputs) = data;
     let form = device.pins.form(&[]);
     // The interpreter sees the weights as the form keeps them.
@@ -214,7 +226,7 @@ fn faux_check(label: &str, g: &Graph, data: &(Vec<Tensor>, Vec<Tensor>), device:
         .collect();
     let want = run(g, &kept, 0, inputs).unwrap();
     let plan = lower(g, 0, &FAUX, &device).unwrap();
-    let mut runner = loaded(plan, g, &kept, &settings());
+    let mut runner = loaded(plan, g, &kept, settings);
     let feeds: Vec<View> = inputs.iter().map(Tensor::view).collect();
     let got = runner.run(&feeds).unwrap().remove(0);
     let (got, want) = (got.floats().unwrap(), want[0].floats().unwrap());
@@ -227,6 +239,31 @@ fn faux_check(label: &str, g: &Graph, data: &(Vec<Tensor>, Vec<Tensor>), device:
     assert!(off < 1e-3 && cos > 0.9999, "{label}: off {off:e} cos {cos}");
 }
 
+/// Random weights on native CPU kernels, against the interpreter.
+pub fn native(spec: &Spec) {
+    let Some(small) = spec.small else { return };
+    let g = small();
+    let data = faux_data(&g);
+    let cpu = Settings {
+        backend: Pick::Cpu,
+        ..settings()
+    };
+    for form in ["f32", "bf16", "q8_0"] {
+        let device = Device::guess(&cpu).pinned(Pins::all(named(form).unwrap()));
+        let plan = lower(&g, 0, &FAUX, &device).unwrap();
+        let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
+        let native = names.iter().filter(|n| n.starts_with("cpu_")).count();
+        assert!(native > 0, "{}: no native kernels in {names:?}", spec.name);
+        faux_check(
+            &format!("{} native as {form}", spec.name),
+            &g,
+            &data,
+            &cpu,
+            device,
+        );
+    }
+}
+
 /// Random weights in every form: device against interpreter.
 pub fn faux(spec: &Spec) {
     let Some(small) = spec.small else { return };
@@ -234,7 +271,13 @@ pub fn faux(spec: &Spec) {
     let data = faux_data(&g);
     for form in ["f32", "bf16", "q8_0", "q4_0", "nvfp4"] {
         let device = Device::guess(&settings()).pinned(Pins::all(named(form).unwrap()));
-        faux_check(&format!("{} as {form}", spec.name), &g, &data, device);
+        faux_check(
+            &format!("{} as {form}", spec.name),
+            &g,
+            &data,
+            &settings(),
+            device,
+        );
     }
 }
 
@@ -248,7 +291,7 @@ pub fn faux_rules(spec: &Spec) {
             let pins = Pins::all(named(form).unwrap());
             let device = Device::guess(&settings()).favoring(rule.name).pinned(pins);
             let label = format!("{} favoring {} as {form}", spec.name, rule.name);
-            faux_check(&label, &g, &data, device);
+            faux_check(&label, &g, &data, &settings(), device);
         }
     }
 }

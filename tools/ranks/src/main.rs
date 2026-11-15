@@ -1,6 +1,7 @@
 //! One rank of Qwen3-0.6B, sharded over TCP, against the fixture.
 
 // Linking these registers their lowering rules.
+use cpu as _;
 use kernels as _;
 use linear as _;
 
@@ -61,7 +62,7 @@ fn parse(mut given: impl Iterator<Item = String>) -> Option<Args> {
             "--model" => args.model = value,
             "--fixture" => args.fixture = Some(value.into()),
             "--listen" => args.listen = Some(value.parse().ok()?),
-            "--backend" => args.host = value == "host",
+            "--backend" => args.host = value == "host" || value == "cpu",
             "--parts" => {
                 let parts = value.split(',').map(|p| p.parse().ok());
                 args.parts = parts.collect::<Option<_>>()?;
@@ -75,13 +76,14 @@ fn parse(mut given: impl Iterator<Item = String>) -> Option<Args> {
     ((args.rank as usize) < args.ranks).then_some(args)
 }
 
-/// Every rank a GPU zone, linked to every other.
-fn cluster(ranks: usize) -> Cluster {
+/// Every rank a zone of `kind`, linked to every other.
+fn cluster(ranks: usize, kind: ZoneKind) -> Cluster {
     let mut c = Cluster::one("rank0");
+    c.zones[0].kind = kind;
     for r in 1..ranks {
         c.add(Zone {
             name: format!("rank{r}"),
-            kind: ZoneKind::Gpu,
+            kind,
             parent: None,
         });
     }
@@ -156,7 +158,7 @@ fn join(args: &Args) -> Result<Box<dyn Transport>, Box<dyn std::error::Error>> {
 fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let mut settings = frontend_settings::read();
     if args.host {
-        settings.backend = Pick::Host;
+        settings.backend = Pick::Cpu;
     }
     let fixture = match &args.fixture {
         Some(dir) => dir.clone(),
@@ -194,7 +196,13 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let file = checkpoint::File::open(&fixture.join("model.safetensors"))?;
     let (weights, pins) = bundle::pull(&g, &file, 0, &[]).map_err(|e| e.to_string())?;
-    let device = Device::guess(&settings).pinned(pins).zoned(cluster(ranks));
+    let kind = match args.host {
+        true => ZoneKind::Cpu,
+        false => ZoneKind::Gpu,
+    };
+    let device = Device::guess(&settings)
+        .pinned(pins)
+        .zoned(cluster(ranks, kind));
     let device = device
         .ranked((0..ranks as u32).collect())
         .as_rank(args.rank);

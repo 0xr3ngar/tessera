@@ -19,6 +19,7 @@ rocm = ["run/rocm"]
 bundle = { workspace = true }
 checkpoint = { workspace = true }
 comm = { workspace = true }
+cpu = { workspace = true }
 frontend-settings = { workspace = true }
 graph = { workspace = true }
 interp = { workspace = true }
