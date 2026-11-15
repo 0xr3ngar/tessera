@@ -271,6 +271,16 @@ fn run_on(
         inputs,
         weights: &shares[r],
     };
+    // A value lives until its last reader has run.
+    let mut last = vec![usize::MAX; g.nodes.len()];
+    for (i, n) in g.nodes.iter().enumerate().filter(|(i, _)| needed[*i]) {
+        for a in &n.args {
+            last[a.0 as usize] = i;
+        }
+    }
+    for o in &e.outputs {
+        last[o.node.0 as usize] = usize::MAX;
+    }
     let mut values: Vec<Vec<Option<Tensor>>> = vec![vec![None; g.nodes.len()]; ranks];
     for (i, n) in g.nodes.iter().enumerate() {
         if !needed[i] {
@@ -325,6 +335,11 @@ fn run_on(
                 return Err(Error::Mismatch(msg));
             }
             values[r][i] = Some(out);
+        }
+        for a in n.args.iter().filter(|a| last[a.0 as usize] == i) {
+            for held in &mut values {
+                held[a.0 as usize] = None;
+            }
         }
     }
     let mut outputs = Vec::with_capacity(e.outputs.len());
