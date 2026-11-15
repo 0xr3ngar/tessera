@@ -38,7 +38,7 @@ Crate | Description
 [trace-derive](engine/ir/trace-derive) | #[derive(Weights)] for model descriptions
 [models](engine/models) | Model descriptions, traced into graphs
 [codegen](engine/plan/codegen) | Generates kernel text for every dialect, and counts what it costs
-[comm](engine/plan/comm) | Moves bytes between ranks: the transport trait, TCP sockets and shared memory
+[engine-comm](engine/plan/comm) | Moves bytes between ranks over sockets or shared memory the front end opened
 [kernel-macro](engine/plan/kernel-macro) | #[kernel]: a Rust function body as a kernel tree
 [lower](engine/plan/lower) | Lowers a graph to a plan of kernel launches
 [run](engine/plan/run) | Runs lowered plans on the host, Metal, CUDA or ROCm
@@ -49,6 +49,7 @@ Crate | Description
 [engine-settings](engine/settings) | Knobs the front end sets once and the engine reads
 [bundle](frontend/bundle) | A Hugging Face model directory as graph, weights, tokenizer and template
 [checkpoint](frontend/checkpoint) | Reads weights from safetensors files
+[frontend-comm](frontend/comm) | Joins ranks over TCP or a shared file, then hands the handles to the engine
 [eval](frontend/eval) | Measures a model under a recipe: speed per batch, parity against a reference
 [serve](frontend/serve) | An HTTP front end: text in, streamed text out, over the engine
 [frontend-settings](frontend/settings) | Settings read once from the environment, passed down

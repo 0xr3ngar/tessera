@@ -5,7 +5,8 @@ use cpu as _;
 use kernels as _;
 use linear as _;
 
-use comm::{Shm, Sockets, Transport};
+use engine_comm::Transport;
+use frontend_comm::{shm, sockets};
 use graph::DimName::{Context, Seqs};
 use graph::shard;
 use interp::Tensor;
@@ -142,17 +143,12 @@ fn join(args: &Args) -> Result<Box<dyn Transport>, Box<dyn std::error::Error>> {
     if let Some(path) = &args.shm {
         // Room for every token's logits, and then some.
         let capacity = 64 << 20;
-        return Ok(Box::new(Shm::join(
-            path,
-            args.rank,
-            args.ranks as u32,
-            capacity,
-        )?));
+        return Ok(Box::new(shm(path, args.rank, args.ranks as u32, capacity)?));
     }
     let listen = args.listen.unwrap_or(args.addrs[args.rank as usize]);
     let listener = TcpListener::bind(listen)?;
     eprintln!("rank {}: listening on {listen}", args.rank);
-    Ok(Box::new(Sockets::join(args.rank, listener, &args.addrs)?))
+    Ok(Box::new(sockets(args.rank, listener, &args.addrs)?))
 }
 
 fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {

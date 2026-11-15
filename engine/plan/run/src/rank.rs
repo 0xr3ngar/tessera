@@ -2,7 +2,7 @@
 
 use crate::Run;
 use crate::open;
-use comm::{Transport, summed};
+use engine_comm::{Transport, summed};
 use engine_settings::Settings;
 use lower::{Error, Plan};
 use mem::{Tensor, View};

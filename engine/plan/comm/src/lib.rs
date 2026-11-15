@@ -1,4 +1,4 @@
-//! Moves bytes between ranks: a trait, sockets, shared memory.
+//! Moves bytes between ranks over handles the front end opened.
 
 mod shm;
 mod sockets;
@@ -46,15 +46,15 @@ pub fn summed<'a>(parts: impl Iterator<Item = &'a [f32]>) -> Vec<f32> {
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
-    /// A rank joined out of turn or twice.
-    Join(String),
+    /// A handle, slot or round the ranks do not fit.
+    Fit(String),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Io(e) => write!(f, "io: {e}"),
-            Error::Join(what) => write!(f, "join: {what}"),
+            Error::Fit(what) => write!(f, "fit: {what}"),
         }
     }
 }

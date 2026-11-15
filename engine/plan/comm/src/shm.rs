@@ -2,9 +2,8 @@
 
 use crate::{Error, Transport};
 use std::ffi::{c_int, c_void};
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::os::fd::AsRawFd;
-use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -23,10 +22,6 @@ unsafe extern "C" {
 
 const PROT_READ_WRITE: c_int = 3;
 const MAP_SHARED: c_int = 1;
-/// Marks a file rank 0 laid out this run.
-const READY: u64 = 0x7465_7373_6572_6131;
-/// How long a rank waits for the others to join.
-const PATIENCE: Duration = Duration::from_secs(10);
 /// How long a rank waits at a round.
 const ROUND: Duration = Duration::from_secs(300);
 
@@ -48,42 +43,23 @@ unsafe impl Send for Shm {}
 
 impl Shm {
     fn words(ranks: u32) -> usize {
-        1 + 3 * ranks as usize
+        3 * ranks as usize
     }
 
-    fn bytes(ranks: u32, capacity: usize) -> usize {
+    /// The file size `ranks` need for `capacity` byte slots.
+    pub fn room(ranks: u32, capacity: usize) -> usize {
         Self::words(ranks) * 8 + 2 * ranks as usize * capacity
     }
 
-    /// Rank 0 lays out `path`. The others join as `rank`.
-    pub fn join(path: &Path, rank: u32, ranks: u32, capacity: usize) -> Result<Self, Error> {
-        let len = Self::bytes(ranks, capacity);
-        let start = Instant::now();
-        let file = loop {
-            if rank == 0 {
-                let _ = std::fs::remove_file(path);
-                let file = OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .create_new(true)
-                    .open(path)?;
-                file.set_len(len as u64)?;
-                break file;
-            }
-            match OpenOptions::new().read(true).write(true).open(path) {
-                Ok(file) if file.metadata()?.len() as usize == len => break file,
-                Ok(_) | Err(_) if start.elapsed() < PATIENCE => {
-                    thread::sleep(Duration::from_millis(5))
-                }
-                Ok(_) => {
-                    return Err(Error::Join(format!(
-                        "{} has the wrong size",
-                        path.display()
-                    )));
-                }
-                Err(e) => return Err(e.into()),
-            }
-        };
+    /// Rank `rank` over `file`, zeroed and sized by `room`.
+    pub fn over(rank: u32, ranks: u32, file: File) -> Result<Self, Error> {
+        let len = file.metadata()?.len() as usize;
+        let header = Self::words(ranks) * 8;
+        let slots = 2 * ranks as usize;
+        if rank >= ranks || len < header || !(len - header).is_multiple_of(slots) {
+            let what = format!("{len} bytes for rank {rank} of {ranks}");
+            return Err(Error::Fit(what));
+        }
         let base = unsafe {
             mmap(
                 std::ptr::null_mut(),
@@ -97,26 +73,15 @@ impl Shm {
         if base as isize == -1 {
             return Err(Error::Io(std::io::Error::last_os_error()));
         }
-        let shm = Self {
+        Ok(Self {
             rank,
             ranks,
-            capacity,
+            capacity: (len - header) / slots,
             base: base as *mut u8,
             len,
             generation: 0,
             _file: file,
-        };
-        if rank == 0 {
-            shm.word(0).store(READY, Ordering::Release);
-        } else {
-            while shm.word(0).load(Ordering::Acquire) != READY {
-                if start.elapsed() > PATIENCE {
-                    return Err(Error::Join("rank 0 never laid the file out".into()));
-                }
-                thread::sleep(Duration::from_millis(5));
-            }
-        }
-        Ok(shm)
+        })
     }
 
     fn word(&self, at: usize) -> &AtomicU64 {
@@ -125,12 +90,12 @@ impl Shm {
     }
 
     fn generation_of(&self, rank: u32) -> &AtomicU64 {
-        self.word(1 + 3 * rank as usize)
+        self.word(3 * rank as usize)
     }
 
     /// The length word for `rank`'s slot of this parity.
     fn len_of(&self, rank: u32, parity: usize) -> &AtomicU64 {
-        self.word(2 + 3 * rank as usize + parity)
+        self.word(1 + 3 * rank as usize + parity)
     }
 
     fn slot(&self, rank: u32, parity: usize) -> *mut u8 {
@@ -157,7 +122,7 @@ impl Transport for Shm {
     fn exchange(&mut self, mine: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
         if mine.len() > self.capacity {
             let what = format!("{} bytes over a {} byte slot", mine.len(), self.capacity);
-            return Err(Error::Join(what));
+            return Err(Error::Fit(what));
         }
         let next = self.generation + 1;
         let parity = (next % 2) as usize;
@@ -172,7 +137,7 @@ impl Transport for Shm {
         for r in 0..self.ranks {
             while self.generation_of(r).load(Ordering::Acquire) < next {
                 if start.elapsed() > ROUND {
-                    return Err(Error::Join(format!("rank {r} never reached round {next}")));
+                    return Err(Error::Fit(format!("rank {r} never reached round {next}")));
                 }
                 thread::yield_now();
             }

@@ -1,5 +1,6 @@
-use crate::{Shm, Sockets, Transport, summed};
-use std::net::TcpListener;
+use crate::{Error, Shm, Sockets, Transport, summed};
+use std::fs::{File, OpenOptions};
+use std::net::{TcpListener, TcpStream};
 
 #[test]
 fn rank_order() {
@@ -7,23 +8,41 @@ fn rank_order() {
     assert_eq!(summed(parts.iter().map(|p| &p[..])), [111.0, 222.0]);
 }
 
-/// Three ranks on threads, each sending its rank's byte.
+/// A sized scratch file, open for reading and writing.
+fn sized(name: &str, len: usize) -> File {
+    let path = testkit::scratch(&format!("{name}-{}", std::process::id()));
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .unwrap();
+    file.set_len(len as u64).unwrap();
+    file
+}
+
 #[test]
-fn sockets_exchange() {
-    let listeners: Vec<TcpListener> = (0..3)
-        .map(|_| TcpListener::bind("127.0.0.1:0").unwrap())
-        .collect();
-    let addrs: Vec<_> = listeners.iter().map(|l| l.local_addr().unwrap()).collect();
+fn handles_must_fit() {
+    assert_eq!(Shm::room(3, 8), 72 + 48);
+    let short = sized("short", Shm::room(2, 8) - 1);
+    assert!(matches!(Shm::over(0, 2, short), Err(Error::Fit(_))));
+    let late = sized("late", Shm::room(2, 8));
+    assert!(matches!(Shm::over(2, 2, late), Err(Error::Fit(_))));
+    let own = Sockets::over(0, vec![None, None]);
+    assert!(matches!(own, Err(Error::Fit(_))));
+}
+
+/// Three ranks on threads, each sending its rank's byte, twice.
+fn rounds<T: Transport + Send>(ranks: Vec<T>) {
     let seen: Vec<Vec<Vec<u8>>> = std::thread::scope(|s| {
-        let runs: Vec<_> = (listeners.into_iter().enumerate())
-            .map(|(r, listener)| {
-                let addrs = &addrs;
+        let runs: Vec<_> = (ranks.into_iter().enumerate())
+            .map(|(r, mut t)| {
                 s.spawn(move || {
-                    let mut sockets = Sockets::join(r as u32, listener, addrs).unwrap();
-                    assert_eq!((sockets.rank(), sockets.ranks()), (r as u32, 3));
-                    let first = sockets.exchange(&[r as u8; 3]).unwrap();
-                    // A second round reuses the connections.
-                    let second = sockets.exchange(&[r as u8 + 10]).unwrap();
+                    assert_eq!((t.rank(), t.ranks()), (r as u32, 3));
+                    let first = t.exchange(&[r as u8; 3]).unwrap();
+                    // A second round reuses the handles.
+                    let second = t.exchange(&[r as u8 + 10]).unwrap();
                     [first, second].concat()
                 })
             })
@@ -43,34 +62,32 @@ fn sockets_exchange() {
     }
 }
 
-/// Three ranks on threads over one mapped file, two rounds.
+/// Every pair of three ranks connected on the loopback.
+fn connected() -> Vec<Vec<Option<TcpStream>>> {
+    let mut peers: Vec<Vec<Option<TcpStream>>> = (0..3).map(|_| vec![None, None, None]).collect();
+    for (a, b) in [(0, 1), (0, 2), (1, 2)] {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let caller = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (answer, _) = listener.accept().unwrap();
+        peers[a][b] = Some(caller);
+        peers[b][a] = Some(answer);
+    }
+    peers
+}
+
+#[test]
+fn sockets_exchange() {
+    let ranks = (connected().into_iter().enumerate())
+        .map(|(r, peers)| Sockets::over(r as u32, peers).unwrap())
+        .collect();
+    rounds(ranks);
+}
+
 #[test]
 fn shm_exchange() {
-    let path = testkit::scratch(&format!("comm-{}", std::process::id()));
-    let seen: Vec<Vec<Vec<u8>>> = std::thread::scope(|s| {
-        let runs: Vec<_> = (0..3u32)
-            .map(|r| {
-                let path = &path;
-                s.spawn(move || {
-                    let mut shm = Shm::join(path, r, 3, 16).unwrap();
-                    let first = shm.exchange(&[r as u8; 3]).unwrap();
-                    let second = shm.exchange(&[r as u8 + 10]).unwrap();
-                    [first, second].concat()
-                })
-            })
-            .collect();
-        runs.into_iter().map(|t| t.join().unwrap()).collect()
-    });
-    let _ = std::fs::remove_file(&path);
-    let want = vec![
-        vec![0, 0, 0],
-        vec![1, 1, 1],
-        vec![2, 2, 2],
-        vec![10],
-        vec![11],
-        vec![12],
-    ];
-    for rank in &seen {
-        assert_eq!(*rank, want);
-    }
+    let file = sized("shm", Shm::room(3, 16));
+    let ranks = (0..3)
+        .map(|r| Shm::over(r, 3, file.try_clone().unwrap()).unwrap())
+        .collect();
+    rounds(ranks);
 }

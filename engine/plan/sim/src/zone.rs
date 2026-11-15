@@ -72,6 +72,26 @@ impl Cluster {
         c
     }
 
+    /// Two GPUs linked both ways, at assumed speeds.
+    pub fn two(a: &str, b: &str) -> Self {
+        let mut cluster = Self::one(a);
+        let b = cluster.add(Zone {
+            name: b.into(),
+            kind: ZoneKind::Gpu,
+            parent: None,
+        });
+        for (from, to) in [(0, b), (b, 0)] {
+            cluster.links.push(Link {
+                from,
+                to,
+                latency: 1e-5,
+                rate: 1e10,
+                tag: Tag::Assumed,
+            });
+        }
+        cluster
+    }
+
     /// Adds a zone. Returns its index.
     pub fn add(&mut self, zone: Zone) -> usize {
         self.zones.push(zone);

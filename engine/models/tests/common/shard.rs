@@ -3,9 +3,8 @@
 use super::{Spec, settings};
 use graph::{Placement, shard};
 use interp::{Tensor, run, run_ranks};
-use lower::{Cluster, Device, Link, Pick, View, Zone, ZoneKind, lower};
+use lower::{Cluster, Device, Pick, View, lower};
 use run::Loopback;
-use sim::Tag;
 use testkit::{Noise, fill, max_abs_diff};
 use trace::DimName::{Context, Seqs};
 use trace::{DimName, TensorType};
@@ -15,22 +14,7 @@ const RANKS: usize = 2;
 
 /// Two GPU zones, linked both ways.
 pub fn pair() -> Cluster {
-    let mut cluster = Cluster::one("a");
-    let b = cluster.add(Zone {
-        name: "b".into(),
-        kind: ZoneKind::Gpu,
-        parent: None,
-    });
-    for (from, to) in [(0, b), (b, 0)] {
-        cluster.links.push(Link {
-            from,
-            to,
-            latency: 1e-5,
-            rate: 1e10,
-            tag: Tag::Assumed,
-        });
-    }
-    cluster
+    Cluster::two("a", "b")
 }
 
 /// Within a thousandth of the largest value.

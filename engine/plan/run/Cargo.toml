@@ -14,7 +14,7 @@ rocm = ["gpukit/rocm"]
 
 [dependencies]
 codegen = { workspace = true }
-comm = { workspace = true }
+engine-comm = { workspace = true }
 engine-settings = { workspace = true }
 gpukit = { workspace = true }
 graph = { workspace = true }
