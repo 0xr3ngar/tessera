@@ -7,6 +7,7 @@ use std::thread::LocalKey;
 
 use super::hip::{self, Runtime};
 use crate::api::{self, Api, Call, Handle, Kind};
+use crate::backend::Backend;
 use crate::device::{Caches, Device};
 use crate::platform::{self, Asked, Platform};
 use crate::{Error, Limits};
@@ -156,8 +157,14 @@ thread_local! {
 impl Api for Runtime {
     type Own = Own;
 
+    const BACKEND: Backend = Backend::Rocm;
+
     fn error(msg: String) -> Error {
         Error::Rocm(msg)
+    }
+
+    fn describe(ctx: &Context) -> Platform {
+        ctx.platform()
     }
 
     fn open() -> Result<Context, Error> {

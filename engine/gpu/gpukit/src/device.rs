@@ -1,18 +1,26 @@
-//! Device buffers and caches for the CUDA and ROCm backends.
+//! Device buffers and caches, shared by every GPU backend.
 
-use crate::Error;
+use crate::backend::Backend;
+use crate::{Error, Platform};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 /// A backend context: memory, kernels and process-wide caches.
 pub trait Device: Clone + Send + Sync + 'static {
     type Kernel: Clone + Send + 'static;
+    /// A whole plan's launches, recorded once.
+    type Graph: Send + 'static;
+
+    const BACKEND: Backend;
 
     /// Opens the default device.
     fn open() -> Result<Self, Error>;
     /// Wraps a message as this backend's error.
     fn error(msg: String) -> Error;
     fn caches() -> &'static Caches<Self>;
+    fn name(&self) -> String;
+    /// The device as asked, with its table row.
+    fn platform(&self) -> Platform;
     fn alloc(&self, size: usize) -> Result<u64, Error>;
     /// Skipped when the context is already gone.
     fn free(&self, ptr: u64);
@@ -20,6 +28,30 @@ pub trait Device: Clone + Send + Sync + 'static {
     fn download(&self, ptr: u64, bytes: &mut [u8]) -> Result<(), Error>;
     fn zero(&self, ptr: u64, size: usize) -> Result<(), Error>;
     fn compile(&self, source: &str, entry: &str) -> Result<Self::Kernel, Error>;
+    /// Waits for every launch. Returns the device's own seconds.
+    fn finish(&self) -> Result<Option<f64>, Error>;
+
+    /// Lets this thread's launches overlap the one before.
+    fn programmatic(&self, _on: bool) {}
+
+    /// Whether `capture` records launches here.
+    fn graphs(&self) -> bool {
+        false
+    }
+
+    /// Runs `record` and keeps its launches as one graph.
+    fn capture<E: From<Error>>(
+        &self,
+        record: impl FnOnce() -> Result<(), E>,
+    ) -> Result<Self::Graph, E> {
+        let _ = record;
+        Err(Self::error("this device records no graphs".into()).into())
+    }
+
+    /// Runs a captured graph, after copies.
+    fn replay(&self, _: &Self::Graph) -> Result<(), Error> {
+        Err(Self::error("this device records no graphs".into()))
+    }
 }
 
 type KernelMap<K> = OnceLock<Mutex<HashMap<(usize, &'static str), K>>>;
@@ -69,7 +101,7 @@ fn lookup<D: Device>(
 }
 
 /// Compile `source` and resolve `entry`, once per process.
-pub(crate) fn cached_source<D: Device>(
+pub fn cached_source<D: Device>(
     source: &'static str,
     entry: &'static str,
 ) -> Result<D::Kernel, Error> {
@@ -222,6 +254,7 @@ impl<D: Device> BufferPool<D> {
 }
 
 /// A backend module's buffer types and cached entry points.
+#[cfg(any(feature = "cuda", feature = "rocm"))]
 macro_rules! backend_api {
     ($ctx:ty, $kernel:ty) => {
         pub type DeviceBuffer = $crate::device::DeviceBuffer<$ctx>;
@@ -241,4 +274,5 @@ macro_rules! backend_api {
         }
     };
 }
+#[cfg(any(feature = "cuda", feature = "rocm"))]
 pub(crate) use backend_api;

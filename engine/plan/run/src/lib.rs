@@ -1,14 +1,12 @@
 //! Runs lowered plans on the host or a GPU.
 
 mod cpu;
-#[cfg(any(feature = "cuda", feature = "rocm"))]
+#[cfg(any(target_os = "macos", feature = "cuda", feature = "rocm"))]
 mod device;
 mod held;
 #[cfg(any(target_os = "macos", feature = "cuda", feature = "rocm"))]
 mod kernels;
 mod loopback;
-#[cfg(target_os = "macos")]
-mod metal;
 mod rank;
 mod run;
 
@@ -35,11 +33,17 @@ pub fn precision(backend: Backend) -> Precision {
 pub fn open(plan: Plan, settings: &Settings) -> Result<Box<dyn Run>, Error> {
     match settings.gpu() {
         #[cfg(target_os = "macos")]
-        Some(Backend::Metal) => Ok(Box::new(metal::Runner::new(plan)?)),
+        Some(Backend::Metal) => Ok(Box::new(device::Runner::<gpukit::metal::Context>::new(
+            plan,
+        )?)),
         #[cfg(feature = "cuda")]
-        Some(Backend::Cuda) => Ok(Box::new(device::cuda::Runner::new(plan)?)),
+        Some(Backend::Cuda) => Ok(Box::new(device::Runner::<gpukit::cuda::Context>::new(
+            plan,
+        )?)),
         #[cfg(feature = "rocm")]
-        Some(Backend::Rocm) => Ok(Box::new(device::rocm::Runner::new(plan)?)),
+        Some(Backend::Rocm) => Ok(Box::new(device::Runner::<gpukit::rocm::Context>::new(
+            plan,
+        )?)),
         _ => Ok(Box::new(cpu::Runner::new(
             plan,
             settings.host_lanes,

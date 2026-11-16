@@ -1716,8 +1716,6 @@ dependencies = [
  "jit",
  "lower",
  "mem",
- "objc2",
- "objc2-metal",
  "rayon",
 ]
 
