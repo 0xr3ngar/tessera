@@ -1,7 +1,7 @@
 //! Masked attention over listed keys, or computed keys by row.
 
 use codegen::prelude::*;
-use graph::{Mask, Op};
+use graph::Op;
 use lower::sites::Attend;
 use lower::{Attn, Draft, Kernel, Launch, Shape, Step, T, Term, Tree};
 
@@ -177,29 +177,21 @@ fn rows(tree: &Tree, at: T) -> Option<Vec<Draft>> {
 }
 
 /// Sequences whose keys are all present, under any mask.
-fn whole(tree: &Tree, site: Attend, ids: T) -> Option<Vec<Draft>> {
+fn whole((site, ids, picks): (Attend, T, usize)) -> Option<Vec<Draft>> {
     let a: Attn = site.sizes;
-    if a.keys.runtime() {
-        return None;
-    }
     let keys = a.keys.most();
-    let window = match a.mask {
-        Mask::Causal => (keys, 0),
-        Mask::Bidirectional => (keys, keys),
-        Mask::Within(n) => (n as usize, n as usize),
-    };
     let sizes = Sizes {
         len: a.seqs * a.queries * a.heads * a.width,
         queries: a.queries,
-        keys: a.keys.most(),
+        keys,
         heads: a.heads,
         kv_heads: a.kv_heads,
         width: a.width,
-        picks: *tree.node(ids).shape.last()?,
+        picks,
         ragged: false,
         from_list: true,
         scale: site.scale,
-        window,
+        window: crate::window(a.mask, keys),
     };
     // Slots and positions go unread, so the list stands in.
     let reads = [site.q, site.k, site.v, ids, ids, ids];
@@ -208,7 +200,7 @@ fn whole(tree: &Tree, site: Attend, ids: T) -> Option<Vec<Draft>> {
 
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     match Attend::listed(tree, at) {
-        Some((site, ids)) => whole(tree, site, ids),
+        Some(found) => whole(crate::fixed_list(tree, found)?),
         None => rows(tree, at),
     }
 }

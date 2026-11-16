@@ -1,14 +1,15 @@
-//! Attention on tiles against the CPU interpreter, on the GPU.
+//! Attention rules against the interpreter, and the rule plans pick.
 
+use attention as _;
 use kernels as _;
 
 use graph::DimName::{Context, HeadDim, Heads, KvHeads, Rows, Segments, Seqs};
 use graph::{DType, Dim, Graph, Size, TensorType};
 use interp::{Store, Tensor, run, run_kept};
 use lower::{Device, lower};
-use run::testing::runs;
+use run::testing::{host, runs};
 use run::{Run, open};
-use testkit::{Noise, max_abs_diff};
+use testkit::{Noise, graphs, max_abs_diff};
 use trace::{EntryKind, Mask, Model, Port, Role};
 
 /// Attention under `mask` over `heads` query heads of `width`.
@@ -184,4 +185,18 @@ fn ragged_rows_match_cpu() {
             }
         }
     }
+}
+
+#[test]
+fn attention_streams() {
+    let bounded = [
+        Dim::bounded(Seqs, 4),
+        Dim::bounded(Rows, 8),
+        Dim::bounded(Context, 16),
+    ];
+    let g = graphs::attention(&bounded, [2, 2, 16]);
+    let sizes = [(Seqs, 2), (Rows, 3), (Context, 5)];
+    let plan = lower(&g, 0, &sizes, &Device::guess(&host())).unwrap();
+    let streams = |s: &&lower::Step| matches!(s.kernel.name(), "attend" | "flash");
+    assert_eq!(plan.steps.iter().filter(streams).count(), 1);
 }

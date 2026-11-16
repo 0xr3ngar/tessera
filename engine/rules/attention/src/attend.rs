@@ -1,10 +1,9 @@
 //! Causal attention that walks the keys one at a time.
 
-use crate::join::Join;
 use codegen::kept;
 use codegen::prelude::*;
 use graph::Order;
-use lower::kernels::{Map, MapStage};
+use kernels::Join;
 use lower::sites;
 use lower::{Arg, Attn, Draft, Kernel, Launch, Needs, Read, Shape, Source, Step, T, Tree};
 
@@ -210,7 +209,7 @@ fn rows_launches(k: &AttendRows, step: &Step) -> Vec<Launch> {
     needs = group_needs(),
     launches = attend_launches,
 )]
-pub struct Attend(pub Attn);
+pub(crate) struct Attend(pub Attn);
 
 /// One launch per sequence, each at its own offset.
 fn attend_launches(k: &Attend, step: &Step) -> Vec<Launch> {
@@ -250,21 +249,9 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     if site.rows.is_some() {
         return site.ragged(AttendRows(site.sizes));
     }
-    let sites::Attend {
-        scale,
-        q,
-        k,
-        v,
-        sizes,
-        ..
-    } = site;
-    let out = site.out();
-    // Sequences would sit at moving offsets as the keys grow.
-    if sizes.keys.runtime() && sizes.seqs > 1 {
-        return None;
-    }
+    let (scaled, out) = crate::scaled(&site)?;
+    let sizes = site.sizes;
     let side = sizes.kv_heads * sizes.width;
-    let out = sizes.seqs * out;
     let join = Join {
         left: side,
         right: side,
@@ -272,8 +259,8 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     };
     let joined = 2 * sizes.seqs * sizes.keys.most() * side;
     Some(vec![
-        Draft::new(Map::plain(vec![MapStage::Scale(scale)]), [q], out),
-        Draft::new(join, [k, v], joined),
+        scaled,
+        Draft::new(join, [site.k, site.v], joined),
         Draft::new(Attend(sizes), [Read::Draft(0), Read::Draft(1)], out),
     ])
 }

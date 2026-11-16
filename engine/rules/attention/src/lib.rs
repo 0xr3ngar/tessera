@@ -1,0 +1,39 @@
+//! Attention rules for the CPU and GPU. Linking registers them.
+
+mod attend;
+mod cpu;
+mod flash;
+mod listed;
+
+use graph::Mask;
+use lower::kernels::{Map, MapStage};
+use lower::{Draft, T, Tree, sites};
+
+/// Keys before and after a query's position that it sees.
+fn window(mask: Mask, keys: usize) -> (usize, usize) {
+    match mask {
+        Mask::Causal => (keys, 0),
+        Mask::Bidirectional => (keys, keys),
+        Mask::Within(n) => (n as usize, n as usize),
+    }
+}
+
+/// A listed site with all keys present, and its picks.
+fn fixed_list(tree: &Tree, (site, ids): (sites::Attend, T)) -> Option<(sites::Attend, T, usize)> {
+    if site.sizes.keys.runtime() {
+        return None;
+    }
+    Some((site, ids, *tree.node(ids).shape.last()?))
+}
+
+/// GPU whole sequences: scaled queries and the output length.
+fn scaled(site: &sites::Attend) -> Option<(Draft, usize)> {
+    let a = &site.sizes;
+    // Sequences would sit at moving offsets as the keys grow.
+    if a.keys.runtime() && a.seqs > 1 {
+        return None;
+    }
+    let out = a.seqs * site.out();
+    let scale = Map::plain(vec![MapStage::Scale(site.scale)]);
+    Some((Draft::new(scale, [site.q], out), out))
+}

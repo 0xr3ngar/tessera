@@ -1,5 +1,6 @@
 //! Each rule's plans, and its launches against the CPU interpreter.
 
+use attention as _;
 use kernels as _;
 
 use graph::DimName::{Context, HeadDim, Heads, Rows, Seqs};
@@ -42,10 +43,13 @@ fn gap(g: &Graph, inputs: &[Tensor], device: &Device, settings: &Settings) -> f3
     if same { 0.0 } else { f32::INFINITY }
 }
 
-/// The rules this crate registers.
+/// The GPU rules this crate and `attention` register.
 fn ours() -> Vec<&'static lower::Rule> {
-    let ours = rules().into_iter();
-    ours.filter(|r| r.module.starts_with("kernels::")).collect()
+    let gpu = |m: &str| m.starts_with("kernels::") || m.starts_with("attention::");
+    let ours = rules().into_iter().filter(|r| gpu(r.module));
+    // CPU rules need a CPU zone.
+    ours.filter(|r| !r.module.starts_with("attention::cpu"))
+        .collect()
 }
 
 /// Every rule's launches under `settings`. Returns the rules used.
@@ -91,7 +95,7 @@ fn rules_match(settings: &Settings) -> Vec<&'static str> {
 }
 
 #[test]
-fn each_rule_matches_cpu() {
+fn rules_match_cpu() {
     for settings in runs() {
         let used = rules_match(&settings);
         // A new rule needs a graph in `testkit::graphs`.
@@ -123,13 +127,6 @@ fn count(plan: &Plan, kernel: &str) -> usize {
 
 fn names(plan: &Plan) -> Vec<&'static str> {
     plan.steps.iter().map(|s| s.kernel.name()).collect()
-}
-
-#[test]
-fn attention_streams() {
-    let g = attention();
-    let plan = lower(&g, 0, &SIZES, &Device::guess(&host())).unwrap();
-    assert_eq!(count(&plan, "attend") + count(&plan, "flash"), 1);
 }
 
 #[test]

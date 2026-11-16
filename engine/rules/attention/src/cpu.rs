@@ -1,9 +1,8 @@
-//! Whole-sequence attention, a thread per query and head.
+//! Attention on the CPU, a thread per query and head.
 
-use crate::{GUESS, small, source};
 use codegen::kept;
 use codegen::prelude::*;
-use graph::Mask;
+use cpu::{GUESS, small, source};
 use lower::{Arg, Attn, Draft, Kernel, Launch, Step, T, Tree, ZoneKind, sites};
 
 /// One pass per query, over its keys or listed `ids`.
@@ -80,7 +79,7 @@ fn cpu_attend<const LISTED: bool>(
     source = source("cpu_attend", self.body()),
     launches = attend_launches,
 )]
-pub struct Attend {
+pub(crate) struct Attend {
     pub scale: f32,
     pub sizes: Attn,
     /// Keys listed per query, or zero for all.
@@ -90,12 +89,8 @@ pub struct Attend {
 impl Attend {
     /// Keys before and after a query's position that it sees.
     fn window(&self) -> (u32, u32) {
-        let keys = self.sizes.keys.most() as u32;
-        match self.sizes.mask {
-            Mask::Causal => (keys, 0),
-            Mask::Bidirectional => (keys, keys),
-            Mask::Within(n) => (n as u32, n as u32),
-        }
+        let (before, after) = crate::window(self.sizes.mask, self.sizes.keys.most());
+        (before as u32, after as u32)
     }
 
     fn jobs(&self) -> usize {
@@ -119,7 +114,7 @@ fn attend_launches(k: &Attend, step: &Step) -> Vec<Launch> {
     let mut launches = vec![Launch::plain(step, &[k.jobs()], small(k.jobs()))];
     // The scale sits before the counts.
     let at = launches[0].args.len() - 1;
-    launches[0].args.insert(at, lower::Arg::value(&k.scale));
+    launches[0].args.insert(at, Arg::value(&k.scale));
     launches
 }
 
@@ -180,7 +175,7 @@ fn cpu_attend_rows(
     source = source("cpu_attend_rows", kept::attach(cpu_attend_rows_ir(), self.0.kept)),
     launches = rows_launches,
 )]
-pub struct AttendRows(pub Attn);
+pub(crate) struct AttendRows(pub Attn);
 
 /// One launch over every row, the kept layout's sizes last.
 fn rows_launches(k: &AttendRows, step: &Step) -> Vec<Launch> {
@@ -194,6 +189,17 @@ fn rows_launches(k: &AttendRows, step: &Step) -> Vec<Launch> {
     }]
 }
 
+/// Whole sequences: all keys, or the `ids` each query lists.
+fn whole(site: &sites::Attend, ids: T, picks: usize) -> Vec<Draft> {
+    let out = site.sizes.seqs * site.out();
+    let kernel = Attend {
+        scale: site.scale,
+        sizes: site.sizes,
+        picks,
+    };
+    vec![Draft::new(kernel, [site.q, site.k, site.v, ids], out)]
+}
+
 /// Whole sequences with fixed keys, or rows over kept keys.
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let site: sites::Attend = tree.site(at)?;
@@ -203,33 +209,14 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     if site.sizes.keys.runtime() {
         return None;
     }
-    let out = site.sizes.seqs * site.out();
-    let kernel = Attend {
-        scale: site.scale,
-        sizes: site.sizes,
-        picks: 0,
-    };
     // Only the listed kernel reads its fourth buffer.
-    Some(vec![Draft::new(
-        kernel,
-        [site.q, site.k, site.v, site.k],
-        out,
-    )])
+    Some(whole(&site, site.k, 0))
 }
 
 /// Whole sequences, each query reading its listed keys.
 fn listed(tree: &Tree, at: T) -> Option<Vec<Draft>> {
-    let (site, ids) = sites::Attend::listed(tree, at)?;
-    if site.sizes.keys.runtime() {
-        return None;
-    }
-    let out = site.sizes.seqs * site.out();
-    let kernel = Attend {
-        scale: site.scale,
-        sizes: site.sizes,
-        picks: *tree.node(ids).shape.last()?,
-    };
-    Some(vec![Draft::new(kernel, [site.q, site.k, site.v, ids], out)])
+    let (site, ids, picks) = crate::fixed_list(tree, sites::Attend::listed(tree, at)?)?;
+    Some(whole(&site, ids, picks))
 }
 
 lower::rule!("cpu_attend", propose);

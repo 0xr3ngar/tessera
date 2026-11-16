@@ -1,16 +1,13 @@
 //! Kernels and their lowering rules. Linking this crate registers them.
 
 mod argmax;
-mod attend;
 mod batched;
 mod by_sum;
 mod causal;
-mod flash;
 mod gather;
 mod hadamard;
 mod join;
 mod lane_norm;
-mod listed;
 mod mask;
 mod mean;
 mod rms_norm;
@@ -19,9 +16,9 @@ mod softmax;
 mod take;
 mod view;
 
-pub use attend::Attend;
 pub use gather::Gather;
 pub use hadamard::Hadamard;
+pub use join::Join;
 pub use mean::Mean;
 pub use rms_norm::RmsNorm;
 pub use rope::Rope;

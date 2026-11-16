@@ -4,7 +4,6 @@ use codegen::ir::Body;
 use codegen::kept;
 use codegen::prelude::*;
 use graph::{Mask, Order};
-use lower::kernels::{Map, MapStage};
 use lower::sites;
 use lower::{Arg, Attn, Draft, Kernel, Launch, Load, Needs, Read, Shape, Source, Step, T, Tree};
 use std::cell::RefCell;
@@ -650,25 +649,9 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
         }
         return site.ragged(FlashRows(site.sizes));
     }
-    let sites::Attend {
-        scale,
-        q,
-        k,
-        v,
-        sizes,
-        ..
-    } = site;
-    let out = site.out();
-    // Sequences would sit at moving offsets as the keys grow.
-    if sizes.keys.runtime() && sizes.seqs > 1 {
-        return None;
-    }
-    let out = sizes.seqs * out;
-    let reads = [Read::Draft(0), Read::Node(k), Read::Node(v)];
-    Some(vec![
-        Draft::new(Map::plain(vec![MapStage::Scale(scale)]), [q], out),
-        Draft::new(Flash(sizes), reads, out),
-    ])
+    let (scaled, out) = crate::scaled(&site)?;
+    let reads = [Read::Draft(0), Read::Node(site.k), Read::Node(site.v)];
+    Some(vec![scaled, Draft::new(Flash(site.sizes), reads, out)])
 }
 
 lower::rule!("flash", propose);
