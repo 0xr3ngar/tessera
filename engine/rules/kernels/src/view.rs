@@ -4,7 +4,7 @@ use crate::join::Join;
 use codegen::prelude::*;
 use graph::{Op, View};
 use lower::form::F32_FORM;
-use lower::{Draft, Extent, Kernel, T, Term, Tree};
+use lower::{Draft, Extent, Home, Kernel, T, Term, Tree};
 
 /// One thread per output `[outer, mid, inner]`, read through strides.
 #[kernel]
@@ -97,14 +97,18 @@ fn strides(tree: &Tree, view: &View, shape: &[usize], len: usize) -> Option<Stri
     }
 }
 
-/// Views of values that are already f32 rows.
+/// Views of computed or fed f32 values.
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let node = tree.node(at);
     let Term::Op(Op::View(view)) = &node.term else {
         return None;
     };
-    let floats = |t: &T| tree.node(*t).form.name() == F32_FORM.name();
-    if !node.args.iter().all(floats) {
+    // Weight views belong to the rules that read them.
+    let ours = |t: &T| {
+        let n = tree.node(*t);
+        n.form.name() == F32_FORM.name() && !matches!(n.term, Term::Leaf(Home::Weight(_)))
+    };
+    if !node.args.iter().all(ours) {
         return None;
     }
     let x = node.args[0];
