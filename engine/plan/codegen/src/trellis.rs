@@ -4,7 +4,10 @@ use crate as codegen;
 use crate::form::{Load, form, named};
 use crate::ir::Helper;
 use crate::prelude::{Bits, Buf, F32x4, U8, helper};
-use mem::trellis::{HEAD, INPUT_SIDE, MCG, TRELLIS_K2, TRELLIS_K3, TRELLIS_K4, Trellis};
+use mem::trellis::{HEAD, INPUT_SIDE, MCG, Trellis};
+use mem::trellis::{
+    TRELLIS_K2, TRELLIS_K2_ROT, TRELLIS_K3, TRELLIS_K3_ROT, TRELLIS_K4, TRELLIS_K4_ROT,
+};
 
 pub use mem::trellis::packed;
 
@@ -134,6 +137,9 @@ fn four<const K: u32>(#[build] name: &'static str, p: Buf<U8>, i: u64) -> F32x4 
 }
 
 impl<const K: u32> Load for Trellis<K> {
+    fn codes(&self) -> Option<&'static dyn Load> {
+        form_for(K).filter(|_| self.rotated)
+    }
     fn ty(&self) -> &'static str {
         "u8"
     }
@@ -160,3 +166,6 @@ pub fn form_for(k: u32) -> Option<&'static dyn Load> {
 form!(TRELLIS_K2);
 form!(TRELLIS_K3);
 form!(TRELLIS_K4);
+form!(TRELLIS_K2_ROT);
+form!(TRELLIS_K3_ROT);
+form!(TRELLIS_K4_ROT);

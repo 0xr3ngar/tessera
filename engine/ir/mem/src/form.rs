@@ -55,6 +55,11 @@ pub trait Form: Sync {
         Some(out)
     }
 
+    /// Parts a file's bytes hold, each in its own form.
+    fn split(&self, _bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
+        None
+    }
+
     /// Every element `bytes` hold, in order.
     fn unpack_all(&self, bytes: &[u8]) -> Vec<f32> {
         (0..self.elements(bytes.len()))
