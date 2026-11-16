@@ -23,7 +23,7 @@ pub use assign::assign;
 pub use cache::Cache;
 pub use codegen::kept;
 pub use codegen::{Dialect, LANES, Precision, Terms, Text, float, hash, hip_tiles, terms};
-pub use cost::{Cost, Device, Sample};
+pub use cost::Device;
 pub use cut::cut;
 pub use engine_settings::{Backend, Pick, Settings};
 pub use extent::Extent;

@@ -4,6 +4,7 @@ mod argmax;
 mod attend;
 mod batched;
 mod by_sum;
+mod causal;
 mod flash;
 mod gather;
 mod hadamard;

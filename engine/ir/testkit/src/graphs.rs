@@ -176,3 +176,30 @@ pub fn indexed(bounded: &[Dim], [heads, width, keep]: [u64; 3]) -> Graph {
     let out = m.attend(Mask::Causal, 0.25, [&q, &k, &v], Some(&ids));
     m.finish([(Role::Logits, &out)])
 }
+
+/// Ragged rows pick keys up to their position, then attend.
+pub fn indexed_rows(bounded: &[Dim], [heads, width, keep]: [u64; 3]) -> Graph {
+    let rows: Vec<Dim> = bounded.iter().filter(|d| d.name == Rows).cloned().collect();
+    // Eight slots of eight keys hold any id below eight.
+    let fixed = [
+        (Seqs, 8),
+        (Context, 8),
+        (Heads, heads),
+        (HeadDim, width),
+        (IndexKeep, keep),
+    ];
+    let m = model(&rows, &fixed);
+    let keys = || floats([Seqs, Context, Heads, HeadDim]);
+    let ports = [
+        floats([Rows, Heads, HeadDim]),
+        keys(),
+        keys(),
+        floats([Rows, Context]),
+        ids([Rows]),
+        ids([Rows]),
+    ];
+    let [q, k, v, scores, slots, at] = m.entry(EntryKind::Forward, ports);
+    let picked = scores.causal(&at).top_k(IndexKeep);
+    let out = m.attend_rows(0.25, [&q, &k, &v], [&slots, &at], Some(&picked));
+    m.finish([(Role::Logits, &out)])
+}
