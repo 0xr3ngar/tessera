@@ -149,7 +149,7 @@ fn model(name: &str, fixture: &Path, n: u64) -> Result<Loaded, Box<dyn std::erro
         "qwen3" => program::<Norm, Swiglu>(&Config::qwen3(1, n)),
         "granite" => program::<(), Moe>(&Config::granite(1, n)),
         "deepseek" | "glm53" => {
-            let r = bundle::mla::release(fixture, 1, n).map_err(|e| e.to_string())?;
+            let r = bundle::mla::release(fixture, 1, n, 3).map_err(|e| e.to_string())?;
             return Ok((r.graph, r.weights, r.pins));
         }
         "eg2" => {
