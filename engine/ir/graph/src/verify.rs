@@ -10,7 +10,7 @@ use crate::types::{DType, Placement, TensorType};
 use std::fmt;
 
 /// A failed check, with the node it concerns.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub struct VerifyError {
     pub node: Option<u32>,
     pub error: TypeError,
@@ -24,8 +24,6 @@ impl fmt::Display for VerifyError {
         }
     }
 }
-
-impl std::error::Error for VerifyError {}
 
 /// Checks every node against the typing rules.
 pub fn verify(g: &Graph) -> Result<(), VerifyError> {

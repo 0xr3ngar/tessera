@@ -69,7 +69,7 @@ impl Sample {
 }
 
 /// One device's timed launches, by kernel name.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, derive_more::PartialEq)]
 pub struct Device {
     /// The hardware that ran the samples.
     pub name: String,
@@ -77,6 +77,7 @@ pub struct Device {
     pub fit: Option<Fit>,
     /// The model those constants make.
     #[serde(skip)]
+    #[partial_eq(skip)]
     pool: Option<Pool>,
     /// The zones plans may span. Zone 0 is this GPU.
     #[serde(default)]
@@ -108,9 +109,11 @@ pub struct Device {
     pub kept: &'static dyn Layout,
     /// Fresh after every change that could alter a plan.
     #[serde(skip)]
+    #[partial_eq(skip)]
     generation: u64,
     /// Estimates already made, by kernel and sizes.
     #[serde(skip)]
+    #[partial_eq(skip)]
     memo: RefCell<Memo>,
 }
 
@@ -122,24 +125,6 @@ static GENERATIONS: AtomicU64 = AtomicU64::new(1);
 
 fn fresh() -> u64 {
     GENERATIONS.fetch_add(1, Ordering::Relaxed)
-}
-
-/// Equal in all they hold. The generation is not held.
-impl PartialEq for Device {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-            && self.fit == other.fit
-            && self.cluster == other.cluster
-            && self.ranks == other.ranks
-            && self.parts == other.parts
-            && self.rank == other.rank
-            && self.platform == other.platform
-            && self.timed == other.timed
-            && self.favor == other.favor
-            && self.barred == other.barred
-            && self.pins == other.pins
-            && self.kept == other.kept
-    }
 }
 
 fn dense() -> &'static dyn Layout {

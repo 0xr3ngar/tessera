@@ -92,9 +92,11 @@ pub struct Output {
     pub shape: Vec<usize>,
 }
 
-#[derive(Clone, Debug, Default)]
+/// Equal plans run alike, whatever their ids.
+#[derive(Clone, Debug, Default, derive_more::PartialEq)]
 pub struct Plan {
     /// Tells plans apart without comparing them. Zero means unknown.
+    #[partial_eq(skip)]
     pub id: u64,
     /// Bytes per buffer. Values that never overlap share one.
     pub buffers: Vec<usize>,
@@ -115,21 +117,6 @@ pub struct Plan {
 }
 
 static IDS: AtomicU64 = AtomicU64::new(1);
-
-/// Equal plans run alike, whatever their ids.
-impl PartialEq for Plan {
-    fn eq(&self, other: &Self) -> bool {
-        self.buffers == other.buffers
-            && self.zones == other.zones
-            && self.ranks == other.ranks
-            && self.rank == other.rank
-            && self.steps == other.steps
-            && self.weights == other.weights
-            && self.kept == other.kept
-            && self.inputs == other.inputs
-            && self.outputs == other.outputs
-    }
-}
 
 impl Plan {
     /// An id no other plan has had in this process.

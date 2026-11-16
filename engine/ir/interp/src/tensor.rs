@@ -1,25 +1,14 @@
 //! The interpreter's errors. Its tensors come from `mem`.
 
-use std::fmt;
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum Error {
     /// The graph needs something this interpreter lacks.
+    #[error("unsupported: {0}")]
     Unsupported(String),
     /// Values disagree with the graph's types.
+    #[error("mismatch: {0}")]
     Mismatch(String),
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Unsupported(m) => write!(f, "unsupported: {m}"),
-            Error::Mismatch(m) => write!(f, "mismatch: {m}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 /// A view that did not fit is a mismatch.
 impl From<mem::Error> for Error {
