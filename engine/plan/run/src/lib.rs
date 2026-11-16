@@ -19,8 +19,8 @@ pub use run::{Base, Run};
 
 use codegen::Precision;
 use engine_comm::Pinning;
+use engine_settings::Backend;
 use engine_settings::Settings;
-use gpukit::backend::Backend;
 use lower::{Error, Plan};
 use std::sync::Arc;
 

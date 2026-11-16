@@ -2,10 +2,10 @@
 
 use super::small;
 use crate::common::pair;
-use frontend_settings::read as settings;
 use graph::{Parts, Placement, Stage, shard};
 use interp::{Tensor, run, run_parts};
-use lower::{Device, Pick, lower};
+use lower::testing::host;
+use lower::{Device, lower};
 use models::decoder::{Config, Moe, Scales, program};
 use run::Loopback;
 use testkit::{Noise, fill, max_abs_diff};
@@ -64,10 +64,7 @@ fn uneven_ranks() {
     let got = run_parts(&sharded, &weights, 0, &inputs, &parts).unwrap();
     let off = max_abs_diff(got[0].floats().unwrap(), want) / scale;
     assert!(off < 1e-4, "interpreter off {off}");
-    let host = lower::Settings {
-        backend: Pick::Host,
-        ..settings()
-    };
+    let host = host();
     let device = Device::guess(&host)
         .zoned(pair())
         .ranked(vec![0, 1])

@@ -26,8 +26,8 @@ fn cases(rule: &Rule) -> Vec<(String, bool)> {
 /// Bad examples hit their rule. Good examples do not.
 #[test]
 fn examples_match() {
-    let Some(dir) = frontend_settings::read().reference("spacy") else {
-        eprintln!("TESSERA_SPACY unset: skipped");
+    let Some(dir) = testkit::reference("spacy") else {
+        eprintln!("no spacy reference here: skipped");
         return;
     };
     let mut checker = Checker::new(&dir).unwrap();

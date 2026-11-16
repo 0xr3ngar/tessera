@@ -9,6 +9,16 @@ pub enum Backend {
     Rocm,
 }
 
+impl std::fmt::Display for Backend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Backend::Metal => write!(f, "metal"),
+            Backend::Cuda => write!(f, "cuda"),
+            Backend::Rocm => write!(f, "rocm"),
+        }
+    }
+}
+
 /// The backend this build uses, if any.
 pub fn available() -> Option<Backend> {
     if cfg!(target_os = "macos") {
@@ -28,18 +38,14 @@ pub fn available() -> Option<Backend> {
 /// Whether `backend` can run kernels here.
 pub fn ready(backend: Backend) -> bool {
     match backend {
-        Backend::Metal => cfg!(target_os = "macos"),
+        // Hosted macOS runners lack a working Metal device.
+        Backend::Metal => cfg!(target_os = "macos") && !crate::testing::ci(),
         Backend::Cuda => crate::testing::cuda_ready(),
         Backend::Rocm => crate::testing::rocm_ready(),
     }
 }
 
-impl std::fmt::Display for Backend {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Backend::Metal => write!(f, "metal"),
-            Backend::Cuda => write!(f, "cuda"),
-            Backend::Rocm => write!(f, "rocm"),
-        }
-    }
+/// This build's backend, when it can run kernels here.
+pub fn picked() -> Option<Backend> {
+    available().filter(|b| ready(*b))
 }

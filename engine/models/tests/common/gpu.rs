@@ -1,6 +1,6 @@
 //! A decoder on the GPU against the reference.
 
-use super::{Spec, Tolerance, interpreted, loaded};
+use super::{Spec, Tolerance, interpreted, loaded, runs};
 use interp::Tensor;
 use lower::{Cache, Device, Form, Pins, Settings, View, lower};
 use run::Run;
@@ -20,13 +20,13 @@ struct Fixture {
     form: &'static dyn Form,
 }
 
-fn fixture(spec: &Spec, g: &Graph) -> Option<Fixture> {
+fn fixture(spec: &Spec, g: &Graph, settings: Settings) -> Option<Fixture> {
     let golden = spec.golden.as_ref()?;
     let logits = golden.checks.iter().find(|c| c.name == "logits")?;
     let mut reference = golden.reference(spec.name, g)?;
     let mut one = reference.cases.remove(0);
     Some(Fixture {
-        settings: frontend_settings::read(),
+        settings,
         weights: reference.weights,
         want: one.outputs.remove("logits").unwrap(),
         tokens: one.tokens,
@@ -48,11 +48,11 @@ fn close(label: &str, got: &[f32], c: &Fixture) {
 /// Both entries on this host's GPU, against the reference.
 pub fn gpu(spec: &Spec) {
     let Some(stepper) = &spec.stepper else { return };
-    if frontend_settings::read().gpu().is_none() {
+    let Some(settings) = runs().into_iter().find(|s| s.gpu().is_some()) else {
         return eprintln!("no GPU here; skipped");
-    }
+    };
     let g = (spec.release)();
-    let Some(c) = fixture(spec, &g) else {
+    let Some(c) = fixture(spec, &g, settings) else {
         return eprintln!("{}: no reference here; skipped", spec.name);
     };
     let mut gpu = Gpu::open(&g, &c);

@@ -26,7 +26,7 @@ const USAGE: &str = "tessera-ranks --rank N (--addrs HOST:PORT,... | --shm PATH 
   --verbs and --ring move the sums over RDMA, one lane per device, after the
   ranks meet over the sockets or the file.
   The fixture holds model.safetensors, and tokens.txt with logits.f32,
-  at its root or under cases/prompt. Its default is TESSERA_<MODEL>.";
+  at its root or under cases/prompt. Its default is ~/.cache/tessera/references/<model>.";
 
 struct Args {
     rank: u32,
@@ -199,9 +199,8 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     }
     let fixture = match &args.fixture {
         Some(dir) => dir.clone(),
-        None => settings
-            .reference(&args.model)
-            .ok_or_else(|| format!("no fixture: set TESSERA_{}", args.model.to_uppercase()))?,
+        None => testkit::reference(&args.model)
+            .ok_or_else(|| format!("no fixture: {} has no reference here", args.model))?,
     };
     let case = match fixture.join("tokens.txt").is_file() {
         true => fixture.clone(),

@@ -210,7 +210,7 @@ macro_rules! device_runner {
                 }
 
                 fn precision(&self) -> codegen::Precision {
-                    crate::precision(gpukit::backend::Backend::$variant)
+                    crate::precision(engine_settings::Backend::$variant)
                 }
 
                 /// Launches every step, as a recorded graph when whole.

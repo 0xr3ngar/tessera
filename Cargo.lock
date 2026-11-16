@@ -177,7 +177,6 @@ dependencies = [
  "checkpoint",
  "engine",
  "fancy-regex",
- "frontend-settings",
  "graph",
  "interp",
  "lower",
@@ -612,7 +611,6 @@ name = "engine"
 version = "0.1.0"
 dependencies = [
  "cpu",
- "frontend-settings",
  "graph",
  "interp",
  "kernels",
@@ -637,7 +635,7 @@ dependencies = [
 name = "engine-settings"
 version = "0.1.0"
 dependencies = [
- "gpukit",
+ "serde",
 ]
 
 [[package]]
@@ -755,6 +753,7 @@ version = "0.1.0"
 dependencies = [
  "engine-settings",
  "envy",
+ "lower",
  "serde",
 ]
 
@@ -830,7 +829,6 @@ dependencies = [
  "objc2-metal",
  "serde",
  "serde_json",
- "testkit",
 ]
 
 [[package]]
@@ -1140,7 +1138,6 @@ name = "kernels"
 version = "0.1.0"
 dependencies = [
  "codegen",
- "frontend-settings",
  "graph",
  "interp",
  "lower",
@@ -1167,7 +1164,6 @@ name = "linear"
 version = "0.1.0"
 dependencies = [
  "codegen",
- "frontend-settings",
  "gpukit",
  "graph",
  "interp",
@@ -1232,7 +1228,6 @@ dependencies = [
  "codegen",
  "engine-comm",
  "engine-settings",
- "frontend-settings",
  "gpukit",
  "graph",
  "interp",
@@ -1364,7 +1359,6 @@ dependencies = [
  "bundle",
  "checkpoint",
  "cpu",
- "frontend-settings",
  "graph",
  "interp",
  "kernels",
@@ -1574,6 +1568,7 @@ dependencies = [
  "models",
  "run",
  "sim",
+ "testkit",
  "trace",
 ]
 
@@ -2020,11 +2015,11 @@ version = "0.1.0"
 dependencies = [
  "bundle",
  "engine",
- "frontend-settings",
  "interp",
  "lower",
  "models",
  "serde_json",
+ "testkit",
 ]
 
 [[package]]
@@ -2056,6 +2051,7 @@ dependencies = [
  "findings",
  "frontend-settings",
  "tasks",
+ "testkit",
  "ureq",
 ]
 

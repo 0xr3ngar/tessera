@@ -1,9 +1,9 @@
 //! The small graph over two ranks matches one rank.
 
-use super::{Spec, settings};
+use super::{Spec, host, runs};
 use graph::{Placement, shard};
 use interp::{Tensor, run, run_ranks};
-use lower::{Cluster, Device, Pick, View, lower};
+use lower::{Cluster, Device, View, lower};
 use run::Loopback;
 use testkit::{Noise, fill, max_abs_diff};
 use trace::DimName::{Context, Seqs};
@@ -41,10 +41,7 @@ pub fn shards(spec: &Spec) {
     let want = run(&g, &weights, 0, &inputs).unwrap();
     let two = run_ranks(&sharded, &weights, 0, &inputs, RANKS).unwrap();
     close(&format!("{} interpreted", spec.name), &two[0], &want[0]);
-    let host = lower::Settings {
-        backend: Pick::Host,
-        ..settings()
-    };
+    let host = host();
     let device = Device::guess(&host).zoned(pair()).ranked(vec![0, 1]);
     let plans = [0, 1].map(|r| lower(&sharded, 0, &SIZES, &device.clone().as_rank(r)).unwrap());
     let plan = &plans[0];
@@ -56,7 +53,7 @@ pub fn shards(spec: &Spec) {
         "{}: sums without splits",
         spec.name
     );
-    for settings in [host, settings()] {
+    for settings in runs() {
         let mut ranks = Loopback::open(&plans, &settings).unwrap();
         for (at, w) in weights.iter().enumerate() {
             ranks.load(at as u32, w.view()).unwrap();
