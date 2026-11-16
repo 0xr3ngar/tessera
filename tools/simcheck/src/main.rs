@@ -26,9 +26,9 @@ use std::process::{Command, ExitCode};
 use windows::{Window, cut};
 
 const USAGE: &str = "usage: tessera-simcheck fetch <model_dir>
-       tessera-simcheck check <model_dir> [cache_file [json_file [base_ref]]]
-       tessera-simcheck far <model_dir> [cache_file]
-       tessera-simcheck place <model_dir> <cache_file> [paths_file]
+       tessera-simcheck check <model_dir> [cache_dir [json_file [base_ref]]]
+       tessera-simcheck far <model_dir> [cache_dir]
+       tessera-simcheck place <model_dir> <cache_dir> [paths_file]
 
 `check` writes its findings to <json_file> when given.
 It also fails on allow.toml pairs that allow nothing.

@@ -28,7 +28,7 @@ impl Dirs {
             root: root.to_path_buf(),
             spacy: base.join("spacy"),
             eg2: base.join("eg2-text"),
-            cache: base.join("simcheck.bin"),
+            cache: base.join("simcheck"),
             out: own.join("reports"),
         }
     }
