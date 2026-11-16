@@ -9,6 +9,7 @@ and tokens.
 <tr><td><a href="engine">engine</a></td><td>Graphs on runners: a decode loop over a stepper, or one launch of a forward graph</td></tr>
 <tr><td colspan="2"><a href="gpu"><b>gpu/</b></a></td></tr>
 <tr><td>&emsp;<a href="gpu/gpukit">gpukit</a></td><td>The runtimes tessera loads at run time, GPUs and RDMA: pipelines, buffers, verbs</td></tr>
+<tr><td>&emsp;<a href="gpu/platform">platform</a></td><td>Plain hardware description: platforms, limits and the per-architecture table</td></tr>
 <tr><td colspan="2"><a href="ir"><b>ir/</b></a></td></tr>
 <tr><td>&emsp;<a href="ir/graph">graph</a></td><td>The model graph: typed nodes, symbolic shapes, a JSON form</td></tr>
 <tr><td>&emsp;<a href="ir/interp">interp</a></td><td>Runs a graph op by op on the CPU: the reference for every plan</td></tr>

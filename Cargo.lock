@@ -856,13 +856,12 @@ name = "gpukit"
 version = "0.1.0"
 dependencies = [
  "derive_more",
- "include_dir",
  "mem",
  "objc2",
  "objc2-foundation",
  "objc2-metal",
+ "platform",
  "serde",
- "serde_json",
  "thiserror",
 ]
 
@@ -1271,6 +1270,7 @@ dependencies = [
  "interp",
  "kernel-macro",
  "mem",
+ "platform",
  "run",
  "scattered-collect",
  "serde",
@@ -1527,6 +1527,15 @@ name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
+
+[[package]]
+name = "platform"
+version = "0.1.0"
+dependencies = [
+ "include_dir",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "potential_utf"

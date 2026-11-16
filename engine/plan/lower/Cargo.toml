@@ -10,6 +10,7 @@ description = "Lowers a graph to a plan of kernel launches"
 thiserror = "2"
 derive_more = { version = "2.1", features = ["from", "eq", "deref", "debug"] }
 graph = { workspace = true }
+platform = { workspace = true }
 sim = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }

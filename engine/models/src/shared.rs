@@ -244,7 +244,7 @@ pub(crate) fn rows<const N: usize>(rest: [DimExpr; N]) -> Vec<DimExpr> {
     lead.into_iter().chain(rest).collect()
 }
 
-pub(crate) fn swiglu(h: &Tensor, [gate, up, down]: [&Linear; 3]) -> Tensor {
-    let inner = h.matmul(gate).act(Act::Silu).mul(&h.matmul(up));
-    inner.matmul(down)
+pub(crate) fn swiglu<D: Dense>(h: &Tensor, [gate, up, down]: [&D; 3]) -> Tensor {
+    let inner = gate.apply(h).act(Act::Silu).mul(&up.apply(h));
+    down.apply(&inner)
 }

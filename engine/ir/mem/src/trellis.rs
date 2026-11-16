@@ -15,7 +15,7 @@ pub const INPUT_SIDE: u32 = 2;
 /// Channels one entry holds on its sharded side.
 const ENTRY: usize = 128;
 
-/// A matrix of `K`-bit trellis codes, stored `[out][in]`.
+/// `K`-bit trellis codes of `[out][in]` matrices.
 pub struct Trellis<const K: u32> {
     pub name: &'static str,
 }
@@ -50,8 +50,14 @@ impl Shape {
         head
     }
 
-    /// The tile holding `T[row][col]`, counted in the entries.
+    /// The tile of `T[row][col]`. Later matrices follow at `out`.
     fn tile(&self, row: usize, col: usize) -> usize {
+        let (m, col) = (col / self.out, col % self.out);
+        m * (self.inp * self.out / 256) + self.local(row, col)
+    }
+
+    /// The tile within one matrix.
+    fn local(&self, row: usize, col: usize) -> usize {
         // An entry: 128 channels by all of the other side.
         match self.side {
             INPUT_SIDE => {
@@ -173,7 +179,7 @@ impl<const K: u32> Form for Trellis<K> {
     fn pack(&self, _: &[f32]) -> Vec<u8> {
         panic!("{} codes are read from a release, never packed", self.name)
     }
-    /// Whole entries along the side the release shards.
+    /// Whole matrices of a set, or whole stored-side entries.
     fn share(
         &self,
         bytes: &[u8],
@@ -181,6 +187,12 @@ impl<const K: u32> Form for Trellis<K> {
         [first, count]: [usize; 2],
     ) -> Option<Vec<u8>> {
         let shape = Shape::read(bytes);
+        let matrix = shape.inp * shape.out * K as usize / 8;
+        if (outer, inner) == (1, shape.inp * shape.out) {
+            let at = HEAD + first * matrix;
+            let set = &bytes[at..at + count * matrix];
+            return Some(packed(shape.inp, shape.out, shape.side, set));
+        }
         let input = shape.side == INPUT_SIDE;
         // Outputs lead, so an output split has one outer part.
         let part = match (outer, inner) {

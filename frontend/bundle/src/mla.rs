@@ -3,7 +3,7 @@
 use crate::names::Rule;
 use crate::pull;
 use checkpoint::File;
-use engine::mla::{Config, Index, program};
+use engine::mla::{Config, Index, Moe, program};
 use engine::{Graph, Pins, Stack, Weight};
 use serde::Deserialize;
 use std::error::Error;
@@ -154,7 +154,7 @@ pub fn release(
 ) -> Result<Release, Box<dyn Error + Send + Sync>> {
     let json = std::fs::read_to_string(dir.join("config.json"))?;
     let config = config(&json, seqs, context)?;
-    let graph = program(&config);
+    let graph = program::<Moe>(&config);
     let file = File::open(&dir.join("model.safetensors"))?;
     let rules = rules(&config);
     let (weights, pins) = pull(&graph, &file, config.stack.layers, &[&rules])?;

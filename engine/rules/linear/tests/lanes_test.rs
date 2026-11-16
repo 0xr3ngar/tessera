@@ -13,9 +13,9 @@ use common::{Finish, finished, linear, noise, terms};
 use interp::Tensor;
 use lower::Pins;
 use lower::form::named;
-use lower::testing::{emulations as runs, host};
 use lower::{Device, Dialect, Source, lower};
 use run::open;
+use run::testing::{emulations as runs, host};
 use testkit::{Noise, cosine_f32, fill, graphs, max_abs_diff, weights};
 use trace::Act;
 

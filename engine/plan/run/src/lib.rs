@@ -9,6 +9,7 @@ mod kernels;
 mod loopback;
 mod rank;
 mod run;
+pub mod testing;
 
 pub use held::Held;
 pub use loopback::Loopback;
@@ -72,6 +73,16 @@ use engine_settings::Backend;
 use engine_settings::Settings;
 use lower::{Arg, Plan};
 use std::sync::Arc;
+
+/// This build's GPU, when it can run kernels here.
+pub fn gpu() -> Option<Backend> {
+    use gpukit::backend as gk;
+    Some(match gk::picked()? {
+        gk::Backend::Metal => Backend::Metal,
+        gk::Backend::Cuda => Backend::Cuda,
+        gk::Backend::Rocm => Backend::Rocm,
+    })
+}
 
 /// How `backend`'s tiles round.
 pub fn precision(backend: Backend) -> Precision {

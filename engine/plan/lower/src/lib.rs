@@ -16,7 +16,6 @@ pub mod rule;
 mod schedule;
 mod select;
 pub mod sites;
-pub mod testing;
 mod tree;
 
 pub use abi::{Arg, Launch, Shape, Source, ToArg};
@@ -30,11 +29,11 @@ pub use engine_settings::{Backend, Pick, Settings};
 pub use error::{Size, Unsupported};
 pub use extent::Extent;
 pub use form::{Pins, Weight};
-pub use gpukit::{Limits, Platform};
 pub use kernel::{Kernel, KernelRef, Needs, UNPROVEN};
 pub use kernel_macro::Kernel;
 pub use mem::{Buffer, DType, Tensor, View, ViewMut};
 pub use plan::{Loaded, Output, Plan, Share, Slot, Step};
+pub use platform::{Limits, Platform};
 pub use recipe::{Launching, Recipe};
 pub use rule::{Attn, Draft, RULES, Read, Rule, linked, rules};
 pub use schedule::{peak, schedule};
@@ -43,16 +42,6 @@ pub use sim::{Cluster, Fit, Link, Load, Ops, Zone, ZoneKind};
 pub use tree::{Node, T, Term, Tree};
 
 use graph::{DimName, Graph};
-
-/// This build's GPU, when it can run kernels here.
-pub fn gpu() -> Option<Backend> {
-    use gpukit::backend as gk;
-    Some(match gk::picked()? {
-        gk::Backend::Metal => Backend::Metal,
-        gk::Backend::Cuda => Backend::Cuda,
-        gk::Backend::Rocm => Backend::Rocm,
-    })
-}
 
 /// Selects kernels, orders them, then assigns buffers.
 pub fn lower(

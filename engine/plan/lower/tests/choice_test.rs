@@ -4,8 +4,8 @@ use graph::DimName::{self, Hidden, Rows, Seqs};
 use graph::{Act, DType, Dim, Graph, TensorType};
 use lower::kernels::Map;
 use lower::sites;
-use lower::testing::host;
 use lower::{Device, Draft, Kernel, Limits, Needs, Plan, Platform, T, Tree, lower, select};
+use run::testing::host;
 use trace::{EntryKind, Model, Port, Role};
 
 /// A map stand-in with its own cost.

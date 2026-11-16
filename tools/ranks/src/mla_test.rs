@@ -5,9 +5,9 @@ use graph::DimName::{Context, Seqs};
 use graph::{Graph, PathSeg, shard};
 use interp::{Tensor, run};
 use lower::form::BF16_FORM;
-use lower::testing::runs;
 use lower::{Device, ZoneKind, lower};
 use run::Loopback;
+use run::testing::runs;
 use std::path::Path;
 use testkit::{Noise, cosine_f32, max_abs_diff, weights};
 
@@ -84,7 +84,7 @@ fn write(dir: &Path, g: &Graph, weights: &[Tensor]) {
 #[test]
 fn mla_run() {
     let c = bundle::mla::config(CONFIG, 1, ROWS as u64).unwrap();
-    let g = models::mla::program(&c);
+    let g = models::mla::program::<models::mla::Moe>(&c);
     let half = |t: Tensor| Tensor::f32(t.shape.clone(), BF16_FORM.roundtrip(t.floats().unwrap()));
     let floats: Vec<Tensor> = weights(&g, &mut Noise(9)).into_iter().map(half).collect();
     let dir = testkit::scratch(&format!("{}-mla-release", std::process::id()));

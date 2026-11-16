@@ -4,9 +4,9 @@ use super::{cluster, model};
 use graph::DimName::{Context, Seqs};
 use graph::shard;
 use interp::Tensor;
-use lower::testing::runs;
 use lower::{Device, ZoneKind, lower};
 use run::Loopback;
+use run::testing::runs;
 use testkit::cosine_f32;
 
 /// Each rank loads its part of the packed weights.

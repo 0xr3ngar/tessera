@@ -398,7 +398,10 @@ fn row(dims: &[Dim], stages: &[Stage], args: &[&TensorType]) -> Result<TensorTyp
                 need(fits, ErrorKind::Shape, || {
                     format!("rows of {width} do not hold whole blocks of {block}")
                 })?;
-                whole(p, last, s)?;
+                // Within a row, so routed zero rows stay zero.
+                if p != Placement::Routed {
+                    whole(p, last, s)?;
+                }
             }
             (Stage::Softmax | Stage::Center | Stage::UnitSum, _) => whole(p, last, s)?,
             (Stage::Rope { theta, .. }, Some(pos)) => {
