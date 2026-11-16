@@ -6,7 +6,7 @@ use testkit::scratch;
 
 /// This build's GPU when ready, else the host.
 fn settings() -> Settings {
-    lower::testing::runs().pop().unwrap()
+    run::testing::runs().pop().unwrap()
 }
 
 /// A crate's rules register once this one links it.

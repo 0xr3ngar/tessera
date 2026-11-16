@@ -5,9 +5,9 @@ use graph::DimName::{Context, Seqs};
 use graph::{Graph, PathSeg, shard};
 use interp::{Tensor, run};
 use lower::form::BF16_FORM;
-use lower::testing::runs;
 use lower::{Device, ZoneKind, lower};
 use run::Loopback;
+use run::testing::runs;
 use std::path::Path;
 use testkit::{Noise, cosine_f32, max_abs_diff, weights};
 

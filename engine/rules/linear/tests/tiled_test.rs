@@ -11,9 +11,9 @@ mod common;
 use common::{linear, noise, terms};
 use linear::{SCHEDULES, Schedule};
 use lower::form::LOADS;
-use lower::testing::{emulations, host, runs};
 use lower::{Device, Dialect, Pins, Settings, Source, lower};
 use run::open;
+use run::testing::{emulations, host, runs};
 use testkit::{Noise, cosine_f32, max_abs_diff};
 
 /// A device that can only choose schedule `at`.

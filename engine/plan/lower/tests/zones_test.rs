@@ -4,11 +4,11 @@ use graph::DimName::{Rows, Seqs, Vocab};
 use graph::{DType, Dim, Graph, TensorType};
 use lower::kernels::Map;
 use lower::sites;
-use lower::testing::host;
 use lower::{
     Cluster, Device, Draft, Error, Kernel, Link, Plan, Step, T, Tree, Zone, ZoneKind, lower,
 };
 use run::open;
+use run::testing::host;
 use sim::Tag;
 use testkit::scratch;
 use trace::{EntryKind, Model, Port, Role};
