@@ -9,64 +9,15 @@ use engine_settings::{Pick, Settings};
 use gpukit::{Limits, Platform};
 use graph::Parts;
 use serde::{Deserialize, Serialize};
-use sim::{Chip, Cluster, Fit, Pool};
+use sim::{Chip, Cluster, Cost, FIXED, Fit, Pool, Sample, Timings};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Bumped whenever a stored device changes meaning.
 const VERSION: u32 = 1;
-
-/// What a plan uses of each resource.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Cost {
-    pub seconds: f64,
-    /// Bytes its launches read and write.
-    pub bytes: u64,
-    pub launches: usize,
-}
-
-/// One kernel's timed launch.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct Sample {
-    /// The kernel as it prints: its name and every size.
-    pub kernel: String,
-    /// A hash of its source when it was timed.
-    pub source: u64,
-    pub sizes: Vec<usize>,
-    pub work: f64,
-    pub seconds: f64,
-    /// Logarithms of the sizes and the work.
-    #[serde(skip)]
-    at: Vec<f64>,
-}
-
-/// Where a launch lies among samples: nearby ones cost alike.
-fn place(sizes: &[usize], work: f64) -> Vec<f64> {
-    let sizes = sizes.iter().map(|s| (*s).max(1) as f64);
-    sizes.chain([work.max(1.0)]).map(f64::ln).collect()
-}
-
-impl Sample {
-    pub fn new(step: &Step, seconds: f64) -> Self {
-        let (sizes, work) = (step.kernel.sizes(), step.kernel.work(step.write.len));
-        Self {
-            kernel: format!("{:?}", step.kernel),
-            source: step.kernel.source().hash(),
-            at: place(&sizes, work),
-            sizes,
-            work,
-            seconds,
-        }
-    }
-
-    /// The same kernel and sizes, whatever its source or time.
-    fn same(&self, other: &Sample) -> bool {
-        self.kernel == other.kernel && self.work == other.work
-    }
-}
 
 /// One device's timed launches, by kernel name.
 #[derive(Serialize, Deserialize, Clone, Debug, derive_more::PartialEq)]
@@ -94,7 +45,7 @@ pub struct Device {
     /// The hardware as asked, with its table row.
     #[serde(default)]
     pub platform: Platform,
-    timed: BTreeMap<String, Vec<Sample>>,
+    timed: Timings,
     /// A rule to pick wherever it applies, whatever it costs.
     #[serde(skip)]
     favor: Option<String>,
@@ -115,6 +66,13 @@ pub struct Device {
     #[serde(skip)]
     #[partial_eq(skip)]
     memo: RefCell<Memo>,
+}
+
+/// A timed launch of `step`.
+fn sample(step: &Step, seconds: f64) -> Sample {
+    let (sizes, work) = (step.kernel.sizes(), step.kernel.work(step.write.len));
+    let (kernel, source) = (format!("{:?}", step.kernel), step.kernel.source().hash());
+    Sample::new(kernel, source, sizes, work, seconds)
 }
 
 /// Seconds by kernel name, sizes and work.
@@ -142,7 +100,7 @@ impl Default for Device {
             parts: Vec::new(),
             rank: 0,
             platform: Platform::default(),
-            timed: BTreeMap::new(),
+            timed: Timings::default(),
             favor: None,
             barred: Vec::new(),
             pins: Pins::default(),
@@ -152,12 +110,6 @@ impl Default for Device {
         }
     }
 }
-
-/// What every launch is guessed to cost before any work.
-const FIXED: f64 = 1e-4;
-
-/// How many samples one estimate blends.
-const NEAR: usize = 3;
 
 impl Device {
     /// The device `open` picks under `settings`, before any samples.
@@ -321,8 +273,7 @@ impl Device {
         if let Some(seconds) = self.memo.borrow().get(&key) {
             return *seconds;
         }
-        let timed = self.timed.get(k.name());
-        let near = timed.and_then(|t| estimate(t, &place(&key.1, work), work));
+        let near = self.timed.estimate(k.name(), &key.1, work);
         // With no sample of this kernel, the chip model speaks.
         let modelled = || Some(self.pool.as_ref()?.estimate(&k.load(len)?).seconds);
         let seconds = near.or_else(modelled).unwrap_or(FIXED + k.guess() * work);
@@ -356,36 +307,21 @@ impl Device {
 
     /// Whether this launch was timed with its current source.
     pub fn known(&self, step: &Step) -> bool {
-        let now = Sample::new(step, 0.0);
-        let timed = self.timed.get(step.kernel.name());
-        let fresh = |s: &Sample| s.same(&now) && s.source == now.source;
-        timed.is_some_and(|t| t.iter().any(fresh))
+        self.timed.known(step.kernel.name(), &sample(step, 0.0))
     }
 
     pub fn samples(&self) -> usize {
-        self.timed.values().map(Vec::len).sum()
+        self.timed.len()
     }
 
     /// Adds timed launches. A launch timed before is replaced.
     pub fn fit<'a>(&mut self, samples: impl IntoIterator<Item = (&'a Step, f64)>) {
         self.generation = fresh();
         self.memo.get_mut().clear();
-        let mut seen: Vec<(&'static str, Sample, Vec<f64>)> = Vec::new();
-        for (step, seconds) in samples {
-            let sample = Sample::new(step, seconds);
-            match seen.iter_mut().find(|(_, s, _)| s.same(&sample)) {
-                Some((_, _, all)) => all.push(seconds),
-                None => seen.push((step.kernel.name(), sample, vec![seconds])),
-            }
-        }
-        for (name, mut sample, mut all) in seen {
-            // The median shrugs off one slow launch.
-            all.sort_by(f64::total_cmp);
-            sample.seconds = all[all.len() / 2];
-            let timed = self.timed.entry(name.to_string()).or_default();
-            timed.retain(|old| !old.same(&sample));
-            timed.push(sample);
-        }
+        let timed = samples
+            .into_iter()
+            .map(|(s, seconds)| (s.kernel.name(), sample(s, seconds)));
+        self.timed.record(timed);
     }
 
     pub fn save(&self, path: &Path) -> Result<(), Error> {
@@ -404,38 +340,9 @@ impl Device {
             return Err(Error::new(ErrorKind::InvalidData, found));
         }
         let (_, mut device): (u32, Device) = serde_json::from_str(&text)?;
-        for s in device.timed.values_mut().flatten() {
-            s.at = place(&s.sizes, s.work);
-        }
+        device.timed.restore();
         device.pool = device.fit.map(|fit| fit.pool("fitted"));
         device.generation = fresh();
         Ok(device)
     }
-}
-
-/// Seconds at `at`: the nearest samples, each scaled to `work`.
-fn estimate(timed: &[Sample], at: &[f64], work: f64) -> Option<f64> {
-    let mut near = [(f64::INFINITY, 0.0); NEAR];
-    for s in timed.iter().filter(|s| s.at.len() == at.len()) {
-        let apart = |(a, b): (&f64, &f64)| (a - b) * (a - b);
-        let far: f64 = s.at.iter().zip(at).map(apart).sum();
-        let scaled = if s.work > 0.0 {
-            s.seconds * work / s.work
-        } else {
-            s.seconds
-        };
-        // Keeps `near` sorted, nearest first.
-        let mut held = (far, scaled);
-        for slot in &mut near {
-            if held.0 < slot.0 {
-                std::mem::swap(slot, &mut held);
-            }
-        }
-    }
-    // Far samples fade fast. An exact match outweighs the rest.
-    let weigh = |(far, _): &(f64, f64)| 1.0 / (far * far + 1e-12);
-    let found = near.iter().filter(|(far, _)| far.is_finite());
-    let total: f64 = found.clone().map(weigh).sum();
-    let sum: f64 = found.map(|n| weigh(n) * n.1).sum();
-    (total > 0.0).then(|| sum / total)
 }
