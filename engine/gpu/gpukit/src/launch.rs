@@ -2,7 +2,7 @@
 
 use crate::Error;
 
-pub fn div_up(value: usize, group: usize) -> usize {
+fn div_up(value: usize, group: usize) -> usize {
     value.div_ceil(group)
 }
 
@@ -22,11 +22,6 @@ pub trait Launch {
         shared_bytes: u32,
         args: &mut KernelArgs,
     ) -> Result<(), Error>;
-}
-
-/// The bytes of a `repr(C)` value, for one kernel argument.
-pub fn pod_bytes<T: Copy>(value: &T) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(std::ptr::from_ref(value).cast::<u8>(), size_of::<T>()) }
 }
 
 /// Typed kernel arguments in aligned slots.

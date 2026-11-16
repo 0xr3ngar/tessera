@@ -3,7 +3,6 @@
 mod argmax;
 mod attend;
 mod by_sum;
-mod dense;
 mod flash;
 mod gather;
 mod hadamard;
@@ -16,7 +15,6 @@ mod softmax;
 mod take;
 
 pub use attend::Attend;
-pub use dense::Causal;
 pub use gather::Gather;
 pub use hadamard::Hadamard;
 pub use mean::Mean;

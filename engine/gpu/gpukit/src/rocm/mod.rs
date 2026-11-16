@@ -3,7 +3,7 @@
 mod context;
 pub mod hip;
 
-pub use crate::launch::{KernelArgs, Launch, div_up, launch_1d, launch_grid, pod_bytes};
+pub use crate::launch::{KernelArgs, Launch, launch_1d, launch_grid};
 pub use context::{Context, ContextConfig, Graph, Kernel, Module};
 
 crate::device::backend_api!(Context, Kernel);
