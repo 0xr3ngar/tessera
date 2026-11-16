@@ -5,6 +5,10 @@ use models::mla::{Config, program};
 use trace::Composite::{Attention, Mlp, Moe};
 use trace::Graph;
 
+fn small() -> Graph {
+    program(&models::small::deepseek())
+}
+
 pub fn release() -> Graph {
     program(&Config::deepseek_v3(8, 163_840))
 }
@@ -15,7 +19,7 @@ const SPEC: Spec = Spec {
     parameters: 671_026_419_200,
     regions: &[(Attention, 61), (Mlp, 3), (Moe, 58)],
     stepper: None,
-    small: None,
+    small: Some(small),
     files: &[],
     golden: None,
 };

@@ -7,6 +7,10 @@ use models::mla::{Config, program};
 use trace::Composite::{Attention, Mlp, Moe};
 use trace::Graph;
 
+fn small() -> Graph {
+    program(&models::small::glm53())
+}
+
 pub fn release() -> Graph {
     program(&Config::glm53(8, 425_984))
 }
@@ -17,7 +21,7 @@ const SPEC: Spec = Spec {
     parameters: 743_377_019_904,
     regions: &[(Attention, 78), (Mlp, 3), (Moe, 75)],
     stepper: None,
-    small: None,
+    small: Some(small),
     files: &[],
     golden: None,
 };
