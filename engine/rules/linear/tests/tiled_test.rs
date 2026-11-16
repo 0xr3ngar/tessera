@@ -4,9 +4,9 @@
 use kernels as _;
 
 use codegen::trellis;
-use gpukit::testing::{Noise, cosine_f32, max_abs_diff};
 use graph::DimName::Rows;
 use interp::{Tensor, run};
+use testkit::{Noise, cosine_f32, max_abs_diff};
 
 mod common;
 use common::{linear, noise, runs, terms};

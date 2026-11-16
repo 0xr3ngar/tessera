@@ -823,13 +823,11 @@ name = "gpukit"
 version = "0.1.0"
 dependencies = [
  "include_dir",
- "mem",
  "objc2",
  "objc2-foundation",
  "objc2-metal",
  "serde",
  "serde_json",
- "testkit",
 ]
 
 [[package]]

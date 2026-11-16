@@ -5,13 +5,14 @@ use crate::run::{Base, Run, line};
 use codegen::Dialect;
 use gpukit::metal::{CacheConfig, ComputePipeline, Context, Shared};
 use lower::{Arg, Error, Extent, Launch, Plan, Shape, Slot};
-use mem::Buffer;
+use mem::{Backing, Buffer};
 use objc2::msg_send;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
     MTLBuffer, MTLCommandBuffer, MTLCommandEncoder, MTLCommandQueue, MTLComputeCommandEncoder,
     MTLSize,
 };
+use std::any::Any;
 use std::ops::Range;
 use std::rc::Rc;
 
@@ -26,6 +27,43 @@ pub(crate) struct Runner {
 
 fn gpu(what: &'static str) -> Error {
     Error::Gpu(gpukit::Error::Gpu(what))
+}
+
+/// A shared buffer as zone memory, mapped on unified memory.
+struct Mapped(Shared);
+
+fn past(what: &str) -> mem::Error {
+    mem::Error::Mismatch(format!("a {what} past the buffer"))
+}
+
+impl Backing for Mapped {
+    fn bytes(&self) -> usize {
+        self.0.bytes()
+    }
+
+    fn mapped(&self) -> Option<&[u8]> {
+        Some(self.0.mapped())
+    }
+
+    fn mapped_mut(&mut self) -> Option<&mut [u8]> {
+        Some(self.0.mapped_mut())
+    }
+
+    fn upload(&mut self, at: usize, bytes: &[u8]) -> Result<(), mem::Error> {
+        let span = self.0.mapped_mut().get_mut(at..at + bytes.len());
+        span.ok_or_else(|| past("write"))?.copy_from_slice(bytes);
+        Ok(())
+    }
+
+    fn download(&self, at: usize, out: &mut [u8]) -> Result<(), mem::Error> {
+        let span = self.0.mapped().get(at..at + out.len());
+        out.copy_from_slice(span.ok_or_else(|| past("read"))?);
+        Ok(())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 fn grid(enc: &Encoder, width: usize, height: usize, threads: usize) {
@@ -56,10 +94,10 @@ impl Runner {
 
     fn buffer(&self, slot: Slot) -> &ProtocolObject<dyn MTLBuffer> {
         let shared = self.base.held.get(slot).backing().as_any();
-        shared
-            .downcast_ref::<Shared>()
-            .expect("this runner allocates shared buffers")
-            .buffer()
+        let held: &Mapped = shared
+            .downcast_ref()
+            .expect("this runner allocates shared buffers");
+        held.0.buffer()
     }
 
     /// Binds each argument at its index, then dispatches.
@@ -134,7 +172,7 @@ impl Run for Runner {
         let ctx = &self.ctx;
         self.base.held.bind(plan, |zone, bytes| {
             let shared = Shared::new(&ctx.device, bytes).ok_or_else(|| gpu("buffer allocation"));
-            Ok(Buffer::new(zone, shared?))
+            Ok(Buffer::new(zone, Mapped(shared?)))
         })?;
         self.pipelines.clear();
         for step in &plan.steps {

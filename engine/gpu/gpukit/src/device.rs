@@ -111,16 +111,24 @@ impl<D: Device> DeviceBuffer<D> {
         );
     }
 
-    /// Host to device. Synchronous.
-    pub fn write_bytes(&self, bytes: &[u8]) -> Result<(), Error> {
-        self.assert_fits(bytes.len());
-        self.ctx.upload(self.ptr, bytes)
+    /// Host to device, `at` bytes in. Synchronous.
+    pub fn upload(&self, at: usize, bytes: &[u8]) -> Result<(), Error> {
+        self.assert_fits(at + bytes.len());
+        self.ctx.upload(self.ptr + at as u64, bytes)
     }
 
-    /// Device to host. Synchronous.
+    /// Device to host, `at` bytes in. Synchronous.
+    pub fn download(&self, at: usize, out: &mut [u8]) -> Result<(), Error> {
+        self.assert_fits(at + out.len());
+        self.ctx.download(self.ptr + at as u64, out)
+    }
+
+    pub fn write_bytes(&self, bytes: &[u8]) -> Result<(), Error> {
+        self.upload(0, bytes)
+    }
+
     pub fn read_bytes(&self, bytes: &mut [u8]) -> Result<(), Error> {
-        self.assert_fits(bytes.len());
-        self.ctx.download(self.ptr, bytes)
+        self.download(0, bytes)
     }
 
     pub fn write_f32(&self, data: &[f32]) -> Result<(), Error> {
@@ -139,41 +147,6 @@ impl<D: Device> DeviceBuffer<D> {
     /// Zero the whole allocation.
     pub fn zero(&self) -> Result<(), Error> {
         self.ctx.zero(self.ptr, self.size)
-    }
-}
-
-/// Device memory for a zone: never mapped, always copied.
-impl<D: Device> mem::Backing for DeviceBuffer<D> {
-    fn bytes(&self) -> usize {
-        self.size
-    }
-
-    fn mapped(&self) -> Option<&[u8]> {
-        None
-    }
-
-    fn mapped_mut(&mut self) -> Option<&mut [u8]> {
-        None
-    }
-
-    fn upload(&mut self, at: usize, bytes: &[u8]) -> Result<(), mem::Error> {
-        self.assert_fits(at + bytes.len());
-        let ptr = self.ptr + at as u64;
-        self.ctx
-            .upload(ptr, bytes)
-            .map_err(|e| mem::Error::Device(e.to_string()))
-    }
-
-    fn download(&self, at: usize, out: &mut [u8]) -> Result<(), mem::Error> {
-        self.assert_fits(at + out.len());
-        let ptr = self.ptr + at as u64;
-        self.ctx
-            .download(ptr, out)
-            .map_err(|e| mem::Error::Device(e.to_string()))
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 

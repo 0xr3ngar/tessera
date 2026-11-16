@@ -4,10 +4,10 @@
 use kernels as _;
 use linear as _;
 
-use gpukit::testing::{Noise, cosine_f32, max_abs_diff};
 use graph::Dim;
 use graph::DimName::{self, Rows, Seqs};
 use interp::run;
+use testkit::{Noise, cosine_f32, max_abs_diff};
 
 mod common;
 use common::{Finish, finished, linear, noise, runs, terms};

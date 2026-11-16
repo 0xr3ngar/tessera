@@ -11,7 +11,7 @@ pub mod platform;
 #[cfg(test)]
 mod platform_test;
 
-pub mod testing;
+mod testing;
 
 #[cfg(target_os = "macos")]
 pub mod metal;

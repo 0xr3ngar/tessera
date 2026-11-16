@@ -1,6 +1,4 @@
-//! GPU readiness, and the shared test helpers.
-
-pub use testkit::{Noise, assert_oracle, cosine_f32, max_abs_diff, scratch};
+//! Whether each GPU runtime is up on this host.
 
 /// Whether a CUDA driver loads on this host.
 pub(crate) fn cuda_ready() -> bool {

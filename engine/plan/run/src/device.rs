@@ -1,5 +1,41 @@
 //! Replays a plan on CUDA or ROCm, from one body.
 
+use gpukit::device::{Device, DeviceBuffer};
+use mem::Backing;
+
+/// A device allocation as zone memory: never mapped, always copied.
+pub(crate) struct Unmapped<D: Device>(pub(crate) DeviceBuffer<D>);
+
+fn copied(e: gpukit::Error) -> mem::Error {
+    mem::Error::Device(e.to_string())
+}
+
+impl<D: Device> Backing for Unmapped<D> {
+    fn bytes(&self) -> usize {
+        self.0.size()
+    }
+
+    fn mapped(&self) -> Option<&[u8]> {
+        None
+    }
+
+    fn mapped_mut(&mut self) -> Option<&mut [u8]> {
+        None
+    }
+
+    fn upload(&mut self, at: usize, bytes: &[u8]) -> Result<(), mem::Error> {
+        self.0.upload(at, bytes).map_err(copied)
+    }
+
+    fn download(&self, at: usize, out: &mut [u8]) -> Result<(), mem::Error> {
+        self.0.download(at, out).map_err(copied)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 macro_rules! device_runner {
     ($bk:ident, $variant:ident) => {
         pub mod $bk {
@@ -52,9 +88,10 @@ macro_rules! device_runner {
 
                 fn buffer(&self, slot: Slot) -> &DeviceBuffer {
                     let backing = self.base.held.get(slot).backing().as_any();
-                    backing
-                        .downcast_ref::<DeviceBuffer>()
-                        .expect("this runner allocates device buffers")
+                    let held: &super::Unmapped<Context> = backing
+                        .downcast_ref()
+                        .expect("this runner allocates device buffers");
+                    &held.0
                 }
 
                 /// Passes each argument by position, then enqueues.
@@ -111,7 +148,7 @@ macro_rules! device_runner {
                         let buffer = DeviceBuffer::alloc(ctx, bytes.max(4))?;
                         // Kernels may read what they are about to write.
                         buffer.zero()?;
-                        Ok(Buffer::new(zone, buffer))
+                        Ok(Buffer::new(zone, super::Unmapped(buffer)))
                     })?;
                     self.kernels.clear();
                     self.waits.clear();
