@@ -1,12 +1,17 @@
-//! Embeddings keyed by window text, kept between runs.
+//! Embeddings keyed by window text, kept between runs and checkouts.
 
 use crate::fetch::REVISION;
 use anyhow::{Result, ensure};
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Changes with the file layout.
-const MAGIC: &[u8; 8] = b"simck001";
+/// Changes with the file layout. Entries carry their last use.
+const MAGIC: &[u8; 8] = b"simck002";
+/// The layout before last uses. Its entries load as new.
+const OLD_MAGIC: &[u8; 8] = b"simck001";
+/// Saving drops entries unused for this long.
+pub const KEEP_SECS: u64 = 7 * 24 * 60 * 60;
 /// Keep in step with eg2cpu's `rev` in Cargo.toml.
 const EG2CPU: &str = "a80156abbf8ec2e5a9b85ed0e5ff98454c1aaa09";
 
@@ -21,64 +26,98 @@ pub fn key(text: &str) -> u64 {
         })
 }
 
+pub fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// Each key's last use in Unix seconds, and its embedding.
 #[derive(Default)]
 pub struct Cache {
     dim: usize,
-    map: HashMap<u64, Vec<f32>>,
+    map: HashMap<u64, (u64, Vec<f32>)>,
+}
+
+fn floats(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|f| f32::from_le_bytes(*f))
+        .collect()
 }
 
 impl Cache {
-    /// Empty when the file is missing or has another layout.
+    /// Empty when the file is missing or its layout unknown.
     pub fn load(path: &Path) -> Result<Cache> {
         let Ok(bytes) = std::fs::read(path) else {
             return Ok(Cache::default());
         };
-        if bytes.len() < 12 || &bytes[..8] != MAGIC {
+        let old = bytes.get(..8) == Some(OLD_MAGIC);
+        if bytes.len() < 12 || (&bytes[..8] != MAGIC && !old) {
             return Ok(Cache::default());
         }
         let dim = u32::from_le_bytes(bytes[8..12].try_into()?) as usize;
-        let entry = 8 + dim * 4;
+        let head = if old { 8 } else { 16 };
+        let entry = head + dim * 4;
         let body = &bytes[12..];
         ensure!(
             dim > 0 && body.len() % entry == 0,
             "{}: truncated",
             path.display()
         );
-        let map = body
-            .chunks_exact(entry)
-            .map(|e| {
-                let k = u64::from_le_bytes(e[..8].try_into().expect("8 bytes"));
-                let v = e[8..].as_chunks::<4>().0.iter();
-                (k, v.map(|f| f32::from_le_bytes(*f)).collect())
-            })
-            .collect();
+        let loaded = now();
+        let mut map = HashMap::new();
+        for e in body.chunks_exact(entry) {
+            let k = u64::from_le_bytes(e[..8].try_into()?);
+            let used = if old {
+                loaded
+            } else {
+                u64::from_le_bytes(e[8..16].try_into()?)
+            };
+            map.insert(k, (used, floats(&e[head..])));
+        }
         Ok(Cache { dim, map })
     }
 
     pub fn get(&self, k: u64) -> Option<&Vec<f32>> {
-        self.map.get(&k)
+        self.map.get(&k).map(|(_, v)| v)
     }
 
     pub fn insert(&mut self, k: u64, v: Vec<f32>) {
         self.dim = v.len();
-        self.map.insert(k, v);
+        self.map.insert(k, (now(), v));
     }
 
-    pub fn keys(&self) -> impl Iterator<Item = u64> + '_ {
-        self.map.keys().copied()
-    }
-
-    /// Writes the entries in `keep`, dropping the rest.
-    pub fn save(&self, path: &Path, keep: &[u64]) -> Result<()> {
+    /// Marks `used` at `at`, then saves entries used this week.
+    pub fn save_at(&mut self, path: &Path, used: &[u64], at: u64) -> Result<()> {
+        for k in used {
+            if let Some(e) = self.map.get_mut(k) {
+                e.0 = at;
+            }
+        }
+        let mut keys: Vec<u64> = self
+            .map
+            .iter()
+            .filter(|(_, e)| at.saturating_sub(e.0) <= KEEP_SECS)
+            .map(|(k, _)| *k)
+            .collect();
+        keys.sort_unstable();
         let mut out = MAGIC.to_vec();
         out.extend((self.dim as u32).to_le_bytes());
-        let mut keys: Vec<u64> = keep.to_vec();
-        keys.sort_unstable();
-        keys.dedup();
-        for k in keys.into_iter().filter(|k| self.map.contains_key(k)) {
+        for k in keys {
+            let (when, v) = &self.map[&k];
             out.extend(k.to_le_bytes());
-            out.extend(self.map[&k].iter().flat_map(|f| f.to_le_bytes()));
+            out.extend(when.to_le_bytes());
+            out.extend(v.iter().flat_map(|f| f.to_le_bytes()));
         }
-        Ok(std::fs::write(path, out)?)
+        let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+        std::fs::write(&tmp, out)?;
+        Ok(std::fs::rename(&tmp, path)?)
+    }
+
+    pub fn save(&mut self, path: &Path, used: &[u64]) -> Result<()> {
+        self.save_at(path, used, now())
     }
 }

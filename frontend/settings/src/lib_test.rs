@@ -5,9 +5,11 @@ fn reads_variables() {
         std::env::set_var("TESSERA_LANES", "8");
         std::env::set_var("TESSERA_EMULATE", "cuda");
         std::env::set_var("TESSERA_BACKEND", "host");
+        std::env::set_var("TESSERA_CHECK", "/shared/check");
     }
     let s = crate::read();
     assert_eq!(s.host_lanes, 8);
     assert_eq!(s.emulate, Some(engine_settings::Backend::Cuda));
     assert_eq!(s.gpu(), None);
+    assert_eq!(s.check, Some(std::path::PathBuf::from("/shared/check")));
 }

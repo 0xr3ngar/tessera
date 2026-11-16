@@ -29,6 +29,8 @@ pub struct Settings {
     pub host_lanes: usize,
     /// Where calibrate keeps cost samples. `None` stores nothing.
     pub costs: Option<PathBuf>,
+    /// Shared models and caches for tessera-check. `None` uses the checkout.
+    pub check: Option<PathBuf>,
     /// A JSON file of weight-name rules, applied last.
     pub names: Option<PathBuf>,
     /// The GPU whose tile rounding the host imitates.
@@ -43,6 +45,7 @@ impl Default for Settings {
             backend: Pick::Host,
             host_lanes: 32,
             costs: None,
+            check: None,
             names: None,
             emulate: None,
             verbs: None,
