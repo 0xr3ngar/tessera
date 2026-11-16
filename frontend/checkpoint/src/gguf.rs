@@ -2,6 +2,8 @@
 
 use crate::Error;
 use crate::offer::{Offer, Slice, Stored};
+use engine::block;
+use engine::storage::{self, Form};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
@@ -57,11 +59,12 @@ impl GgufType {
     }
 
     fn bytes(self, elements: usize) -> Result<usize, Error> {
+        let of = |form: &dyn Form| (form.block(), form.bytes(form.block()));
         let (block, bytes) = match self {
-            Self::F32 => (1, 4),
-            Self::F16 => (1, 2),
-            Self::Q4_0 => (32, 18),
-            Self::Q8_0 => (32, 34),
+            Self::F32 => of(&storage::F32),
+            Self::F16 => (1, size_of::<engine::F16>()),
+            Self::Q4_0 => of(&block::Q4_0),
+            Self::Q8_0 => of(&block::Q8_0),
         };
         if !elements.is_multiple_of(block) {
             return Err(format("incomplete GGUF block"));
@@ -384,8 +387,8 @@ impl Offer for Gguf {
         let stored = |ty: GgufType| match ty {
             GgufType::F32 => Stored::F32,
             GgufType::F16 => Stored::F16,
-            GgufType::Q8_0 => Stored::Form(&engine::block::Q8_0),
-            GgufType::Q4_0 => Stored::Form(&engine::block::Q4_0),
+            GgufType::Q8_0 => Stored::Form(&block::Q8_0),
+            GgufType::Q4_0 => Stored::Form(&block::Q4_0),
         };
         (self.entries.iter())
             .map(|(name, e)| Slice {

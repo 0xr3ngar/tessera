@@ -72,14 +72,10 @@ helpers! {
     rd_bf16(P, P, P) -> F32;
     rd_u32(P, P, P) -> I32;
     rd_u8(P, P, P) -> I32;
-    rd_q8_0(P, P, P) -> F32;
-    rd_q4_0(P, P, P) -> F32;
-    rd_nvfp4(P, P, P) -> F32;
+    rd_form(P, P, P, P) -> F32;
     dot_f32(P, P, P, P, P, P, P) -> F32;
     dot_bf16(P, P, P, P, P, P, P) -> F32;
-    dot_q8_0(P, P, P, P, P, P, P) -> F32;
-    dot_q4_0(P, P, P, P, P, P, P) -> F32;
-    dot_nvfp4(P, P, P, P, P, P, P) -> F32;
+    dot_form(P, P, P, P, P, P, P, P) -> F32;
     mix_f32(P, P, P, F32, F32, P, P, P, P);
     dots_f32(P, P, P, P, P, P, P, P, P, P, P, P);
     dots_bf16(P, P, P, P, P, P, P, P, P, P, P, P);

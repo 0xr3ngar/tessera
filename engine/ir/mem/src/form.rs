@@ -5,11 +5,24 @@ use graph::{Bf16 as Half, DType};
 pub use scattered_collect::ScatteredSlice;
 pub use scattered_collect::declarative::{gather, scatter};
 
+/// How host code reads one element of a form.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Read {
+    F32,
+    Bf16,
+    U32,
+    U8,
+    /// Through the form's own `unpack` and `dot`, as an f32.
+    Decode,
+}
+
 /// Packs and unpacks its elements on the host.
 pub trait Form: Sync {
     fn name(&self) -> &'static str;
     /// The element type, for moving and converting bytes.
     fn dtype(&self) -> DType;
+    /// The host reader for an element.
+    fn read(&self) -> Read;
     /// Significant bits an element keeps.
     fn bits(&self) -> u32;
     /// Element `index` of `bytes`, as a float.
@@ -179,6 +192,9 @@ macro_rules! element {
         }
         fn dtype(&self) -> DType {
             DType::$dtype
+        }
+        fn read(&self) -> Read {
+            Read::$dtype
         }
         fn bits(&self) -> u32 {
             $bits

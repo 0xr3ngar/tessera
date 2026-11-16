@@ -1,6 +1,7 @@
 //! What compiled bodies call: buffers, math, shuffles and tiles.
 
 use codegen::Precision;
+use codegen::form::{BF16_FORM, F32_FORM, LOADS, Load, U8_FORM, U32_FORM};
 use host::lockstep::{self, THREADS, Tiles};
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -58,10 +59,9 @@ unsafe fn within<'a>(p: *const u8, len: usize, end: usize) -> Option<&'a [u8]> {
 }
 
 macro_rules! readers {
-    ($($name:ident = $read:ident : $ty:ty, $bytes:expr;)*) => {$(
+    ($($name:ident = $read:ident : $ty:ty, $form:expr;)*) => {$(
         pub unsafe extern "C" fn $name(p: *const u8, len: usize, at: usize) -> $ty {
-            let bytes: fn(usize) -> usize = $bytes;
-            match unsafe { within(p, len, bytes(at + 1)) } {
+            match unsafe { within(p, len, $form.bytes(at + 1)) } {
                 Some(b) => lockstep::$read(b, at),
                 None => Default::default(),
             }
@@ -70,17 +70,44 @@ macro_rules! readers {
 }
 
 readers! {
-    rd_f32 = rd_f32: f32, |n| n * 4;
-    rd_bf16 = rd_bf16: f32, |n| n * 2;
-    rd_u32 = rd_u32: u32, |n| n * 4;
-    rd_u8 = rd_u8: u32, |n| n;
-    rd_q8_0 = rd_q8_0: f32, |n| n.div_ceil(32) * 34;
-    rd_q4_0 = rd_q4_0: f32, |n| n.div_ceil(32) * 18;
-    rd_nvfp4 = rd_nvfp4: f32, |n| 4 + n.div_ceil(16) * 9;
+    rd_f32 = rd_f32: f32, F32_FORM;
+    rd_bf16 = rd_bf16: f32, BF16_FORM;
+    rd_u32 = rd_u32: u32, U32_FORM;
+    rd_u8 = rd_u8: u32, U8_FORM;
+}
+
+/// Element `at` of a buffer in the registered form `form`.
+pub unsafe extern "C" fn rd_form(form: usize, p: *const u8, len: usize, at: usize) -> f32 {
+    let form = LOADS[form];
+    match unsafe { within(p, len, form.bytes(at + 1)) } {
+        Some(b) => form.unpack(b, at),
+        None => 0.0,
+    }
+}
+
+/// `lockstep::dot_form` after bounds checks on both rows.
+#[allow(clippy::too_many_arguments, reason = "two rows and a length")]
+unsafe fn dot_in(
+    form: &dyn Load,
+    a: *const u8,
+    a_len: usize,
+    a_at: usize,
+    b: *const u8,
+    b_len: usize,
+    b_at: usize,
+    n: usize,
+) -> f32 {
+    let (Some(a), Some(b)) = (
+        unsafe { within(a, a_len, F32_FORM.bytes(a_at + n)) },
+        unsafe { within(b, b_len, form.bytes(b_at + n)) },
+    ) else {
+        return 0.0;
+    };
+    lockstep::dot_form(form, a, a_at, b, b_at, n)
 }
 
 macro_rules! dots {
-    ($($name:ident = $form:expr, $bytes:expr;)*) => {$(
+    ($($name:ident = $form:expr;)*) => {$(
         #[allow(clippy::too_many_arguments, reason = "two rows and a length")]
         pub unsafe extern "C" fn $name(
             a: *const u8,
@@ -91,24 +118,29 @@ macro_rules! dots {
             b_at: usize,
             n: usize,
         ) -> f32 {
-            let bytes: fn(usize) -> usize = $bytes;
-            let (Some(a), Some(b)) = (
-                unsafe { within(a, a_len, (a_at + n) * 4) },
-                unsafe { within(b, b_len, bytes(b_at + n)) },
-            ) else {
-                return 0.0;
-            };
-            lockstep::dot_form($form, a, a_at, b, b_at, n)
+            unsafe { dot_in($form, a, a_len, a_at, b, b_len, b_at, n) }
         }
     )*};
 }
 
 dots! {
-    dot_f32 = codegen::form::F32_FORM, |n| n * 4;
-    dot_bf16 = codegen::form::BF16_FORM, |n| n * 2;
-    dot_q8_0 = &codegen::block::Q8_0, |n| n.div_ceil(32) * 34;
-    dot_q4_0 = &codegen::block::Q4_0, |n| n.div_ceil(32) * 18;
-    dot_nvfp4 = &codegen::block::NVFP4, |n| 4 + n.div_ceil(16) * 9;
+    dot_f32 = F32_FORM;
+    dot_bf16 = BF16_FORM;
+}
+
+/// A dot against a row in the registered form `form`.
+#[allow(clippy::too_many_arguments, reason = "a form, two rows and a length")]
+pub unsafe extern "C" fn dot_form(
+    form: usize,
+    a: *const u8,
+    a_len: usize,
+    a_at: usize,
+    b: *const u8,
+    b_len: usize,
+    b_at: usize,
+    n: usize,
+) -> f32 {
+    unsafe { dot_in(LOADS[form], a, a_len, a_at, b, b_len, b_at, n) }
 }
 
 pub unsafe extern "C" fn st_f32(p: *mut u8, len: usize, at: usize, v: f32) {
@@ -119,7 +151,7 @@ pub unsafe extern "C" fn st_f32(p: *mut u8, len: usize, at: usize, v: f32) {
 }
 
 macro_rules! tiles {
-    ($($name:ident = $form:expr, $bytes:expr;)*) => {$(
+    ($($name:ident = $form:expr;)*) => {$(
         #[allow(clippy::too_many_arguments, reason = "three buffers and their offsets")]
         pub unsafe extern "C" fn $name(
             out: *mut u8,
@@ -135,14 +167,13 @@ macro_rules! tiles {
             k: usize,
             rows: usize,
         ) {
-            let bytes: fn(usize) -> usize = $bytes;
             let block = lockstep::BLOCK;
             let rows = rows.min(block);
             let last = (at + rows.saturating_sub(1) * stride + block) * 4;
             let (Some(_), Some(x), Some(w)) = (
                 unsafe { within(out, out_len, last) },
                 unsafe { within(x, x_len, (x_at + rows * k) * 4) },
-                unsafe { within(w, w_len, bytes(w_at + block * k)) },
+                unsafe { within(w, w_len, $form.bytes(w_at + block * k)) },
             ) else {
                 return;
             };
@@ -155,8 +186,8 @@ macro_rules! tiles {
 }
 
 tiles! {
-    dots_f32 = codegen::form::F32_FORM, |n| n * 4;
-    dots_bf16 = codegen::form::BF16_FORM, |n| n * 2;
+    dots_f32 = F32_FORM;
+    dots_bf16 = BF16_FORM;
 }
 
 #[allow(

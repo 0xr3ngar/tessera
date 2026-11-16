@@ -1,6 +1,7 @@
 //! Expressions, each lane's value inside a loop over `t`.
 
 use crate::lower::{Kind, Lowerer, Res};
+use codegen::form::{LOADS, Load, Read};
 use codegen::ir::{BinOp, Expr, Intrinsic, Ty};
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type, Value, types};
@@ -61,25 +62,11 @@ fn wider(a: Ty, b: Ty) -> Ty {
     }
 }
 
-fn element(form: &dyn codegen::Load) -> Ty {
-    match form.dtype().is_float() {
-        true => Ty::F32,
-        false => Ty::U32,
+fn element(form: &dyn Load) -> Ty {
+    match form.read() {
+        Read::F32 | Read::Bf16 | Read::Decode => Ty::F32,
+        Read::U32 | Read::U8 => Ty::U32,
     }
-}
-
-/// The reader for one element of a form.
-fn reader(form: &dyn codegen::Load) -> Res<&'static str> {
-    Ok(match form.name() {
-        "f32" => "rd_f32",
-        "bf16" => "rd_bf16",
-        "u32" => "rd_u32",
-        "u8" => "rd_u8",
-        "q8_0" => "rd_q8_0",
-        "q4_0" => "rd_q4_0",
-        "nvfp4" => "rd_nvfp4",
-        other => return Err(format!("no reader for the {other} form")),
-    })
 }
 
 impl Lowerer<'_, '_> {
@@ -175,8 +162,26 @@ impl Lowerer<'_, '_> {
         };
         let idx = self.index(at, t)?;
         let at = self.b.ins().iadd(skip, idx);
-        let rd = reader(form)?;
+        let rd = match form.read() {
+            Read::F32 => "rd_f32",
+            Read::Bf16 => "rd_bf16",
+            Read::U32 => "rd_u32",
+            Read::U8 => "rd_u8",
+            Read::Decode => {
+                let form = self.registered(form)?;
+                let v = self.call("rd_form", &[form, ptr, len, at]);
+                return Ok(v.expect("a value"));
+            }
+        };
         Ok(self.call(rd, &[ptr, len, at]).expect("a value"))
+    }
+
+    /// The registry index of `form`, for helpers that decode it.
+    fn registered(&mut self, form: &'static dyn Load) -> Res<Value> {
+        let Some(i) = LOADS.iter().position(|f| **f == *form) else {
+            return Err(format!("the {} form is not registered", form.name()));
+        };
+        Ok(self.iconst(self.ptr, i as i64))
     }
 
     pub(crate) fn expr(&mut self, e: &Expr, t: Value) -> Res<Val> {
@@ -529,17 +534,9 @@ impl Lowerer<'_, '_> {
                 else {
                     return Err("a dot runs over buffers".into());
                 };
-                if fa.name() != "f32" {
+                if fa.read() != Read::F32 {
                     return Err(format!("a dot's first row is f32, not {}", fa.name()));
                 }
-                let f = match fb.name() {
-                    "f32" => "dot_f32",
-                    "bf16" => "dot_bf16",
-                    "q8_0" => "dot_q8_0",
-                    "q4_0" => "dot_q4_0",
-                    "nvfp4" => "dot_nvfp4",
-                    other => return Err(format!("no dot over the {other} form")),
-                };
                 let (a_at, b_at, n) = (
                     self.index(a_at, t)?,
                     self.index(b_at, t)?,
@@ -547,10 +544,16 @@ impl Lowerer<'_, '_> {
                 );
                 let a_at = self.b.ins().iadd(sa, a_at);
                 let b_at = self.b.ins().iadd(sb, b_at);
-                Val::S(
-                    self.call(f, &[pa, la, a_at, pb, lb, b_at, n])
-                        .expect("a sum"),
-                )
+                let rows = [pa, la, a_at, pb, lb, b_at, n];
+                let sum = match fb.read() {
+                    Read::F32 => self.call("dot_f32", &rows),
+                    Read::Bf16 => self.call("dot_bf16", &rows),
+                    Read::U32 | Read::U8 | Read::Decode => {
+                        let form = self.registered(fb)?;
+                        self.call("dot_form", &[&[form][..], &rows].concat())
+                    }
+                };
+                Val::S(sum.expect("a sum"))
             }
             Intrinsic::Dots => {
                 let [out, at, stride, x, x_at, w, w_at, k, rows] = args else {
@@ -570,11 +573,11 @@ impl Lowerer<'_, '_> {
                     else {
                         return Err(format!("`{name}` is not a buffer"));
                     };
-                    bufs.push((form.name(), ptr, len, skip));
+                    bufs.push((form.read(), ptr, len, skip));
                 }
                 let f = match (bufs[0].0, bufs[1].0, bufs[2].0) {
-                    ("f32", "f32", "f32") => "dots_f32",
-                    ("f32", "f32", "bf16") => "dots_bf16",
+                    (Read::F32, Read::F32, Read::F32) => "dots_f32",
+                    (Read::F32, Read::F32, Read::Bf16) => "dots_bf16",
                     other => return Err(format!("no dots over {other:?}")),
                 };
                 let mut call = Vec::new();
@@ -616,7 +619,7 @@ impl Lowerer<'_, '_> {
                 else {
                     return Err("a mix runs over buffers".into());
                 };
-                if fo.name() != "f32" || fb.name() != "f32" {
+                if fo.read() != Read::F32 || fb.read() != Read::F32 {
                     return Err("a mix runs over f32 rows".into());
                 }
                 let scales = self.floats(&[keep.clone(), p.clone()], t)?;

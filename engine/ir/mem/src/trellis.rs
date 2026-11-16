@@ -1,6 +1,6 @@
 //! The exlr8 trellis form: K-bit codes in tiles.
 
-use crate::form::{Form, form};
+use crate::form::{Form, Read, form};
 use graph::{DType, E4M3, F16};
 
 /// The codebook multiplier.
@@ -162,6 +162,9 @@ impl<const K: u32> Form for Trellis<K> {
     }
     fn dtype(&self) -> DType {
         DType::F32
+    }
+    fn read(&self) -> Read {
+        Read::Decode
     }
     fn bits(&self) -> u32 {
         K
