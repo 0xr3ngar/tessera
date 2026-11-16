@@ -31,6 +31,7 @@ tessera is not alpha or beta. It's an experiment right now and no numbers are av
 <tr><td>&emsp;<a href="engine/engine">engine</a></td><td>Graphs on runners: a decode loop over a stepper, or one launch of a forward graph</td></tr>
 <tr><td colspan="2">&emsp;<a href="engine/gpu"><b>gpu/</b></a></td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/gpu/gpukit">gpukit</a></td><td>The runtimes tessera loads at run time, GPUs and RDMA: pipelines, buffers, verbs</td></tr>
+<tr><td>&emsp;&emsp;<a href="engine/gpu/platform">platform</a></td><td>Plain hardware description: platforms, limits and the per-architecture table</td></tr>
 <tr><td colspan="2">&emsp;<a href="engine/ir"><b>ir/</b></a></td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/ir/graph">graph</a></td><td>The model graph: typed nodes, symbolic shapes, a JSON form</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/ir/interp">interp</a></td><td>Runs a graph op by op on the CPU: the reference for every plan</td></tr>
