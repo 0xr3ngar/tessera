@@ -57,7 +57,7 @@ fn packed(f: &File, name: &str, r: &Record) -> Result<Vec<u8>, Error> {
 fn decoded(f: &File, name: &str, r: &Record) -> Result<Vec<f32>, Error> {
     let form = trellis::form_for(r.k).ok_or_else(|| Error::DType(format!("{name}: K{}", r.k)))?;
     let bytes = packed(f, name, r)?;
-    Ok((0..r.inp * r.out).map(|i| form.unpack(&bytes, i)).collect())
+    Ok(form.unpack_all(&bytes))
 }
 
 /// The scaled Walsh-Hadamard transform of 128 values at `stride`.
