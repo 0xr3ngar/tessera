@@ -5,6 +5,9 @@ mod markdown;
 mod markdown_test;
 mod run;
 mod terminal;
+mod tests;
+#[cfg(test)]
+mod tests_test;
 
 use findings::Report;
 use run::{Changes, Dirs};
@@ -15,11 +18,13 @@ use std::process::{Command, ExitCode};
 const USAGE: &str =
     "usage: tessera-check run [--staged | <base> <head>] [--markdown <file> [<link_base>]]
        tessera-check render <json>... [--markdown <file> [<link_base>]]
+       tessera-check tests <junit_xml> <json>
        tessera-check fetch
 
 `run` checks lint over the repository, and style and simcheck when their
 models are in ~/.cache/tessera/check. It fails on any failure. `render` reads the
-JSON each check writes. `fetch` downloads both models.";
+JSON each check writes. `tests` writes failed and slow tests from nextest's
+JUnit file as such JSON. `fetch` downloads both models.";
 
 fn root() -> Result<PathBuf, String> {
     let out = Command::new("git")
@@ -62,6 +67,10 @@ fn run(args: &[&str]) -> Result<bool, String> {
     let (cmd, rest) = args.split_first().ok_or(USAGE)?;
     let (rest, markdown) = split_markdown(rest);
     match (*cmd, rest) {
+        ("tests", [xml, json]) => {
+            let text = std::fs::read_to_string(xml).map_err(|e| format!("{xml}: {e}"))?;
+            tests::report(&text)?.write(Path::new(json)).map(|()| true)
+        }
         ("fetch", []) => run::fetch(&dirs()?).map(|()| true),
         ("render", files) if !files.is_empty() => {
             let reports: Result<Vec<Report>, String> =
