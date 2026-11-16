@@ -1,7 +1,7 @@
 //! The nanogpt's recorded logits.
 
-use crate::common::{Case, Reference, turn};
 use interp::Tensor;
+use parity::{Case, Reference, turn};
 use testkit::{Noise, weights_with};
 use trace::Graph;
 

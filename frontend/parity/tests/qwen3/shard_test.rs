@@ -1,11 +1,11 @@
 //! The toy decoder over two ranks matches one.
 
-use crate::common::pair;
 use graph::{Graph, Placement, shard};
 use interp::{Tensor, run, run_ranks};
 use lower::testing::{host, runs};
 use lower::{Device, Plan, View, lower};
 use models::decoder::{Config, Swiglu, program};
+use parity::pair;
 use run::Loopback;
 use testkit::{Noise, fill, max_abs_diff};
 use trace::DimName::{Context, Seqs};

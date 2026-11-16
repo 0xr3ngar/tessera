@@ -49,6 +49,7 @@ pub struct Limits {
     pub extensions: Vec<String>,
     pub hash_comment_files: Vec<String>,
     pub layers: Vec<Vec<String>>,
+    #[serde(default)]
     pub layer_allow: Vec<audit::Allow>,
     pub warn_rules: Vec<String>,
     pub min_repeat_statements: usize,

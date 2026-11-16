@@ -1,7 +1,7 @@
 //! SmolLM2-360M: a Llama decoder with tied embeddings.
 
-use crate::common::{LOGITS, Spec, Stepper, decoder, suite};
 use models::decoder::{Config, Swiglu, program, stepper};
+use parity::{LOGITS, Spec, Stepper, decoder, suite};
 use trace::Composite::{Attention, Mlp};
 use trace::Graph;
 

@@ -1,7 +1,7 @@
 //! spaCy's small English tagger.
 
-use crate::common::{Spec, suite};
 use models::tagger::{Config, program};
+use parity::{Spec, suite};
 use trace::Graph;
 
 /// Two features of eight rows, one window layer.

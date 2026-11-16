@@ -4,10 +4,10 @@ mod golden_test;
 mod rotation_test;
 mod rows_test;
 
-use crate::common::{Check, Compare, Golden, Spec, Tolerance, suite};
 use lower::form::F32_FORM;
 use models::Rotated;
 use models::eg2::{Config, probe, program};
+use parity::{Check, Compare, Golden, Spec, Tolerance, suite};
 use trace::Composite::{Attention, Mlp};
 use trace::{Graph, Linear};
 

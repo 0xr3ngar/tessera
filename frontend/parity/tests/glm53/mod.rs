@@ -2,8 +2,8 @@
 
 mod regions_test;
 
-use crate::common::{Spec, Stepper, suite};
 use models::mla::{Config, program, stepper};
+use parity::{Spec, Stepper, suite};
 use trace::Composite::{Attention, Mlp, Moe};
 use trace::Graph;
 

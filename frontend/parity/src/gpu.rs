@@ -153,7 +153,7 @@ mod forward {
     }
 
     /// Logits of `tokens` as planned for `device`.
-    pub fn logits_of(gpu: &mut Gpu, g: &Graph, tokens: &[u32], device: &Device) -> Vec<f32> {
+    pub(super) fn logits_of(gpu: &mut Gpu, g: &Graph, tokens: &[u32], device: &Device) -> Vec<f32> {
         gpu.plan(g, prompt(tokens), device);
         let all = 0..gpu.runner.plan().steps.len();
         let out = gpu.runner.plan().outputs[0].slot;

@@ -3,9 +3,9 @@
 mod golden;
 mod regions_test;
 
-use crate::common::{Check, Compare, Golden, Spec, Tolerance, suite};
 use lower::form::F32_FORM;
 use models::nanogpt::{Config, program};
+use parity::{Check, Compare, Golden, Spec, Tolerance, suite};
 use trace::Composite::{Attention, Mlp};
 use trace::Graph;
 

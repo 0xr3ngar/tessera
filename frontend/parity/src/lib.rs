@@ -80,6 +80,7 @@ pub fn interpreted(g: &Graph, weights: &[Tensor], seqs: usize, tokens: &[u32]) -
 pub type Manifest = (&'static str, fn() -> Graph);
 
 /// A decoder's graphs: `decoder!(HeadNorm, Mlp, small config, release config fn)`.
+#[macro_export]
 macro_rules! decoder {
     ($norm:ty, $mlp:ty, $small:expr, $release:expr) => {
         fn small() -> Graph {
@@ -96,58 +97,57 @@ macro_rules! decoder {
         };
     };
 }
-pub(crate) use decoder;
 
 /// The tests every model runs: `suite!(SPEC)`.
+#[macro_export]
 macro_rules! suite {
     ($spec:expr) => {
         #[test]
         fn traces() {
-            crate::common::traces(&$spec);
+            $crate::traces(&$spec);
         }
 
         #[test]
         fn files() {
-            crate::common::files(&$spec);
+            $crate::files(&$spec);
         }
 
         #[test]
         fn faux_weights() {
-            crate::common::faux(&$spec);
+            $crate::faux(&$spec);
         }
 
         #[test]
         fn faux_rules() {
-            crate::common::faux_rules(&$spec);
+            $crate::faux_rules(&$spec);
         }
 
         #[test]
         fn golden() {
-            crate::common::golden(&$spec);
+            $crate::golden(&$spec);
         }
 
         #[test]
         fn steps() {
-            crate::common::steps(&$spec);
+            $crate::steps(&$spec);
         }
 
         #[test]
         fn gpu() {
-            crate::common::gpu(&$spec);
+            $crate::gpu(&$spec);
         }
 
         #[test]
         fn shards() {
-            crate::common::shards(&$spec);
+            $crate::shards(&$spec);
         }
 
         #[test]
         fn native() {
-            crate::common::native(&$spec);
+            $crate::native(&$spec);
         }
     };
 }
-pub(crate) use suite;
 
 /// The release graph survives JSON, verifies and has its sizes.
 pub fn traces(spec: &Spec) {

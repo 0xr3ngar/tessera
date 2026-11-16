@@ -2,8 +2,8 @@
 
 mod shard_test;
 
-use crate::common::{LOGITS, Spec, Stepper, decoder, suite};
 use models::decoder::{Config, Moe, program, stepper};
+use parity::{LOGITS, Spec, Stepper, decoder, suite};
 use trace::Composite::{Attention, Moe as Routed};
 use trace::Graph;
 
