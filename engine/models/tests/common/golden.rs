@@ -217,11 +217,13 @@ impl Golden {
         }
         let dir = testkit::reference(model)?;
         let file = dir.join("model.safetensors");
+        // The turn comes first, so the weights load in it.
+        let turn = turn();
         Some(Reference {
             weights: safetensors(model, g, &file),
             cases: cases(&dir),
             checkpoint: Some(file),
-            turn: turn(),
+            turn,
         })
     }
 

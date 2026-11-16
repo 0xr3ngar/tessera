@@ -58,3 +58,7 @@ trace-derive = { path = "engine/ir/trace-derive" }
 # The host executor interprets whole kernels, so tests need it optimized.
 [profile.dev.package.codegen]
 opt-level = 3
+
+# Reference checks run whole models through the interpreter.
+[profile.dev.package.interp]
+opt-level = 3
