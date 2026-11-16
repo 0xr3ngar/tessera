@@ -4,7 +4,7 @@ mod attend;
 mod dense;
 
 pub use attend::{Attend, AttendRows};
-pub use dense::{Dense, Picked};
+pub use dense::{Dense, Picked, Tiled};
 
 use codegen::hash;
 use codegen::ir::Body;

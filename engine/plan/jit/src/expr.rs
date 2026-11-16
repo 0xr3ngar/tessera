@@ -552,6 +552,46 @@ impl Lowerer<'_, '_> {
                         .expect("a sum"),
                 )
             }
+            Intrinsic::Dots => {
+                let [out, at, stride, x, x_at, w, w_at, k, rows] = args else {
+                    return Err("a dots takes nine arguments".into());
+                };
+                let mut bufs = Vec::new();
+                for name in [out, x, w] {
+                    let Expr::Var(name) = name else {
+                        return Err("a dots names its buffers".into());
+                    };
+                    let Kind::Buffer {
+                        form,
+                        ptr,
+                        len,
+                        skip,
+                    } = self.kind(name)?
+                    else {
+                        return Err(format!("`{name}` is not a buffer"));
+                    };
+                    bufs.push((form.name(), ptr, len, skip));
+                }
+                let f = match (bufs[0].0, bufs[1].0, bufs[2].0) {
+                    ("f32", "f32", "f32") => "dots_f32",
+                    ("f32", "f32", "bf16") => "dots_bf16",
+                    other => return Err(format!("no dots over {other:?}")),
+                };
+                let mut call = Vec::new();
+                for ((_, ptr, len, skip), (first, more)) in
+                    bufs.iter()
+                        .zip([(at, Some(stride)), (x_at, None), (w_at, None)])
+                {
+                    let first = self.index(first, t)?;
+                    call.extend([*ptr, *len, self.b.ins().iadd(*skip, first)]);
+                    if let Some(more) = more {
+                        call.push(self.index(more, t)?);
+                    }
+                }
+                call.extend([self.index(k, t)?, self.index(rows, t)?]);
+                self.call(f, &call);
+                Val::S(self.iconst(types::I8, 0))
+            }
             Intrinsic::Mix => {
                 let [out, at, keep, p, b, b_at, n] = args else {
                     return Err("a mix takes seven arguments".into());

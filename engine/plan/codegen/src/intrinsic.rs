@@ -426,6 +426,52 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                 },
                 count: |c, _| c.tally(Ops { stores: 1.0, ..float(3.0) }, false),
             }
+            /// `o.dots(..)`: a block of sums, rows of `x` by `w`.
+            Dots = method dots(self, u64, u32, Buf, u64, Buf, u64, u32, u32) {
+                device: {
+                    let rows = |out: &str| format!(
+                        "f_fn void f_dots_rows({out} o, u32 stride, f_const(float) x, f_const(float) w, u32 k, u32 rows) {{
+    for (u32 r = 0; r < rows; r++) {{
+        for (u32 c = 0; c < 16; c++) {{
+            float s = 0.0f;
+            for (u32 i = 0; i < k; i++) {{
+                s += x[r * k + i] * w[c * k + i];
+            }}
+            o[r * stride + c] = s;
+        }}
+    }}
+}}
+#define f_dots(o, a, s, x, i, w, j, k, r) f_dots_rows((o) + (a), s, (x) + (i), (w) + (j), k, r)
+"
+                    );
+                    [rows("device float *"), rows("float *")]
+                },
+                text: |p, args| p.spell("f_dots", args),
+                host: |g, args, mask| {
+                    let (Expr::Var(out), Expr::Var(x), Expr::Var(w)) = (&args[0], &args[3], &args[5])
+                    else {
+                        panic!("a dots names its buffers");
+                    };
+                    let (out, x, w) = (g.arg(out), g.arg(x), g.arg(w));
+                    let v: Vec<Vec<Val>> = [1, 2, 4, 6, 7, 8].iter().map(|i| g.eval(&args[*i], mask)).collect();
+                    for t in (0..g.threads).filter(|t| mask[*t]) {
+                        let (at, stride, x_at, w_at) = (v[0][t].l(), u64::from(v[1][t].u()), v[2][t].l(), v[3][t].l());
+                        let (k, rows) = (u64::from(v[4][t].u()), u64::from(v[5][t].u()));
+                        for r in 0..rows.min(16) {
+                            for c in 0..16 {
+                                let mut sum = 0.0;
+                                for i in 0..k {
+                                    let a = g.load(&x, x_at + r * k + i).f();
+                                    sum += a * g.load(&w, w_at + c * k + i).f();
+                                }
+                                g.store(&out, at + r * stride + c, Val::F(sum));
+                            }
+                        }
+                    }
+                    vec![Val::B(false); g.threads]
+                },
+                count: |c, _| c.tally(Ops { stores: 256.0, ..float(512.0) }, false),
+            }
             /// `w.e2m1(low)`: 4 bits read as an e2m1.
             E2M1 = method e2m1(self, u32) -> f32 {
                 device: both(&format!(
