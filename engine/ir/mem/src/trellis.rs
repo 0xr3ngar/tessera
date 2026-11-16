@@ -15,9 +15,10 @@ pub const INPUT_SIDE: u32 = 2;
 /// Channels one entry holds on its sharded side.
 const ENTRY: usize = 128;
 
-/// `K`-bit trellis codes of `[out][in]` matrices.
+/// `K`-bit trellis codes. Rotated files append `suh`, `svh`.
 pub struct Trellis<const K: u32> {
     pub name: &'static str,
+    pub rotated: bool,
 }
 
 /// The matrix's shape and side, from the header.
@@ -98,7 +99,30 @@ fn codebook(state: u32) -> f32 {
 
 impl<const K: u32> Trellis<K> {
     pub const fn named(name: &'static str) -> Self {
-        Self { name }
+        Self {
+            name,
+            rotated: false,
+        }
+    }
+
+    /// Codes between rotations: `diag(suh) H T H diag(svh)`.
+    pub const fn turned(name: &'static str) -> Self {
+        Self {
+            name,
+            rotated: true,
+        }
+    }
+
+    /// A rotated matrix's codes, then its `suh` and `svh`.
+    fn parts(bytes: &[u8]) -> (&[u8], Vec<f32>, Vec<f32>) {
+        let shape = Shape::read(bytes);
+        let end = HEAD + shape.inp * shape.out * K as usize / 8;
+        let half = |b: &[u8]| -> Vec<f32> {
+            let word = |c: &[u8; 2]| f32::from(F16(u16::from_le_bytes(*c)));
+            b.as_chunks::<2>().0.iter().map(word).collect()
+        };
+        let (suh, svh) = bytes[end..].split_at(2 * shape.inp);
+        (&bytes[..end], half(suh), half(&svh[..2 * shape.out]))
     }
 
     /// Bytes one tile of 256 codes takes.
@@ -173,8 +197,32 @@ impl<const K: u32> Form for Trellis<K> {
     fn element_bytes(&self) -> f64 {
         f64::from(K) / 8.0
     }
+    /// A rotated element needs the whole matrix decoded.
     fn unpack(&self, bytes: &[u8], index: usize) -> f32 {
-        Self::decode(bytes, index)
+        match self.rotated {
+            true => self.unpack_all(bytes)[index],
+            false => Self::decode(bytes, index),
+        }
+    }
+    fn unpack_all(&self, bytes: &[u8]) -> Vec<f32> {
+        let shape = Shape::read(bytes);
+        let n = match self.rotated {
+            true => shape.inp * shape.out,
+            false => self.elements(bytes.len()),
+        };
+        let t: Vec<f32> = (0..n).map(|i| Self::decode(bytes, i)).collect();
+        if !self.rotated {
+            return t;
+        }
+        let (_, suh, svh) = Self::parts(bytes);
+        rotated(&t, shape.inp, shape.out, &suh, &svh)
+    }
+    /// Plain trellis codes, then `suh` and `svh` as f32.
+    fn split(&self, bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
+        let floats = |v: Vec<f32>| v.iter().flat_map(|x| x.to_le_bytes()).collect();
+        let (codes, suh, svh) = Self::parts(bytes);
+        self.rotated
+            .then(|| vec![codes.to_vec(), floats(suh), floats(svh)])
     }
     fn pack(&self, _: &[f32]) -> Vec<u8> {
         panic!("{} codes are read from a release, never packed", self.name)
@@ -186,6 +234,9 @@ impl<const K: u32> Form for Trellis<K> {
         [outer, _, inner]: [usize; 3],
         [first, count]: [usize; 2],
     ) -> Option<Vec<u8>> {
+        if self.rotated {
+            return None;
+        }
         let shape = Shape::read(bytes);
         let matrix = shape.inp * shape.out * K as usize / 8;
         if (outer, inner) == (1, shape.inp * shape.out) {
@@ -240,26 +291,90 @@ pub fn form_for(k: u32) -> Option<&'static dyn Form> {
     }
 }
 
+/// The scaled Walsh-Hadamard transform of 128 values at `stride`.
+fn hadamard(x: &mut [f32], start: usize, stride: usize) {
+    let mut len = 1;
+    while len < ENTRY {
+        for i in (0..ENTRY).step_by(2 * len) {
+            for j in i..i + len {
+                let (a, b) = (x[start + j * stride], x[start + (j + len) * stride]);
+                x[start + j * stride] = a + b;
+                x[start + (j + len) * stride] = a - b;
+            }
+        }
+        len *= 2;
+    }
+    let scale = 1.0 / (ENTRY as f32).sqrt();
+    for j in 0..ENTRY {
+        x[start + j * stride] *= scale;
+    }
+}
+
+/// `diag(suh) H T H diag(svh)` for a `[out][in]` matrix `t`.
+pub fn rotated(t: &[f32], inp: usize, out: usize, suh: &[f32], svh: &[f32]) -> Vec<f32> {
+    // Work on T as `(in, out)`.
+    let mut w: Vec<f32> = (0..inp * out)
+        .map(|i| t[(i % out) * inp + i / out])
+        .collect();
+    for block in 0..inp / ENTRY {
+        for col in 0..out {
+            hadamard(&mut w, ENTRY * block * out + col, out);
+        }
+    }
+    for (row, s) in suh.iter().enumerate() {
+        w[row * out..(row + 1) * out]
+            .iter_mut()
+            .for_each(|v| *v *= s);
+    }
+    for row in 0..inp {
+        for block in 0..out / ENTRY {
+            hadamard(&mut w, row * out + ENTRY * block, 1);
+        }
+    }
+    let mut back = vec![0.0; inp * out];
+    for row in 0..inp {
+        for (col, s) in svh.iter().enumerate() {
+            back[col * inp + row] = w[row * out + col] * s;
+        }
+    }
+    back
+}
+
 /// A trellis form as a registered constant.
 macro_rules! trellis {
-    ($(#[$doc:meta])* $name:ident = $text:literal, $k:literal) => {
+    ($(#[$doc:meta])* $name:ident = $text:literal, $k:literal, $make:ident) => {
         $(#[$doc])*
-        pub const $name: Trellis<$k> = Trellis::named($text);
+        pub const $name: Trellis<$k> = Trellis::$make($text);
         form!($name);
     };
 }
 
 trellis! {
     /// exlr8 at two bits a weight.
-    TRELLIS_K2 = "trellis_k2", 2
+    TRELLIS_K2 = "trellis_k2", 2, named
+}
+
+trellis! {
+    /// exlr8 at two bits, between its rotations.
+    TRELLIS_K2_ROT = "trellis_k2_rot", 2, turned
 }
 
 trellis! {
     /// exlr8 at three bits a weight.
-    TRELLIS_K3 = "trellis_k3", 3
+    TRELLIS_K3 = "trellis_k3", 3, named
+}
+
+trellis! {
+    /// exlr8 at three bits, between its rotations.
+    TRELLIS_K3_ROT = "trellis_k3_rot", 3, turned
 }
 
 trellis! {
     /// exlr8 at four bits a weight.
-    TRELLIS_K4 = "trellis_k4", 4
+    TRELLIS_K4 = "trellis_k4", 4, named
+}
+
+trellis! {
+    /// exlr8 at four bits, between its rotations.
+    TRELLIS_K4_ROT = "trellis_k4_rot", 4, turned
 }
