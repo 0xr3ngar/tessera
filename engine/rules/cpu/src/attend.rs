@@ -1,9 +1,10 @@
 //! Whole-sequence attention, a thread per query and head.
 
 use crate::{GUESS, source};
+use codegen::kept;
 use codegen::prelude::*;
 use graph::Mask;
-use lower::{Attn, Draft, Kernel, Launch, Shape, Step, T, Tree, ZoneKind, sites};
+use lower::{Arg, Attn, Draft, Kernel, Launch, Shape, Step, T, Tree, ZoneKind, sites};
 
 /// The widest head a thread's sums hold.
 const WIDEST: usize = 256;
@@ -121,10 +122,95 @@ fn attend_launches(k: &Attend, step: &Step) -> Vec<Launch> {
     launches
 }
 
-/// Whole sequences with fixed keys. Ragged rows go to trees.
+/// One launch over every row, then the kept layout sizes.
+#[kernel]
+fn cpu_attend_rows(
+    q: Buf<F32>,
+    k: Buf<F32>,
+    v: Buf<F32>,
+    mut out: BufMut<F32>,
+    slots: Buf<U32>,
+    positions: Buf<U32>,
+    rows: u32,
+    keys: u32,
+    heads: u32,
+    kv_heads: u32,
+    width: u32,
+) {
+    if gid() >= rows * heads {
+        return;
+    }
+    let row = gid() / heads;
+    let qh = gid() % heads;
+    let slot = slots[row as u64];
+    let position = positions[row as u64];
+    let kvh = qh / (heads / kv_heads);
+    let q_off = ((row * heads + qh) * width) as u64;
+    let mut acc = [0.0f32; WIDEST];
+    for d in 0..width {
+        acc[d as usize] = 0.0;
+    }
+    let mut most = -1.0e30f32;
+    let mut total = 0.0f32;
+    // The row sees its slot up to its own position.
+    let last = if position + 1 < keys {
+        position + 1
+    } else {
+        keys
+    };
+    for t in 0..last {
+        let kv_off = ((kept_row(slot, t) * kv_heads + kvh) * width) as u64;
+        let score = q.dot(q_off, k, kv_off, width);
+        let top = max(most, score);
+        let keep = exp(most - top);
+        let p = exp(score - top);
+        total = total * keep + p;
+        for d in 0..width {
+            acc[d as usize] = acc[d as usize] * keep + p * v[kv_off + d as u64];
+        }
+        most = top;
+    }
+    for d in 0..width {
+        out[q_off + d as u64] = acc[d as usize] / total;
+    }
+}
+
+/// Scaled query rows over kept keys, by slot and position.
+#[derive(Clone, Copy, Debug, Kernel)]
+#[launch(
+    crate = lower,
+    name = "cpu_attend_rows",
+    sizes = self.0.sizes(),
+    work = self.0.heads * self.0.queries * self.0.keys.most() * self.0.width,
+    guess = GUESS,
+    runs_on = ZoneKind::Cpu,
+    source = source("cpu_attend_rows", kept::attach(cpu_attend_rows_ir(), self.0.kept)),
+    launches = rows_launches,
+)]
+pub struct AttendRows(pub Attn);
+
+/// One launch over every row, the kept layout's sizes last.
+fn rows_launches(k: &AttendRows, step: &Step) -> Vec<Launch> {
+    let a = &k.0;
+    let mut args = a.rows_args(step);
+    args.push(Arg::count(a.width));
+    args.extend(a.kept_args());
+    vec![Launch {
+        args,
+        shape: Shape::Line(a.queries * a.heads),
+    }]
+}
+
+/// Whole sequences with fixed keys, or rows over kept keys.
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let site: sites::Attend = tree.site(at)?;
-    if site.rows.is_some() || site.sizes.keys.runtime() || site.sizes.width > WIDEST {
+    if site.sizes.width > WIDEST {
+        return None;
+    }
+    if site.rows.is_some() {
+        return site.ragged(AttendRows(site.sizes));
+    }
+    if site.sizes.keys.runtime() {
         return None;
     }
     let out = site.sizes.seqs * site.out();

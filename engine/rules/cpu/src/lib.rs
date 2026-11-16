@@ -3,7 +3,7 @@
 mod attend;
 mod dense;
 
-pub use attend::Attend;
+pub use attend::{Attend, AttendRows};
 pub use dense::{Dense, Picked};
 
 use codegen::hash;
