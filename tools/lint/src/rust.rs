@@ -89,7 +89,7 @@ fn has_test(tokens: TokenStream) -> bool {
     })
 }
 
-fn attrs_of(item: &Item) -> &[Attribute] {
+pub fn attrs_of(item: &Item) -> &[Attribute] {
     match item {
         Item::Const(i) => &i.attrs,
         Item::Enum(i) => &i.attrs,

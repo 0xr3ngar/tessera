@@ -50,7 +50,7 @@ extensions = ["rs", "metal", "cu", "cuh", "h", "hpp", "c", "cc", "cpp", "wgsl", 
 hash_comment_files = ["*.toml", "*.yml", "*.yaml", "*.sh", ".githooks/*"]
 
 # Rules that report in the findings and do not fail the run.
-warn_rules = []
+warn_rules = ["thin-edge", "facade", "testing-path", "reexport", "placement"]
 
 # Statements in a function body before a copy elsewhere counts.
 min_repeat_statements = 4
@@ -63,10 +63,33 @@ timing_exempt = ["tools/calibrate/"]
 layers = [
     ["engine/ir/"],
     ["engine/gpu/", "engine/settings/"],
-    ["engine/plan/"],
+    ["engine/plan/sim/", "engine/plan/kernel-macro/"],
+    ["engine/plan/codegen/"],
+    ["engine/plan/lower/", "engine/plan/comm/"],
+    ["engine/plan/jit/"],
+    ["engine/plan/run/"],
     ["engine/rules/"],
     ["engine/engine/", "engine/models/"],
     ["frontend/"],
     ["tools/"],
 ]
 
+
+# Crates in `dir` may name only `crates` and each other in normal dependencies.
+facade = { dir = "frontend/", crates = ["engine"] }
+
+# A note for a crate whose dependencies all sit this many layers
+# below it. The `engine/plan/` crates fill five layers, so 2 is too few.
+placement_gap = 4
+
+# Crates in `dirs` name at least `min_names` top-level names of each
+# workspace dependency, or `min_dev_names` of a dev-dependency.
+# Dependencies in the lowest layer, or whose names other crates use
+# fewer than `min_surface` of, pass. `use a as _` links and passes.
+thin_edge = { dirs = ["engine/"], min_names = 3, min_dev_names = 1, min_surface = 6 }
+
+# Upward edges that stay, and why.
+[[layer_allow]]
+from = "lower"
+to = "run"
+reason = "lower's tests run the plans they make"

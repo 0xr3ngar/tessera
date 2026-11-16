@@ -1,4 +1,4 @@
-use super::layers::{Allow, check};
+use super::layers::{Allow, Facade, check, facade, placement};
 use super::workspace::{Dep, Kind, Pkg};
 
 const MANIFEST: &str =
@@ -72,4 +72,28 @@ fn allow_list() {
 fn unknown_directory_fails() {
     let odd = [pkg("odd", "z/odd/", &[])];
     assert_eq!(run(&odd, &[]), at("z/odd/Cargo.toml", 1));
+}
+
+/// Facade and placement findings, with `b/` a facade of `mid`.
+fn shape() -> Vec<(&'static str, String)> {
+    let rule = Facade {
+        dir: "b/".into(),
+        crates: vec!["mid".into()],
+    };
+    let mut pkgs = ladder();
+    let deps = [("low", Kind::Normal), ("mid", Kind::Dev)];
+    pkgs.push(pkg("top", "b/top/", &deps));
+    let mut out = Vec::new();
+    facade(&pkgs, &rule, &mut out);
+    let layers = [vec!["a/".into()], vec![], vec!["b/".into()]];
+    placement(&pkgs, &layers, 2, &mut out);
+    out.into_iter().map(|v| (v.rule, v.path)).collect()
+}
+
+#[test]
+fn facade_and_placement() {
+    let at = |rule, dir| (rule, format!("b/{dir}/Cargo.toml"));
+    let want = [at("facade", "mid"), at("facade", "top")];
+    let gaps = [at("placement", "mid"), at("placement", "top")];
+    assert_eq!(shape(), [want, gaps].concat());
 }

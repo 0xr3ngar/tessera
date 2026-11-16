@@ -100,7 +100,7 @@ fn declared(item: &Syn) -> Option<(&syn::Ident, &'static str, TokenStream)> {
 }
 
 /// The names a `pub use` brings out. Globs name nothing.
-fn leaves<'a>(tree: &'a UseTree, out: &mut Vec<&'a syn::Ident>) {
+pub fn leaves<'a>(tree: &'a UseTree, out: &mut Vec<&'a syn::Ident>) {
     match tree {
         UseTree::Path(p) => leaves(&p.tree, out),
         UseTree::Name(n) if n.ident != "self" => out.push(&n.ident),
@@ -200,7 +200,7 @@ impl Crate {
 }
 
 /// Files that build their own targets, and so need `pub`.
-fn is_target(rel: &str) -> bool {
+pub fn is_target(rel: &str) -> bool {
     let dirs = ["tests/", "benches/", "examples/", "src/bin/"];
     dirs.iter().any(|d| rel.starts_with(d)) || rel == "src/main.rs"
 }
