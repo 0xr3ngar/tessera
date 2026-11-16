@@ -64,6 +64,11 @@ pub trait Offer {
     fn floats(&self, name: &str) -> Result<Vec<f32>, Error>;
     /// Slice `name` as its form's bytes. Floats have none.
     fn packed(&self, name: &str) -> Result<Vec<u8>, Error>;
+    /// A bf16 slice's bytes, as stored.
+    fn bf16(&self, name: &str) -> Result<Vec<u8>, Error> {
+        let narrow = |x: &f32| engine::Bf16::from(*x).0.to_le_bytes();
+        Ok(self.floats(name)?.iter().flat_map(narrow).collect())
+    }
     /// Rows `first..first + count` of a packed slice.
     fn packed_rows(&self, name: &str, rows: (usize, usize)) -> Result<Vec<u8>, Error> {
         let _ = rows;

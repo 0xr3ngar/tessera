@@ -206,4 +206,11 @@ impl Offer for File {
     fn packed(&self, name: &str) -> Result<Vec<u8>, Error> {
         Err(Error::DType(format!("{name} holds floats, not a form")))
     }
+
+    fn bf16(&self, name: &str) -> Result<Vec<u8>, Error> {
+        match self.entries.get(name).map(|e| stored(&e.dtype)) {
+            Some(Stored::Bf16) => self.bytes(name),
+            _ => Err(Error::DType(format!("{name} is not bf16"))),
+        }
+    }
 }

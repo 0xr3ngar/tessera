@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use testkit::{argmax, cosine_f32, max_abs_diff};
 use trace::DimName::{self, Context, Seqs};
-use trace::{DType, Graph};
+use trace::Graph;
 
 /// A recorded reference, and how closely to match it.
 pub struct Golden {
@@ -155,12 +155,9 @@ pub fn pulled(model: &str, g: &Graph, offer: &dyn Offer) -> Vec<Tensor> {
         let axis = |e: &graph::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
         g.weights[at].ty.shape.0.iter().map(axis).collect()
     };
-    bundle::each(g, offer, &[&rules], |w, form| {
+    bundle::each(g, offer, &[&rules], |w, _| {
         let shape = shape(out.len());
         out.push(match w {
-            Weight::Floats(t) if form.name() == BF16_FORM.name() => {
-                Tensor::from_bytes(shape, DType::Bf16, &form.pack(t.floats().unwrap()))
-            }
             Weight::Floats(t) => t,
             Weight::Packed(f, bytes) if f.block() == 1 => {
                 Tensor::from_bytes(shape, f.dtype(), &bytes)
@@ -220,11 +217,13 @@ impl Golden {
         }
         let dir = testkit::reference(model)?;
         let file = dir.join("model.safetensors");
+        // The turn comes first, so the weights load in it.
+        let turn = turn();
         Some(Reference {
             weights: safetensors(model, g, &file),
             cases: cases(&dir),
             checkpoint: Some(file),
-            turn: turn(),
+            turn,
         })
     }
 
