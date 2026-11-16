@@ -353,8 +353,19 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                 count: |c, _| c.tally(Ops { e4m3: 1.0, ..Ops::default() }, true),
             }
             /// `a.dot(a_at, b, b_at, n)`: the sum of `n` products.
+            // Devices spell it over f32 rows. CPU bodies take any.
             Dot = method dot(self, u64, Buf, u64, u32) -> f32 {
-                device: none(),
+                device: both(
+                    "f_fn float f_dot_rows(f_const(float) a, f_const(float) b, u32 n) {
+    float s = 0.0f;
+    for (u32 i = 0; i < n; i++) {
+        s += a[i] * b[i];
+    }
+    return s;
+}
+#define f_dot(a, i, b, j, n) f_dot_rows((a) + (i), (b) + (j), (n))
+",
+                ),
                 text: |p, args| p.spell("f_dot", args),
                 host: |g, args, mask| {
                     let (Expr::Var(a), Expr::Var(b)) = (&args[0], &args[2]) else {
