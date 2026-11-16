@@ -15,7 +15,6 @@ pub mod rule;
 mod schedule;
 mod select;
 pub mod sites;
-pub mod testing;
 mod tree;
 
 pub use abi::{Arg, Launch, Shape, Source, ToArg};
@@ -41,16 +40,6 @@ pub use sim::{Cluster, Fit, Link, Load, Ops, Zone, ZoneKind};
 pub use tree::{Node, T, Term, Tree};
 
 use graph::{DimName, Graph};
-
-/// This build's GPU, when it can run kernels here.
-pub fn gpu() -> Option<Backend> {
-    use gpukit::backend as gk;
-    Some(match gk::picked()? {
-        gk::Backend::Metal => Backend::Metal,
-        gk::Backend::Cuda => Backend::Cuda,
-        gk::Backend::Rocm => Backend::Rocm,
-    })
-}
 
 /// Selects kernels, orders them, then assigns buffers.
 pub fn lower(

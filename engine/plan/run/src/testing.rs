@@ -1,6 +1,7 @@
 //! The settings tests run under: host, then a ready GPU.
 
-use crate::{Backend, Pick, Settings, gpu};
+use crate::gpu;
+use engine_settings::{Backend, Pick, Settings};
 
 /// Settings for plans on the host.
 pub fn host() -> Settings {

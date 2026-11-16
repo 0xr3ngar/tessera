@@ -3,10 +3,10 @@
 use super::{GOLDEN, release};
 use checkpoint::exlr8::Release;
 use interp::Tensor;
-use lower::testing::runs;
 use lower::{Device, Settings, lower};
 use parity::{Case, interpreted, loaded, pulled, unit};
 use run::Run;
+use run::testing::runs;
 use std::path::Path;
 use testkit::cosine_f32;
 use trace::Graph;
