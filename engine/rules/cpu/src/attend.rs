@@ -6,9 +6,6 @@ use codegen::prelude::*;
 use graph::Mask;
 use lower::{Arg, Attn, Draft, Kernel, Launch, Shape, Step, T, Tree, ZoneKind, sites};
 
-/// The widest head a thread's sums hold.
-const WIDEST: usize = 256;
-
 /// Scores, softmax and weighted values in one pass per query.
 #[kernel]
 fn cpu_attend(
@@ -44,10 +41,7 @@ fn cpu_attend(
     let reach = position + 1 + after;
     let to = if reach < keys { reach } else { keys };
     let kh = h / (heads / kv_heads);
-    let mut acc = [0.0f32; WIDEST];
-    for d in 0..width {
-        acc[d as usize] = 0.0;
-    }
+    // The first key's zero `keep` clears the output row.
     let mut most = -1.0e30f32;
     let mut total = 0.0f32;
     for j in from..to {
@@ -57,14 +51,10 @@ fn cpu_attend(
         let keep = exp(most - top);
         let p = exp(score - top);
         total = total * keep + p;
-        for d in 0..width {
-            acc[d as usize] = acc[d as usize] * keep + p * v[ko + d as u64];
-        }
+        out.mix(qo, keep, p, v, ko, width);
         most = top;
     }
-    for d in 0..width {
-        out[qo + d as u64] = acc[d as usize] / total;
-    }
+    out.mix(qo, 1.0 / total, 0.0, v, 0, width);
 }
 
 /// Softmax attention over `[seqs, rows, heads, width]` tensors.
@@ -146,10 +136,6 @@ fn cpu_attend_rows(
     let position = positions[row as u64];
     let kvh = qh / (heads / kv_heads);
     let q_off = ((row * heads + qh) * width) as u64;
-    let mut acc = [0.0f32; WIDEST];
-    for d in 0..width {
-        acc[d as usize] = 0.0;
-    }
     let mut most = -1.0e30f32;
     let mut total = 0.0f32;
     // The row sees its slot up to its own position.
@@ -165,14 +151,10 @@ fn cpu_attend_rows(
         let keep = exp(most - top);
         let p = exp(score - top);
         total = total * keep + p;
-        for d in 0..width {
-            acc[d as usize] = acc[d as usize] * keep + p * v[kv_off + d as u64];
-        }
+        out.mix(q_off, keep, p, v, kv_off, width);
         most = top;
     }
-    for d in 0..width {
-        out[q_off + d as u64] = acc[d as usize] / total;
-    }
+    out.mix(q_off, 1.0 / total, 0.0, v, 0, width);
 }
 
 /// Scaled query rows over kept keys, by slot and position.
@@ -204,9 +186,6 @@ fn rows_launches(k: &AttendRows, step: &Step) -> Vec<Launch> {
 /// Whole sequences with fixed keys, or rows over kept keys.
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let site: sites::Attend = tree.site(at)?;
-    if site.sizes.width > WIDEST {
-        return None;
-    }
     if site.rows.is_some() {
         return site.ragged(AttendRows(site.sizes));
     }

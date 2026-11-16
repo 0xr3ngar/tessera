@@ -552,6 +552,41 @@ impl Lowerer<'_, '_> {
                         .expect("a sum"),
                 )
             }
+            Intrinsic::Mix => {
+                let [out, at, keep, p, b, b_at, n] = args else {
+                    return Err("a mix takes seven arguments".into());
+                };
+                let (Expr::Var(out), Expr::Var(b)) = (out, b) else {
+                    return Err("a mix names its buffers".into());
+                };
+                let (
+                    Kind::Buffer {
+                        form: fo,
+                        ptr: po,
+                        len: lo,
+                        skip: so,
+                    },
+                    Kind::Buffer {
+                        form: fb,
+                        ptr: pb,
+                        len: lb,
+                        skip: sb,
+                    },
+                ) = (self.kind(out)?, self.kind(b)?)
+                else {
+                    return Err("a mix runs over buffers".into());
+                };
+                if fo.name() != "f32" || fb.name() != "f32" {
+                    return Err("a mix runs over f32 rows".into());
+                }
+                let scales = self.floats(&[keep.clone(), p.clone()], t)?;
+                let (at, b_at, n) = (self.index(at, t)?, self.index(b_at, t)?, self.index(n, t)?);
+                let at = self.b.ins().iadd(so, at);
+                let b_at = self.b.ins().iadd(sb, b_at);
+                let call = [po, lo, at, scales[0], scales[1], pb, lb, b_at, n];
+                self.call("mix_f32", &call);
+                Val::S(self.iconst(types::I8, 0))
+            }
             Intrinsic::F16 | Intrinsic::E4M3 | Intrinsic::E2M1 => {
                 let v = self.u32s(args, t)?;
                 let f = match i {

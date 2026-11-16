@@ -387,6 +387,45 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                 },
                 count: |c, _| c.tally(float(2.0), true),
             }
+            /// `o.mix(at, keep, p, b, j, n)`: `o * keep + p * b`.
+            // A zero `keep` drops old values, maybe junk.
+            Mix = method mix(self, u64, f32, f32, Buf, u64, u32) {
+                device: {
+                    let rows = |out: &str| format!(
+                        "f_fn void f_mix_rows({out} o, f_const(float) b, float keep, float p, u32 n) {{
+    for (u32 i = 0; i < n; i++) {{
+        o[i] = (keep == 0.0f ? 0.0f : o[i] * keep) + p * b[i];
+    }}
+}}
+#define f_mix(o, i, keep, p, b, j, n) f_mix_rows((o) + (i), (b) + (j), keep, p, n)
+"
+                    );
+                    [rows("device float *"), rows("float *")]
+                },
+                text: |p, args| p.spell("f_mix", args),
+                host: |g, args, mask| {
+                    let (Expr::Var(out), Expr::Var(b)) = (&args[0], &args[4]) else {
+                        panic!("a mix names its buffers");
+                    };
+                    let (out, b) = (g.arg(out), g.arg(b));
+                    let at = g.eval(&args[1], mask);
+                    let (keep, p) = (g.eval(&args[2], mask), g.eval(&args[3], mask));
+                    let (b_at, n) = (g.eval(&args[5], mask), g.eval(&args[6], mask));
+                    for t in (0..g.threads).filter(|t| mask[*t]) {
+                        let (keep, p) = (keep[t].f(), p[t].f());
+                        for i in 0..u64::from(n[t].u()) {
+                            let old = match keep == 0.0 {
+                                true => 0.0,
+                                false => g.load(&out, at[t].l() + i).f() * keep,
+                            };
+                            let add = p * g.load(&b, b_at[t].l() + i).f();
+                            g.store(&out, at[t].l() + i, Val::F(old + add));
+                        }
+                    }
+                    vec![Val::B(false); g.threads]
+                },
+                count: |c, _| c.tally(Ops { stores: 1.0, ..float(3.0) }, false),
+            }
             /// `w.e2m1(low)`: 4 bits read as an e2m1.
             E2M1 = method e2m1(self, u32) -> f32 {
                 device: both(&format!(

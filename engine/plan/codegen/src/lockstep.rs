@@ -82,6 +82,35 @@ pub fn st_u32(bytes: &mut [u8], at: usize, v: u32) {
     bytes[at * 4..at * 4 + 4].copy_from_slice(&v.to_le_bytes());
 }
 
+/// `n` floats from `at` become `out * keep + p * b`.
+pub fn mix_f32(out: &mut [u8], at: usize, keep: f32, p: f32, b: &[u8], b_at: usize, n: usize) {
+    let mut other = Vec::new();
+    let b = f32_row(b, b_at, n, &mut other);
+    let slice = &mut out[at * 4..(at + n) * 4];
+    // SAFETY: f32 has no invalid bit patterns.
+    let (head, body, _) = unsafe { slice.align_to_mut::<f32>() };
+    if head.is_empty() && body.len() == n {
+        // A zero `keep` drops old values. They may be junk.
+        match keep == 0.0 {
+            true => body.iter_mut().zip(b).for_each(|(o, x)| *o = p * x),
+            false => body
+                .iter_mut()
+                .zip(b)
+                .for_each(|(o, x)| *o = *o * keep + p * x),
+        }
+        return;
+    }
+    for (i, x) in b.iter().enumerate() {
+        let (o, _) = slice[i * 4..].split_first_chunk::<4>().expect("four bytes");
+        let old = if keep == 0.0 {
+            0.0
+        } else {
+            f32::from_le_bytes(*o) * keep
+        };
+        slice[i * 4..i * 4 + 4].copy_from_slice(&(old + p * x).to_le_bytes());
+    }
+}
+
 /// The u32 at byte offset `at`.
 #[inline(always)]
 pub fn word(bytes: &[u8], at: usize) -> u32 {
