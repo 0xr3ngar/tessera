@@ -243,7 +243,8 @@ impl<'a> Tree<'a> {
                 turned[i] = Some(parts);
                 continue;
             }
-            if let (Op::Matmul, Some(parts)) = (&n.op, turned[n.args[1].0 as usize]) {
+            let weight = n.args.get(1).filter(|_| n.op == Op::Matmul);
+            if let Some(parts) = weight.and_then(|w| turned[w.0 as usize]) {
                 at[i] = Some(tree.turn(args[0], parts, (&shape, &extents), from));
                 continue;
             }
