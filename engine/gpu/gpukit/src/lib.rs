@@ -6,6 +6,9 @@ pub use limits::Limits;
 pub use platform::Platform;
 
 pub mod backend;
+pub mod ibv;
+#[cfg(test)]
+mod ibv_test;
 pub mod limits;
 pub mod platform;
 #[cfg(test)]
@@ -19,7 +22,7 @@ pub mod metal;
 #[cfg(any(feature = "cuda", feature = "rocm"))]
 mod api;
 pub mod device;
-pub mod dl;
+mod dl;
 pub mod launch;
 #[cfg(any(feature = "cuda", feature = "rocm"))]
 mod rtc;

@@ -2,7 +2,7 @@
 name = "gpukit"
 version = "0.1.0"
 edition = "2024"
-description = "GPU compute infrastructure: pipeline compilation, specialization, caching, buffers"
+description = "The runtimes tessera loads at run time, GPUs and RDMA: pipelines, buffers, verbs"
 license = "MIT"
 
 [features]
