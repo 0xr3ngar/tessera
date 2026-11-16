@@ -49,7 +49,6 @@ pub fn steps(spec: &Spec) {
     };
     let (forward, step) = (small(), (stepper.small)());
     assert_eq!(forward.weights, step.weights);
-    assert_eq!(step.kept.len(), 2 * 2, "keys and values per layer");
     let mut noise = Noise(3);
     let weights = weights(&forward, &mut noise);
     let draw = |_| ((noise.draw() + 1.0) * 16.0) as u32;
@@ -69,7 +68,9 @@ pub fn steps(spec: &Spec) {
             got[(s * LEN + p) * vocab..][..vocab].copy_from_slice(row);
         }
     }
-    assert_eq!(store.len(0), LEN);
+    for kept in 0..step.kept.len() {
+        assert_eq!(store.len(kept), LEN, "kept rows {kept}");
+    }
     let off = max_abs_diff(&got, want);
     assert!(off < 1e-5, "steps drift from the forward pass by {off:e}");
 }
