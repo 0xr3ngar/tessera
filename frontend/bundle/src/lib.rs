@@ -110,12 +110,26 @@ pub fn each(
                 };
                 (Weight::Packed(f, bytes), f)
             }
-            (Stored::Bf16, _) => (floats(offer, slice, c.rows, shape)?, BF16_FORM),
+            (Stored::Bf16, _) => (halves(offer, slice, c.rows)?, BF16_FORM),
             _ => (floats(offer, slice, c.rows, shape)?, F32_FORM),
         };
         take(weight, form);
     }
     Ok(())
+}
+
+/// A bf16 slice's bytes, or its `rows`, kept packed.
+fn halves(
+    offer: &dyn Offer,
+    slice: &checkpoint::Slice,
+    rows: Option<(usize, usize)>,
+) -> Result<Weight, checkpoint::Error> {
+    let mut v = offer.bf16(&slice.name)?;
+    if let Some((first, count)) = rows {
+        let stride = 2 * slice.elements() / slice.shape[0];
+        v = v[first * stride..(first + count) * stride].to_vec();
+    }
+    Ok(Weight::Packed(BF16_FORM, v))
 }
 
 /// A slice's floats, or its `rows`, in the graph's shape.

@@ -3,8 +3,8 @@
 use crate::cpu;
 use crate::tensor::Error;
 use graph::{
-    DType, DimExpr, DimName, Graph, Mask, NodeId, Numerics, Op, Parts, PathSeg, Placement, Select,
-    Shape, Size, Stage, View,
+    DType, DimExpr, DimName, Graph, Mask, Node, NodeId, Numerics, Op, Parts, PathSeg, Placement,
+    Select, Shape, Size, Stage, View,
 };
 use mem::Tensor;
 use std::borrow::Cow;
@@ -298,21 +298,21 @@ fn run_on(
         weights: &shares[r],
         first,
     };
+    let picked = picked(g, &needed, e.outputs.iter().map(|o| o.node));
+    let order = order(g, &needed, &picked);
     // A value lives until its last reader has run.
     let mut last = vec![usize::MAX; g.nodes.len()];
-    for (i, n) in g.nodes.iter().enumerate().filter(|(i, _)| needed[*i]) {
-        for a in &n.args {
-            last[a.0 as usize] = i;
+    for (step, &i) in order.iter().enumerate() {
+        for a in reads(g, &picked, &g.nodes[i]) {
+            last[a.0 as usize] = step;
         }
     }
     for o in &e.outputs {
         last[o.node.0 as usize] = usize::MAX;
     }
     let mut values: Vec<Vec<Option<Tensor>>> = vec![vec![None; g.nodes.len()]; ranks];
-    for (i, n) in g.nodes.iter().enumerate() {
-        if !needed[i] {
-            continue;
-        }
+    for (step, &i) in order.iter().enumerate() {
+        let n = &g.nodes[i];
         let num = n.numerics.unwrap_or_default();
         // Each rank holds its part of a split axis.
         let whole = sizes.shape(&n.ty.shape)?;
@@ -325,14 +325,17 @@ fn run_on(
         let mut outs: Vec<Tensor> = Vec::with_capacity(ranks);
         for (r, held) in values.iter().enumerate() {
             let value = |a: &NodeId| held[a.0 as usize].as_ref().expect("args come first");
+            if let [x, w] = n.args[..]
+                && picked[w.0 as usize]
+            {
+                let gather = g.node(w);
+                let table = [value(&gather.args[0]), value(&gather.args[1])];
+                let first = first_row(g, gather, &sizes, parts, r)?;
+                outs.push(cpu::matmul_picked(&num, value(&x), table, first)?);
+                continue;
+            }
             let args: Vec<&Tensor> = n.args.iter().map(value).collect();
-            // A table split by row: this rank's rows start here.
-            let routed = matches!(n.op, Op::Select(Select::Gather))
-                && g.node(n.args[0]).ty.placement == Placement::Split { axis: 0 };
-            let first = match routed {
-                true => part(parts, 0, sizes.shape(&g.node(n.args[0]).ty.shape)?[0], r)?.0,
-                false => 0,
-            };
+            let first = first_row(g, n, &sizes, parts, r)?;
             outs.push(match &n.op {
                 Op::View(View::Reshape(_)) => args[0].reshaped(wants[r].clone()),
                 // Kept rows are whole, so every rank appends the same.
@@ -373,7 +376,7 @@ fn run_on(
             }
             values[r][i] = Some(out);
         }
-        for a in n.args.iter().filter(|a| last[a.0 as usize] == i) {
+        for a in reads(g, &picked, n).filter(|a| last[a.0 as usize] == step) {
             for held in &mut values {
                 held[a.0 as usize] = None;
             }
@@ -389,6 +392,80 @@ fn run_on(
         outputs.push(first);
     }
     Ok(outputs)
+}
+
+/// The first table row a gather holds on rank `r`.
+fn first_row(g: &Graph, n: &Node, sizes: &Sizes, parts: &Parts, r: usize) -> Result<usize, Error> {
+    let table = n.args.first().map(|a| g.node(*a));
+    match table {
+        Some(t)
+            if matches!(n.op, Op::Select(Select::Gather))
+                && t.ty.placement == Placement::Split { axis: 0 } =>
+        {
+            Ok(part(parts, 0, sizes.shape(&t.ty.shape)?[0], r)?.0)
+        }
+        _ => Ok(0),
+    }
+}
+
+/// Run order: a leaf waits for its first reader.
+fn order(g: &Graph, needed: &[bool], picked: &[bool]) -> Vec<usize> {
+    let leaf = |i: usize| g.nodes[i].args.is_empty();
+    let (mut out, mut placed) = (Vec::new(), vec![false; g.nodes.len()]);
+    for (i, n) in g.nodes.iter().enumerate() {
+        // A picked gather runs inside the matmul that reads it.
+        if !needed[i] || picked[i] || leaf(i) {
+            continue;
+        }
+        for a in reads(g, picked, n).map(|a| a.0 as usize) {
+            if leaf(a) && !placed[a] {
+                placed[a] = true;
+                out.push(a);
+            }
+        }
+        out.push(i);
+    }
+    // An unread leaf is an output.
+    for i in 0..g.nodes.len() {
+        if needed[i] && leaf(i) && !placed[i] {
+            out.push(i);
+        }
+    }
+    out
+}
+
+/// Gathers that only matmuls read, as their weights.
+fn picked(g: &Graph, needed: &[bool], outputs: impl Iterator<Item = NodeId>) -> Vec<bool> {
+    let gather = |n: &Node| matches!(n.op, Op::Select(Select::Gather));
+    let mut picked: Vec<bool> = g.nodes.iter().map(gather).collect();
+    for o in outputs {
+        picked[o.0 as usize] = false;
+    }
+    for n in g
+        .nodes
+        .iter()
+        .zip(needed)
+        .filter(|(_, k)| **k)
+        .map(|(n, _)| n)
+    {
+        for (at, a) in n.args.iter().enumerate() {
+            if !(matches!(n.op, Op::Matmul) && at == 1) {
+                picked[a.0 as usize] = false;
+            }
+        }
+    }
+    picked
+}
+
+/// The values `n` reads: a picked gather's own arguments too.
+fn reads<'a>(g: &'a Graph, picked: &'a [bool], n: &'a Node) -> impl Iterator<Item = NodeId> + 'a {
+    let inner = |a: &NodeId| match picked[a.0 as usize] {
+        true => g.node(*a).args.clone(),
+        false => Vec::new(),
+    };
+    n.args
+        .iter()
+        .flat_map(move |a| std::iter::once(*a).chain(inner(a)))
 }
 
 /// Which nodes the outputs depend on.

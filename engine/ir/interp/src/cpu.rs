@@ -74,23 +74,55 @@ pub(crate) fn seen(mask: Mask, position: usize, keys: usize) -> (usize, usize) {
 
 /// Leading axes pair off. A shorter `x` is a prefix.
 pub(crate) fn matmul(n: &Numerics, x: &Tensor, w: &Tensor) -> Result<Tensor, Error> {
+    let ws = w.floats()?;
+    let size: usize = w.shape[w.shape.len() - 2..].iter().product();
+    product(n, x, &w.shape, |b| Some(&ws[b * size..(b + 1) * size]))
+}
+
+/// `matmul(x, gather(table, ids))`, the gathered matrices never built.
+pub(crate) fn matmul_picked(
+    n: &Numerics,
+    x: &Tensor,
+    [table, ids]: [&Tensor; 2],
+    first: usize,
+) -> Result<Tensor, Error> {
+    let (ts, rows) = (table.floats()?, table.shape[0]);
+    let size = table.len() / rows.max(1);
+    let mut shape = ids.shape.clone();
+    shape.extend_from_slice(&table.shape[1..]);
+    let ids = ids.indices()?;
+    // A row outside this rank's table reads zeros.
+    let row = |b: usize| ids[b].checked_sub(first).filter(|r| *r < rows);
+    product(n, x, &shape, |b| {
+        row(b).map(|r| &ts[r * size..(r + 1) * size])
+    })
+}
+
+/// `x` times each `[N, K]` matrix of `shape`.
+fn product<'w>(
+    n: &Numerics,
+    x: &Tensor,
+    shape: &[usize],
+    matrix: impl Fn(usize) -> Option<&'w [f32]>,
+) -> Result<Tensor, Error> {
     let acc = Acc::new(n.accumulate)?;
     let (m, k) = x.rows();
-    let lead = w.shape.len() - 2;
-    let n = w.shape[lead];
-    let batches: usize = w.shape[..lead].iter().product();
-    let (xs, ws) = (x.floats()?, w.floats()?);
+    let lead = shape.len() - 2;
+    let n = shape[lead];
+    let batches: usize = shape[..lead].iter().product();
+    let xs = x.floats()?;
+    let zeros = vec![0.0; n * k];
     let rows = m.max(batches);
     let mut out = vec![0.0; rows * n];
     for (r, row) in out.chunks_mut(n).enumerate() {
         let (xr, wb) = (r / (rows / m.max(1)), r / (rows / batches.max(1)));
         let xr = &xs[xr * k..(xr + 1) * k];
-        let wb = &ws[wb * n * k..];
+        let wb = matrix(wb).unwrap_or(&zeros);
         for (c, o) in row.iter_mut().enumerate() {
             *o = acc.dot(xr, &wb[c * k..(c + 1) * k]);
         }
     }
-    let mut shape = w.shape[..lead].to_vec();
+    let mut shape = shape[..lead].to_vec();
     if batches <= m {
         shape = x.shape.clone();
         shape.pop();
