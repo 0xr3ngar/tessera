@@ -1,10 +1,10 @@
 //! Runs a body on the host, each group in lockstep.
 
-use crate::form::Load;
-use crate::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt, Ty};
-use crate::kept::Layout;
 use crate::lockstep::products;
-use crate::numerics::Precision;
+use codegen::form::Load;
+use codegen::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt, Ty};
+use codegen::kept::Layout;
+use codegen::numerics::Precision;
 use graph::{E2M1, E4M3, F16};
 use std::collections::HashMap;
 

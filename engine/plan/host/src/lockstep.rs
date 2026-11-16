@@ -1,9 +1,9 @@
 //! What compiled lockstep kernels call: reads, shuffles and tiles.
 
-use crate::block::{NVFP4, Q4_0, Q8_0};
 use crate::exec::{ArgVal, Grid};
-use crate::form::{Form, Load};
-use crate::numerics::Precision;
+use codegen::block::{NVFP4, Q4_0, Q8_0};
+use codegen::form::{Form, Load};
+use codegen::numerics::Precision;
 use graph::{E2M1, E4M3, F16};
 
 /// The most threads one compiled group holds.

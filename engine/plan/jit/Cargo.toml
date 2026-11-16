@@ -8,6 +8,7 @@ description = "Kernel bodies compiled for the host with Cranelift when a plan is
 
 [dependencies]
 codegen = { workspace = true }
+host = { workspace = true }
 cranelift-codegen = "0.137"
 cranelift-frontend = "0.137"
 cranelift-jit = "0.137"

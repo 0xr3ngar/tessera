@@ -1,11 +1,11 @@
 //! Rules propose kernels for a site. Link time collects them.
 
-use crate::Error;
 use crate::abi::{Arg, Launch, Shape};
 use crate::extent::Extent;
 use crate::kernel::{Kernel, KernelRef};
 use crate::plan::Step;
 use crate::tree::{T, Tree};
+use crate::{Error, Unsupported};
 use codegen::kept::Layout;
 use graph::Mask;
 
@@ -242,8 +242,5 @@ pub fn linked(rules: &[&Rule]) -> Result<(), Error> {
     if rules.iter().any(|r| r.module.split("::").next() != ours) {
         return Ok(());
     }
-    let hint = "add `use rules as _;`";
-    Err(Error::Unsupported(format!(
-        "any node: no rule crate is linked; {hint}"
-    )))
+    Err(Unsupported::Unlinked.into())
 }

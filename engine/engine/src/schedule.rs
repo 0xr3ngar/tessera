@@ -1,7 +1,7 @@
 //! Many answers in flight, one step feeding them all.
 
+use crate::Error;
 use crate::{Engine, Event, Reason, Request, Row};
-use lower::Error;
 use std::collections::VecDeque;
 
 /// Takes each event. `false` ends the answer early.

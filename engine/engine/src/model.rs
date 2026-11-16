@@ -1,8 +1,9 @@
 //! A forward graph with its weights, launched as a whole.
 
+use crate::Error;
 use graph::{DimExpr, DimName, Graph, Size};
 use interp::Tensor;
-use lower::{Cache, Device, Error, Recipe, Settings, Weight};
+use lower::{Cache, Device, Recipe, Settings, Weight};
 use run::{Run, open};
 
 /// Plans on a runner, lowered once per launch sizes.
@@ -44,9 +45,7 @@ fn sizes_of(
         }
     }
     if sizes.len() != bounded.len() {
-        return Err(Error::Size(
-            "an input axis for every bounded dimension".into(),
-        ));
+        return Err(Error::InputAxis);
     }
     Ok(sizes)
 }
@@ -61,13 +60,6 @@ fn floats(g: &Graph, at: usize, w: &Weight) -> Tensor {
     }
 }
 
-fn interpreted(e: interp::Error) -> Error {
-    match e {
-        interp::Error::Unsupported(m) => Error::Unsupported(m),
-        interp::Error::Mismatch(m) => Error::Size(m),
-    }
-}
-
 impl Model {
     /// A runner for `graph`, else the interpreter.
     pub fn open(graph: Graph, recipe: &Recipe, settings: &Settings) -> Result<Self, Error> {
@@ -79,11 +71,13 @@ impl Model {
         let least: Vec<(DimName, u64)> = bounded.iter().map(|d| (*d, 1)).collect();
         let mut plans = Cache::default();
         let executor = match plans.lower(&graph, 0, &least, &device) {
-            Err(Error::Unsupported(_)) => Executor::Interpreted(Vec::new()),
+            Err(lower::Error::Unsupported(_)) => Executor::Interpreted(Vec::new()),
             planned => {
                 let mut runner = open(planned?, settings)?;
                 runner.launching(recipe.launch);
-                let device = Device::stored(runner.platform(), settings)?.with(recipe);
+                let device = Device::stored(runner.platform(), settings)
+                    .map_err(lower::Error::from)?
+                    .with(recipe);
                 Executor::Planned(Box::new(Planned {
                     runner,
                     device,
@@ -130,7 +124,7 @@ impl Model {
         let sizes = sizes_of(g, &self.bounded, inputs)?;
         match &mut self.executor {
             Executor::Interpreted(weights) => {
-                interp::run(g, weights, 0, inputs).map_err(interpreted)
+                interp::run(g, weights, 0, inputs).map_err(Error::from)
             }
             Executor::Planned(p) => {
                 let plan = p.plans.lower(g, 0, &sizes, &p.device)?;
@@ -138,7 +132,10 @@ impl Model {
                 let views: Vec<_> = inputs.iter().map(Tensor::view).collect();
                 p.runner.feed(&views)?;
                 p.runner.submit(0..plan.steps.len())?;
-                plan.outputs.iter().map(|o| p.runner.read(o.slot)).collect()
+                plan.outputs
+                    .iter()
+                    .map(|o| Ok(p.runner.read(o.slot)?))
+                    .collect()
             }
         }
     }

@@ -1,4 +1,4 @@
-// `kernel-macro` includes this file, so it holds only the table.
+// `kernel-macro` and `host` include this file: only the table.
 
 /// Every intrinsic. `table!(m)` hands the rows to `m!`.
 macro_rules! table {

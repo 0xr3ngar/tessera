@@ -1,11 +1,12 @@
 //! Times whole model plans against the cost model.
 
 use crate::{headroom, measure};
+use engine::Error;
 use engine::{Engine, Request};
 use graph::DimName::{self, Context, Rows, Segments, Seqs};
 use graph::Graph;
 use lower::form::BF16_FORM;
-use lower::{Device, Error, Pins, Plan, Recipe, Settings, Tensor, View, Weight, lower, select};
+use lower::{Device, Pins, Plan, Recipe, Settings, Tensor, View, Weight, lower, select};
 use models::decoder::Swiglu;
 use models::{decoder, eg2};
 use run::{Run, open};
@@ -94,7 +95,7 @@ impl<'a> Bench<'a> {
         for (at, w) in weights(&s.graph, noise).iter().enumerate() {
             runner.load(at as u32, w.view())?;
         }
-        let device = Device::stored(runner.platform(), settings)?;
+        let device = Device::stored(runner.platform(), settings).map_err(lower::Error::from)?;
         let device = device.pinned(s.pins.clone());
         Ok(Self {
             s,
@@ -108,9 +109,12 @@ impl<'a> Bench<'a> {
     fn feeds(&self, at: &Sizes, noise: &mut Noise) -> Result<Vec<Tensor>, Error> {
         let g = &self.s.graph;
         let ports = g.entries[0].inputs.iter();
-        let fed = ports.map(|p| fill(g, &p.ty, at, noise));
-        fed.map(|t| t.ok_or_else(|| Error::Size("an input".into())))
-            .collect()
+        let fed = ports.map(|p| {
+            let unsized_shape =
+                || Error::from(lower::Error::from(lower::Size::Shape(p.ty.shape.clone())));
+            fill(g, &p.ty, at, noise).ok_or_else(unsized_shape)
+        });
+        fed.collect()
     }
 
     /// Runs `rows` as planned for `device`, and times each launch.
@@ -154,7 +158,7 @@ impl<'a> Bench<'a> {
         let (learned, all) = (self.learned, self.device.samples());
         println!("  timed {learned} launches; {all} samples known");
         if learned > 0 {
-            self.device.save(&file)?;
+            self.device.save(&file).map_err(lower::Error::from)?;
             println!("  stored in {}", file.display());
         }
         Ok(())

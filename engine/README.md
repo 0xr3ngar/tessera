@@ -21,6 +21,7 @@ and tokens.
 <tr><td colspan="2"><a href="plan"><b>plan/</b></a></td></tr>
 <tr><td>&emsp;<a href="plan/codegen">codegen</a></td><td>Generates kernel text for every dialect, and counts what it costs</td></tr>
 <tr><td>&emsp;<a href="plan/comm">engine-comm</a></td><td>Moves bytes between ranks over sockets, shared memory or RDMA</td></tr>
+<tr><td>&emsp;<a href="plan/host">host</a></td><td>Runs kernel bodies on the host, each group in lockstep</td></tr>
 <tr><td>&emsp;<a href="plan/jit">jit</a></td><td>Kernel bodies compiled for the host with Cranelift when a plan is made</td></tr>
 <tr><td>&emsp;<a href="plan/kernel-macro">kernel-macro</a></td><td>#[kernel]: a Rust function body as a kernel tree</td></tr>
 <tr><td>&emsp;<a href="plan/lower">lower</a></td><td>Lowers a graph to a plan of kernel launches</td></tr>
