@@ -292,11 +292,6 @@ pub(crate) fn products(
     }
 }
 
-thread_local! {
-    /// A weight row widened to f32, reused between dots.
-    static ROW: std::cell::RefCell<Vec<f32>> = const { std::cell::RefCell::new(Vec::new()) };
-}
-
 /// Eight running sums, so the loop vectorizes.
 pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     let mut acc = [0.0f32; 8];
@@ -358,11 +353,6 @@ pub fn dot_form(form: &dyn Form, a: &[u8], a_at: usize, b: &[u8], b_at: usize, n
             dot(x, f32_row(b, b_at, n, &mut other))
         }
         "bf16" => dot_bf16(x, &b[b_at * 2..(b_at + n) * 2]),
-        _ => ROW.with(|row| {
-            let mut row = row.borrow_mut();
-            row.clear();
-            row.extend((0..n).map(|i| form.unpack(b, b_at + i)));
-            dot(x, &row)
-        }),
+        _ => form.dot(x, b, b_at),
     }
 }

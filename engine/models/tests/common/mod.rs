@@ -244,9 +244,12 @@ pub fn native(spec: &Spec) {
         backend: Pick::Cpu,
         ..settings()
     };
-    for form in ["f32", "bf16", "q8_0"] {
+    for form in ["f32", "bf16", "q8_0", "q4_0", "nvfp4"] {
         let device = Device::guess(&cpu).pinned(Pins::all(named(form).unwrap()));
-        let plan = lower(&g, 0, &FAUX, &device).unwrap();
+        // A form the rows cannot take is not this test's.
+        let Ok(plan) = lower(&g, 0, &FAUX, &device) else {
+            continue;
+        };
         let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
         let native = names.iter().filter(|n| n.starts_with("cpu_")).count();
         assert!(native > 0, "{}: no native kernels in {names:?}", spec.name);

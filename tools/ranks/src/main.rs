@@ -22,6 +22,7 @@ use trace::Norm;
 
 const USAGE: &str = "tessera-ranks --rank N (--addrs HOST:PORT,... | --shm PATH --ranks N)
   [--model qwen3|granite] [--fixture DIR] [--listen ADDR] [--backend host|gpu] [--parts 3,1]
+  [--form q8_0]
   The fixture holds model.safetensors, and tokens.txt with logits.f32,
   at its root or under cases/prompt. Its default is TESSERA_<MODEL>.";
 
@@ -36,6 +37,8 @@ struct Args {
     listen: Option<SocketAddr>,
     host: bool,
     parts: Vec<u32>,
+    /// A form every weight takes, instead of the file's.
+    form: Option<String>,
 }
 
 fn parse(mut given: impl Iterator<Item = String>) -> Option<Args> {
@@ -49,6 +52,7 @@ fn parse(mut given: impl Iterator<Item = String>) -> Option<Args> {
         listen: None,
         host: false,
         parts: Vec::new(),
+        form: None,
     };
     while let Some(flag) = given.next() {
         let value = given.next()?;
@@ -64,6 +68,7 @@ fn parse(mut given: impl Iterator<Item = String>) -> Option<Args> {
             "--fixture" => args.fixture = Some(value.into()),
             "--listen" => args.listen = Some(value.parse().ok()?),
             "--backend" => args.host = value == "host" || value == "cpu",
+            "--form" => args.form = Some(value),
             "--parts" => {
                 let parts = value.split(',').map(|p| p.parse().ok());
                 args.parts = parts.collect::<Option<_>>()?;
@@ -191,7 +196,11 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let file = checkpoint::File::open(&fixture.join("model.safetensors"))?;
-    let (weights, pins) = bundle::pull(&g, &file, 0, &[]).map_err(|e| e.to_string())?;
+    let (weights, mut pins) = bundle::pull(&g, &file, 0, &[]).map_err(|e| e.to_string())?;
+    if let Some(form) = &args.form {
+        let form = lower::form::named(form).ok_or_else(|| format!("no form `{form}`"))?;
+        pins = lower::Pins::all(form);
+    }
     let kind = match args.host {
         true => ZoneKind::Cpu,
         false => ZoneKind::Gpu,

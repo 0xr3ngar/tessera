@@ -81,6 +81,11 @@ macro_rules! scale {
 scale!(F16(u16), 2, 65504.0, f16_scale_inline);
 scale!(E4M3(u8), 1, 448.0, e4m3_scale_inline);
 
+/// Every e2m1 value, by code.
+const E2M1_VALUES: [f32; 16] = [
+    0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
+];
+
 impl Code for E2M1 {
     const BITS: u32 = 4;
     const MAX: f32 = 6.0;
@@ -88,7 +93,7 @@ impl Code for E2M1 {
         u32::from(E2M1::from(scaled).0)
     }
     fn decode(code: u32) -> f32 {
-        E2M1(code as u8).into()
+        E2M1_VALUES[code as usize & 15]
     }
     fn field_inline(w: impl Pass<Expr>, low: impl Pass<Expr>) -> Inline {
         e2m1_field_inline(w, low)
@@ -339,6 +344,24 @@ impl<S: Scale, C: Code, const B: usize, const HALVES: bool, const HEAD: bool> Fo
             element_ir::<S, C, B, HALVES, HEAD>(self.name),
             four_ir::<S, C, B, HALVES, HEAD>(self.name),
         ]
+    }
+
+    /// Each block's codes against `x`, under the block's scale.
+    fn dot(&self, x: &[f32], bytes: &[u8], at: usize) -> f32 {
+        assert!(at.is_multiple_of(B), "a dot starts on a block");
+        let (head, mask) = (Self::head(bytes), (1u32 << C::BITS) - 1);
+        let mut sum = 0.0;
+        for (b, xs) in x.chunks(B).enumerate() {
+            let start = Self::HEAD_BYTES + (at / B + b) * Self::BLOCK_BYTES;
+            let codes = &bytes[start + S::BYTES..start + Self::BLOCK_BYTES];
+            let mut part = 0.0;
+            for (j, xj) in xs.iter().enumerate() {
+                let (byte, shift) = Self::place(j);
+                part += xj * C::decode((u32::from(codes[byte]) >> shift) & mask);
+            }
+            sum += S::get(&bytes[start..]) * part;
+        }
+        head * sum
     }
 
     fn unpack(&self, bytes: &[u8], index: usize) -> f32 {
