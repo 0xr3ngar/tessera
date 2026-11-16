@@ -1,13 +1,11 @@
 //! Shared graphs and inputs for the matmul tests.
 
 use codegen::ir::Param;
-use frontend_settings::read as settings;
-use gpukit::backend::Backend;
-use gpukit::testing::Noise;
 use graph::DimName::{Ffn, Hidden, Rows};
 use interp::Tensor;
-use lower::{Plan, Settings, Source, Terms};
+use lower::{Plan, Source, Terms};
 use std::collections::HashMap;
+use testkit::Noise;
 use trace::{DType, Dim, EntryKind, Graph, Linear, Model, Port, Role, TensorType, Weights};
 
 #[derive(Weights)]
@@ -38,26 +36,6 @@ pub fn finished(k: u64, n: u64, finish: Finish) -> Graph {
 pub fn noise(shape: Vec<usize>, noise: &mut Noise) -> Tensor {
     let data = (0..shape.iter().product()).map(|_| noise.draw()).collect();
     Tensor::f32(shape, data)
-}
-
-/// A GPU run, or each emulation on the host.
-pub fn runs() -> Vec<Settings> {
-    let s = settings();
-    if s.gpu().is_some() {
-        return vec![s];
-    }
-    let emulations = [
-        None,
-        Some(Backend::Metal),
-        Some(Backend::Cuda),
-        Some(Backend::Rocm),
-    ];
-    emulations
-        .map(|emulate| Settings {
-            emulate,
-            ..s.clone()
-        })
-        .to_vec()
 }
 
 /// The sums one output of `plan`'s only step gathers.

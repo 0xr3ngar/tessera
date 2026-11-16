@@ -224,7 +224,11 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
     }
 
     fn precision(&self) -> codegen::Precision {
-        crate::precision(D::BACKEND)
+        crate::precision(match D::BACKEND {
+            Backend::Metal => engine_settings::Backend::Metal,
+            Backend::Cuda => engine_settings::Backend::Cuda,
+            Backend::Rocm => engine_settings::Backend::Rocm,
+        })
     }
 
     /// Launches every step, as a recorded graph when whole.

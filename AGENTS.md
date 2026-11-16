@@ -23,6 +23,9 @@ instead.
 Prefer procedural loops over functional ones when heavily nested (eg `for` and
 `if` over `iter` and `map`/`filter`).
 
+Do not over-test. If lint flags excessive tests, assume you are over-testing and
+remove tests or refactor. Do not over-index on "byte identical".
+
 ## Process Self-Improvement
 
 If your PR was stuck for a long time on a process or code failure that was

@@ -1,6 +1,4 @@
-//! GPU readiness, and the shared test helpers.
-
-pub use testkit::{Noise, assert_oracle, cosine_f32, max_abs_diff, scratch};
+//! Whether each runtime, and the CI runner, is here.
 
 /// Whether a CUDA driver loads on this host.
 pub(crate) fn cuda_ready() -> bool {
@@ -16,4 +14,10 @@ pub(crate) fn rocm_ready() -> bool {
     return crate::rocm::cached_context().is_ok();
     #[cfg(not(feature = "rocm"))]
     false
+}
+
+/// Whether a hosted CI runner is running this process.
+#[allow(clippy::disallowed_methods, reason = "the one variable tests read")]
+pub(crate) fn ci() -> bool {
+    std::env::var_os("CI").is_some()
 }
