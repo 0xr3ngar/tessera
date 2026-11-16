@@ -14,6 +14,8 @@ pub struct Claim {
     pub name: String,
     /// `(first, count)` rows of a slice stacked over the layers.
     pub rows: Option<(usize, usize)>,
+    /// Slices stacked on the first axis, one per matrix.
+    pub parts: Vec<String>,
 }
 
 /// Why the weights and the slices do not pair off.
@@ -212,7 +214,11 @@ fn shaped(want: Option<&Vec<usize>>, slice: &Slice) -> bool {
 fn stacked(want: Option<&Vec<usize>>, slice: &Slice, index: Option<usize>) -> Option<Claim> {
     let name = slice.name.clone();
     if shaped(want, slice) {
-        return Some(Claim { name, rows: None });
+        return Some(Claim {
+            name,
+            rows: None,
+            parts: Vec::new(),
+        });
     }
     let (want, index) = (want?, index?);
     let (first, rest) = want.split_first()?;
@@ -221,6 +227,29 @@ fn stacked(want: Option<&Vec<usize>>, slice: &Slice, index: Option<usize>) -> Op
     fits.then(|| Claim {
         name,
         rows: Some((index * first, *first)),
+        parts: Vec::new(),
+    })
+}
+
+/// One slice per matrix of a set, each one matrix.
+fn parts<'a>(
+    want: Option<&Vec<usize>>,
+    stem: &str,
+    named: impl Fn(&str) -> Vec<&'a Slice>,
+) -> Option<Claim> {
+    let (count, one) = want?.split_first()?;
+    let mut parts = Vec::with_capacity(*count);
+    for e in 0..*count {
+        let slice = *named(&stem.replace("{}", &e.to_string())).first()?;
+        if wide(one) != wide(&slice.shape) {
+            return None;
+        }
+        parts.push(slice.name.clone());
+    }
+    Some(Claim {
+        name: parts.first()?.clone(),
+        rows: None,
+        parts,
     })
 }
 
@@ -254,16 +283,27 @@ pub fn resolve(g: &Graph, slices: &[Slice], rules: &[&[Rule]]) -> Result<Vec<Cla
                 Some(i) => stem.replace('*', &i.to_string()),
                 None => stem,
             };
-            let named: Vec<&Slice> = (slices.iter().zip(&parsed))
-                .filter(|(s, w)| holds(w.ending, r.part) && stem_of(&s.name, w.ending) == stem)
-                .map(|(s, _)| s)
-                .collect();
-            let named = preferred(r.part, named);
+            let named = |stem: &str| -> Vec<&Slice> {
+                let found = (slices.iter().zip(&parsed))
+                    .filter(|(s, w)| holds(w.ending, r.part) && stem_of(&s.name, w.ending) == stem)
+                    .map(|(s, _)| s);
+                preferred(r.part, found.collect())
+            };
+            // `{}` stands for each matrix of a set, stacked in order.
+            if stem.contains("{}") {
+                match parts(want.as_ref(), &stem, named) {
+                    Some(c) => out.push(c),
+                    None => failed.missing.push(r.text),
+                }
+                continue;
+            }
+            let named = named(&stem);
             let claim = named.first().and_then(|s| match layered {
                 true => stacked(want.as_ref(), s, r.index),
                 false => shaped(want.as_ref(), s).then(|| Claim {
                     name: s.name.clone(),
                     rows: None,
+                    parts: Vec::new(),
                 }),
             });
             match (claim, named.first()) {
@@ -289,6 +329,7 @@ pub fn resolve(g: &Graph, slices: &[Slice], rules: &[&[Rule]]) -> Result<Vec<Cla
             [one] => out.push(Claim {
                 name: (*one).into(),
                 rows: None,
+                parts: Vec::new(),
             }),
             [] => failed.missing.push(r.text),
             many => failed
