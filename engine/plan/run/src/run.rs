@@ -4,7 +4,8 @@ use crate::held::Held;
 use codegen::Precision;
 use gpukit::{Limits, Platform};
 use graph::DimName;
-use lower::{Arg, Error, Launch, Launching, Plan, Shape, Slot, Weight};
+use lower::form::Load;
+use lower::{Arg, Error, Launch, Launching, Plan, Shape, Share, Slot, Weight};
 use mem::{Tensor, View, copy};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -127,16 +128,15 @@ pub trait Run {
             .filter(|l| l.weight == weight)
             .map(|l| l.slot)
             .collect();
-        if self
-            .plan()
-            .weights
-            .iter()
-            .any(|l| l.weight == weight && l.share.is_some())
-        {
-            return Err(Error::Unsupported(
-                "a packed weight split over ranks".into(),
-            ));
-        }
+        let loaded = self.plan().weights.iter().find(|l| l.weight == weight);
+        let part = match loaded.and_then(|l| l.share) {
+            None => None,
+            Some(share) => match share.of(*form, bytes) {
+                Some(part) => Some(part),
+                None => return unpacked(self, weight, *form, bytes, share),
+            },
+        };
+        let bytes = part.as_deref().unwrap_or(bytes);
         for slot in slots {
             if form.bytes(slot.len) != bytes.len() {
                 return Err(Error::Size(format!("weight {weight} as {}", form.name())));
@@ -239,4 +239,37 @@ pub trait Run {
         let steps = 0..self.plan().steps.len();
         steps.map(|i| self.repeat(i, 1)).collect()
     }
+}
+
+/// A split the form cannot cut, decoded before the cut.
+fn unpacked<R: Run + ?Sized>(
+    r: &mut R,
+    weight: u32,
+    form: &dyn Load,
+    bytes: &[u8],
+    share: Share,
+) -> Result<(), Error> {
+    let n = form.elements(bytes.len());
+    let outer = n / (share.whole * share.inner).max(1);
+    let floats = Tensor::f32(
+        vec![outer, share.whole, share.inner],
+        (0..n).map(|i| form.unpack(bytes, i)).collect(),
+    );
+    let part = floats.view().slice(1, share.first, share.count);
+    let slots: Vec<Slot> = (r.plan().weights.iter())
+        .filter(|l| l.weight == weight)
+        .map(|l| l.slot)
+        .collect();
+    for slot in slots {
+        if !slot.form.packs() {
+            let what = format!(
+                "weight {weight} as {} split on axis {}",
+                form.name(),
+                share.axis
+            );
+            return Err(Error::Unsupported(what));
+        }
+        r.write(slot, part.clone())?;
+    }
+    Ok(())
 }

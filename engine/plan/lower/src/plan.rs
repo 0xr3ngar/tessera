@@ -75,6 +75,21 @@ pub struct Share {
     pub axis: u32,
     pub first: usize,
     pub count: usize,
+    /// The axis's whole length, and the elements after it.
+    pub whole: usize,
+    pub inner: usize,
+}
+
+impl Share {
+    /// This rank's part of `bytes`, packed as `form`.
+    pub fn of(&self, form: &dyn mem::form::Form, bytes: &[u8]) -> Option<Vec<u8>> {
+        let outer = form.elements(bytes.len()) / (self.whole * self.inner).max(1);
+        form.share(
+            bytes,
+            [outer, self.whole, self.inner],
+            [self.first, self.count],
+        )
+    }
 }
 
 /// A graph weight and where it loads, with its form.

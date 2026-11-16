@@ -3,7 +3,8 @@
 use super::{Spec, host, runs};
 use graph::{Placement, shard};
 use interp::{Tensor, run, run_ranks};
-use lower::{Cluster, Device, View, lower};
+use lower::form::BF16_FORM;
+use lower::{Cluster, Device, View, Weight, lower};
 use run::Loopback;
 use testkit::{Noise, fill, max_abs_diff};
 use trace::DimName::{Context, Seqs};
@@ -32,7 +33,9 @@ pub fn shards(spec: &Spec) {
     let sharded = shard(&g).unwrap();
     let mut noise = Noise(5);
     let mut draw = |ty: &TensorType| fill(&g, ty, &SIZES, &mut noise).unwrap();
-    let weights: Vec<Tensor> = g.weights.iter().map(|w| draw(&w.ty)).collect();
+    // As bf16, so each rank can load its part packed.
+    let half = |t: Tensor| Tensor::f32(t.shape.clone(), BF16_FORM.roundtrip(t.floats().unwrap()));
+    let weights: Vec<Tensor> = g.weights.iter().map(|w| half(draw(&w.ty))).collect();
     let inputs: Vec<Tensor> = g.entries[0].inputs.iter().map(|p| draw(&p.ty)).collect();
     // Each rank holds its own matrices of every set.
     for w in sharded.weights.iter().filter(|w| w.ty.rank() == 3) {
@@ -56,7 +59,8 @@ pub fn shards(spec: &Spec) {
     for settings in runs() {
         let mut ranks = Loopback::open(&plans, &settings).unwrap();
         for (at, w) in weights.iter().enumerate() {
-            ranks.load(at as u32, w.view()).unwrap();
+            let packed = Weight::Packed(BF16_FORM, BF16_FORM.pack(w.floats().unwrap()));
+            ranks.load_weight(at as u32, &packed).unwrap();
         }
         let feeds: Vec<View> = inputs.iter().map(Tensor::view).collect();
         let got = ranks.run(&feeds).unwrap();
