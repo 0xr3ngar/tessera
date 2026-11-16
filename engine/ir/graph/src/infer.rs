@@ -286,20 +286,26 @@ fn attend(dims: &[Dim], a: &[&TensorType]) -> Result<TensorType, TypeError> {
         || format!("attention needs whole or head-split tensors, got {p:?}"),
     )?;
     if let Some(ids) = a.get(3) {
-        let fits = ids.rank() == 3 && same_shape(dims, &front(&ids.shape, 2), &front(&q.shape, 2))?;
-        need(fits, ErrorKind::Shape, || {
-            format!("key lists {} do not match queries {}", ids.shape, q.shape)
-        })?;
-        need(ids.dtype.is_int(), ErrorKind::DType, || {
-            format!("key lists must be integers, got {:?}", ids.dtype)
-        })?;
-        need(
-            ids.placement == Placement::Replicated,
-            ErrorKind::Placement,
-            || "key lists must be replicated".into(),
-        )?;
+        key_lists(dims, ids, q, 2)?;
     }
     Ok(valued(q, v))
+}
+
+/// One integer key list per query, over `lead` axes.
+fn key_lists(dims: &[Dim], ids: &TensorType, q: &TensorType, lead: usize) -> Result<(), TypeError> {
+    let fits = ids.rank() == lead + 1
+        && same_shape(dims, &front(&ids.shape, lead), &front(&q.shape, lead))?;
+    need(fits, ErrorKind::Shape, || {
+        format!("key lists {} do not match queries {}", ids.shape, q.shape)
+    })?;
+    need(ids.dtype.is_int(), ErrorKind::DType, || {
+        format!("key lists must be integers, got {:?}", ids.dtype)
+    })?;
+    need(
+        ids.placement == Placement::Replicated,
+        ErrorKind::Placement,
+        || "key lists must be replicated".into(),
+    )
 }
 
 /// Queries' type with the values' width.
@@ -680,6 +686,9 @@ fn attend_rows(dims: &[Dim], a: &[&TensorType]) -> Result<TensorType, TypeError>
         "ragged attention needs replicated tensors".into()
     })?;
     row_ids(dims, &q.shape, a[3], a[4])?;
+    if let Some(ids) = a.get(5) {
+        key_lists(dims, ids, q, 1)?;
+    }
     Ok(valued(q, v))
 }
 
