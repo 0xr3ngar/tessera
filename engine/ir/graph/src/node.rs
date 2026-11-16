@@ -311,5 +311,7 @@ pub enum Role {
     Positions,
     /// Each row's kept-row lane.
     Slots,
+    /// The keys each query reads, by index.
+    Keys,
     Logits,
 }
