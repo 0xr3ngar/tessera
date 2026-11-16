@@ -60,6 +60,7 @@ fn rules_match(settings: &Settings) -> Vec<&'static str> {
         graphs::rotation(&d),
         graphs::table(&d, 32, 16),
         graphs::picks(&d, 16),
+        graphs::indexed(&d, [2, 16, 2]),
     ];
     let ours = ours();
     let mut used: Vec<&str> = Vec::new();

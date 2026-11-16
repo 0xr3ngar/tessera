@@ -130,7 +130,13 @@ impl Keys<'_> {
     }
 }
 
-pub(crate) fn attend(n: &Numerics, a: &Attend, qkv: [&Tensor; 3]) -> Result<Tensor, Error> {
+/// With `picked`, each query reads its listed keys in order.
+pub(crate) fn attend(
+    n: &Numerics,
+    a: &Attend,
+    qkv: [&Tensor; 3],
+    picked: Option<&Tensor>,
+) -> Result<Tensor, Error> {
     let acc = Acc::new(n.accumulate)?;
     let [q, k, v] = qkv;
     let [seqs, ctx, heads, d] = q.shape[..] else {
@@ -148,16 +154,32 @@ pub(crate) fn attend(n: &Numerics, a: &Attend, qkv: [&Tensor; 3]) -> Result<Tens
         v,
     };
     let mut out = vec![0.0; seqs * ctx * heads * dv];
+    let lists = picked.map(Tensor::indices).transpose()?;
     let mut p = Vec::with_capacity(keys);
     for s in 0..seqs {
         for t in 0..ctx {
+            let (from, to) = seen(a.mask, past + t, keys);
+            let all: Vec<usize> = match &lists {
+                Some(ids) => {
+                    let width = ids.len() / (seqs * ctx);
+                    let list = &ids[(s * ctx + t) * width..][..width];
+                    list.iter()
+                        .copied()
+                        .filter(|j| (from..to).contains(j))
+                        .collect()
+                }
+                None => (from..to).collect(),
+            };
             for h in 0..heads {
                 let row = (s * ctx + t) * heads + h;
-                let kv_at = |j: usize| (s * keys + j) * kv_heads + h / group;
-                let (from, to) = seen(a.mask, past + t, keys);
-                let at = (from..to).map(kv_at);
+                let kv_at = |j: &usize| (s * keys + j) * kv_heads + h / group;
                 let o = &mut out[row * dv..(row + 1) * dv];
-                kv.row(&qs[row * d..(row + 1) * d], at, &mut p, o);
+                kv.row(
+                    &qs[row * d..(row + 1) * d],
+                    all.iter().map(kv_at),
+                    &mut p,
+                    o,
+                );
             }
         }
     }

@@ -2,17 +2,21 @@
 
 mod argmax;
 mod attend;
+mod batched;
 mod by_sum;
 mod flash;
 mod gather;
 mod hadamard;
 mod join;
 mod lane_norm;
+mod listed;
+mod mask;
 mod mean;
 mod rms_norm;
 mod rope;
 mod softmax;
 mod take;
+mod view;
 
 pub use attend::Attend;
 pub use gather::Gather;
