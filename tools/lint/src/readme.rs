@@ -52,15 +52,64 @@ pub fn folders(crates: &[Crate]) -> BTreeMap<String, Vec<&Crate>> {
     out
 }
 
-/// The table for `folder`, with links relative to it.
+/// `&`, `<` and `>` as HTML entities.
+fn escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// One indent step per folder level.
+fn indent(depth: usize) -> String {
+    "&emsp;".repeat(depth)
+}
+
+/// `folder`'s crates as a tree. Folder rows span both columns.
 pub fn table(folder: &str, crates: &[&Crate]) -> String {
-    let mut out = String::from("Crate | Description\n--- | ---\n");
+    let mut sorted: Vec<(Vec<&str>, &Crate)> = Vec::new();
     for c in crates {
-        let link = c.dir[folder.len()..].trim_end_matches('/');
-        let desc = c.description.replace('|', "\\|");
-        out.push_str(&format!("[{}]({link}) | {desc}\n", c.name));
+        let rel = c.dir[folder.len()..].trim_end_matches('/');
+        sorted.push((rel.split('/').collect(), c));
     }
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut out = String::from("<table>\n<tr><th>Crate</th><th>Description</th></tr>\n");
+    let mut open: Vec<&str> = Vec::new();
+    for (parts, c) in &sorted {
+        let (dirs, _) = parts.split_at(parts.len() - 1);
+        let shared = open.iter().zip(dirs).take_while(|(a, b)| a == b).count();
+        open.truncate(shared);
+        for (depth, name) in dirs.iter().enumerate().skip(shared) {
+            open.push(name);
+            let link = open.join("/");
+            let pad = indent(depth);
+            out.push_str(&format!(
+                "<tr><td colspan=\"2\">{pad}<a href=\"{link}\"><b>{name}/</b></a></td></tr>\n"
+            ));
+        }
+        let (link, pad, desc) = (parts.join("/"), indent(dirs.len()), escape(&c.description));
+        out.push_str(&format!(
+            "<tr><td>{pad}<a href=\"{link}\">{}</a></td><td>{desc}</td></tr>\n",
+            escape(&c.name)
+        ));
+    }
+    out.push_str("</table>\n");
     out
+}
+
+/// The table's length after the marker: HTML or Markdown.
+fn table_len(text: &str) -> usize {
+    let mut lines = text.split_inclusive('\n');
+    if !text.starts_with("<table") {
+        return lines.take_while(|l| l.contains('|')).map(str::len).sum();
+    }
+    let mut len = 0;
+    for l in lines.by_ref() {
+        len += l.len();
+        if l.trim_end() == "</table>" {
+            break;
+        }
+    }
+    len
 }
 
 /// `text` with the table after its marker replaced.
@@ -68,11 +117,7 @@ pub fn splice(text: &str, table: &str) -> Option<String> {
     let at = text.find(MARKER)?;
     let body = at + MARKER.len();
     let body = body + text[body..].find('\n').map_or(text.len() - body, |n| n + 1);
-    let old: usize = text[body..]
-        .split_inclusive('\n')
-        .take_while(|l| l.contains('|'))
-        .map(str::len)
-        .sum();
+    let old = table_len(&text[body..]);
     Some(format!("{}{table}{}", &text[..body], &text[body + old..]))
 }
 
