@@ -202,6 +202,11 @@ impl<F: Elems> BufMut<F> {
     pub fn store4(&mut self, _: u64, _: F32x4) {
         device()
     }
+
+    /// `n` elements from `at` become `self * keep + p * b`.
+    pub fn mix<G: Elems>(&mut self, _: u64, _: f32, _: f32, _: Buf<G>, _: u64, _: u32) {
+        device()
+    }
 }
 
 /// Group memory, for the whole group.

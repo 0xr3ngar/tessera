@@ -118,6 +118,32 @@ pub unsafe extern "C" fn st_f32(p: *mut u8, len: usize, at: usize, v: f32) {
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "two rows, two scales and a length"
+)]
+pub unsafe extern "C" fn mix_f32(
+    out: *mut u8,
+    out_len: usize,
+    at: usize,
+    keep: f32,
+    p: f32,
+    b: *const u8,
+    b_len: usize,
+    b_at: usize,
+    n: usize,
+) {
+    let fits = unsafe { within(out, out_len, (at + n) * 4) }.is_some();
+    let Some(b) = (unsafe { within(b, b_len, (b_at + n) * 4) }) else {
+        return;
+    };
+    if fits {
+        // SAFETY: checked above.
+        let out = unsafe { std::slice::from_raw_parts_mut(out, out_len) };
+        lockstep::mix_f32(out, at, keep, p, b, b_at, n);
+    }
+}
+
 pub unsafe extern "C" fn st_u32(p: *mut u8, len: usize, at: usize, v: u32) {
     if unsafe { within(p, len, at * 4 + 4) }.is_some() {
         // SAFETY: checked above.
