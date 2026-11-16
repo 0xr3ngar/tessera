@@ -4,6 +4,7 @@ use super::{Spec, Tolerance, interpreted, loaded, runs};
 use interp::Tensor;
 use lower::{Cache, Device, Form, Pins, Settings, View, lower};
 use run::Run;
+use std::sync::MutexGuard;
 use testkit::{argmax, max_abs_diff};
 use trace::DimName::{self, Context, Rows, Segments, Seqs};
 use trace::Graph;
@@ -18,6 +19,8 @@ struct Fixture {
     tolerance: &'static Tolerance,
     /// The form plans keep the checkpoint in.
     form: &'static dyn Form,
+    /// The reference's turn, held until the runner closes.
+    _turn: MutexGuard<'static, ()>,
 }
 
 fn fixture(spec: &Spec, g: &Graph, settings: Settings) -> Option<Fixture> {
@@ -32,6 +35,7 @@ fn fixture(spec: &Spec, g: &Graph, settings: Settings) -> Option<Fixture> {
         tokens: one.tokens,
         tolerance: &logits.tolerance,
         form: golden.form,
+        _turn: reference.turn,
     })
 }
 
