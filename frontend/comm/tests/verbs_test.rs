@@ -24,7 +24,7 @@ fn rounds(fabric: &Fabric, ranks: u32) {
                 s.spawn(move || {
                     let listener = listeners[r as usize].lock().unwrap().try_clone().unwrap();
                     let mut boot = sockets(r, listener, addrs).unwrap();
-                    let mut t = Verbs::connect(r, ranks, fabric, 1 << 16, &mut boot).unwrap();
+                    let mut t = Verbs::connect(r, ranks, fabric, 1 << 16, &mut boot, None).unwrap();
                     assert_eq!((t.rank(), t.ranks()), (r, ranks));
                     let mut out = t.exchange(&[r as u8; 3]).unwrap();
                     // Lengths differ by rank, and one is empty.

@@ -2,11 +2,13 @@
 
 mod fabric;
 mod ibv;
+pub mod reduce;
 mod shm;
 mod sockets;
 mod verbs;
 
 pub use fabric::{Fabric, Port};
+pub use reduce::{Pinned, Pinning, Reduce};
 pub use shm::Shm;
 pub use sockets::Sockets;
 pub use verbs::Verbs;
@@ -20,6 +22,10 @@ pub trait Transport {
     fn ranks(&self) -> u32;
     /// Every rank's bytes, in rank order, `mine` among them.
     fn exchange(&mut self, mine: &[u8]) -> Result<Vec<Vec<u8>>, Error>;
+    /// A device's way to run the rounds itself, if any.
+    fn device(&mut self) -> Option<Reduce> {
+        None
+    }
 }
 
 impl<T: Transport + ?Sized> Transport for Box<T> {
@@ -33,6 +39,10 @@ impl<T: Transport + ?Sized> Transport for Box<T> {
 
     fn exchange(&mut self, mine: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
         (**self).exchange(mine)
+    }
+
+    fn device(&mut self) -> Option<Reduce> {
+        (**self).device()
     }
 }
 

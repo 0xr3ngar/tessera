@@ -22,7 +22,7 @@ use trace::Norm;
 
 const USAGE: &str = "tessera-ranks --rank N (--addrs HOST:PORT,... | --shm PATH --ranks N)
   [--model qwen3|granite] [--fixture DIR] [--listen ADDR] [--backend host|gpu] [--parts 3,1]
-  [--form q8_0] [--verbs DEV[:GID],... | --ring PREVDEV,.../NEXTDEV,...]
+  [--form q8_0] [--verbs DEV[:GID],... | --ring PREVDEV,.../NEXTDEV,...] [--repeat N]
   --verbs and --ring move the sums over RDMA, one lane per device, after the
   ranks meet over the sockets or the file.
   The fixture holds model.safetensors, and tokens.txt with logits.f32,
@@ -41,6 +41,8 @@ struct Args {
     parts: Vec<u32>,
     /// A form every weight takes, instead of the file's.
     form: Option<String>,
+    /// Forward passes to run. The last one is reported.
+    repeat: usize,
     /// RDMA ports, after the ranks meet.
     fabric: Option<Fabric>,
 }
@@ -57,6 +59,7 @@ fn parse(mut given: impl Iterator<Item = String>) -> Option<Args> {
         host: false,
         parts: Vec::new(),
         form: None,
+        repeat: 1,
         fabric: None,
     };
     while let Some(flag) = given.next() {
@@ -74,6 +77,7 @@ fn parse(mut given: impl Iterator<Item = String>) -> Option<Args> {
             "--listen" => args.listen = Some(value.parse().ok()?),
             "--backend" => args.host = value == "host" || value == "cpu",
             "--form" => args.form = Some(value),
+            "--repeat" => args.repeat = value.parse().ok().filter(|n| *n > 0)?,
             "--verbs" => args.fabric = Some(Fabric::Mesh(ports(&value).ok()?)),
             "--ring" => {
                 let (prev, next) = value.split_once('/')?;
@@ -169,12 +173,17 @@ fn meet(args: &Args) -> Result<Box<dyn Transport>, Box<dyn std::error::Error>> {
 }
 
 /// The sums' transport: RDMA when ports are given.
-fn join(args: &Args) -> Result<Box<dyn Transport>, Box<dyn std::error::Error>> {
+fn join(
+    args: &Args,
+    settings: &lower::Settings,
+) -> Result<Box<dyn Transport>, Box<dyn std::error::Error>> {
     let mut met = meet(args)?;
     let Some(fabric) = &args.fabric else {
         return Ok(met);
     };
-    let verbs = Verbs::connect(args.rank, args.ranks as u32, fabric, CAPACITY, &mut *met)?;
+    let (rank, ranks) = (args.rank, args.ranks as u32);
+    let pinning = run::pinning(settings);
+    let verbs = Verbs::connect(rank, ranks, fabric, CAPACITY, &mut *met, pinning)?;
     eprintln!(
         "rank {}: sums over {} RDMA lanes",
         args.rank,
@@ -259,9 +268,17 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         start.elapsed().as_secs_f64()
     );
 
-    let transport = join(args)?;
+    let transport = join(args, &settings)?;
     let mut rank = Rank::open(plan, &settings, transport)?;
-    eprintln!("rank {}: on {}", args.rank, rank.runner().device());
+    let sums = match rank.on_device() {
+        true => "on the device",
+        false => "on the host",
+    };
+    eprintln!(
+        "rank {}: on {}, sums {sums}",
+        args.rank,
+        rank.runner().device()
+    );
     let start = Instant::now();
     for (at, w) in weights.iter().enumerate() {
         rank.load(at as u32, floats(&g, at, w).view())?;
@@ -275,6 +292,9 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let ids = Tensor::u32(vec![1, n], tokens);
     let positions = Tensor::u32(vec![1, n], (0..n as u32).collect());
     let feeds = [ids.view(), positions.view()];
+    for _ in 1..args.repeat {
+        rank.run(&feeds)?;
+    }
     let start = Instant::now();
     let out = rank.run(&feeds)?;
     let seconds = start.elapsed().as_secs_f64();
