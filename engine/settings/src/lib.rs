@@ -30,6 +30,8 @@ pub struct Settings {
     pub names: Option<PathBuf>,
     /// The GPU whose tile rounding the host imitates.
     pub emulate: Option<Backend>,
+    /// RDMA port specs the loopback tests run over.
+    pub verbs: Option<String>,
 }
 
 impl Default for Settings {
@@ -41,6 +43,7 @@ impl Default for Settings {
             references: BTreeMap::new(),
             names: None,
             emulate: None,
+            verbs: None,
         }
     }
 }

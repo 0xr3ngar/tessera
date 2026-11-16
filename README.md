@@ -38,7 +38,7 @@ Crate | Description
 [trace-derive](engine/ir/trace-derive) | #[derive(Weights)] for model descriptions
 [models](engine/models) | Model descriptions, traced into graphs
 [codegen](engine/plan/codegen) | Generates kernel text for every dialect, and counts what it costs
-[engine-comm](engine/plan/comm) | Moves bytes between ranks over sockets or shared memory the front end opened
+[engine-comm](engine/plan/comm) | Moves bytes between ranks over sockets, shared memory or RDMA
 [jit](engine/plan/jit) | Kernel bodies compiled for the host with Cranelift when a plan is made
 [kernel-macro](engine/plan/kernel-macro) | #[kernel]: a Rust function body as a kernel tree
 [lower](engine/plan/lower) | Lowers a graph to a plan of kernel launches

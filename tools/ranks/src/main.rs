@@ -5,8 +5,8 @@ use cpu as _;
 use kernels as _;
 use linear as _;
 
-use engine_comm::Transport;
-use frontend_comm::{shm, sockets};
+use engine_comm::{Fabric, Transport, Verbs};
+use frontend_comm::{ports, shm, sockets};
 use graph::DimName::{Context, Seqs};
 use graph::shard;
 use interp::Tensor;
@@ -22,7 +22,9 @@ use trace::Norm;
 
 const USAGE: &str = "tessera-ranks --rank N (--addrs HOST:PORT,... | --shm PATH --ranks N)
   [--model qwen3|granite] [--fixture DIR] [--listen ADDR] [--backend host|gpu] [--parts 3,1]
-  [--form q8_0]
+  [--form q8_0] [--verbs DEV[:GID],... | --ring PREVDEV,.../NEXTDEV,...]
+  --verbs and --ring move the sums over RDMA, one lane per device, after the
+  ranks meet over the sockets or the file.
   The fixture holds model.safetensors, and tokens.txt with logits.f32,
   at its root or under cases/prompt. Its default is TESSERA_<MODEL>.";
 
@@ -39,6 +41,8 @@ struct Args {
     parts: Vec<u32>,
     /// A form every weight takes, instead of the file's.
     form: Option<String>,
+    /// RDMA ports, after the ranks meet.
+    fabric: Option<Fabric>,
 }
 
 fn parse(mut given: impl Iterator<Item = String>) -> Option<Args> {
@@ -53,6 +57,7 @@ fn parse(mut given: impl Iterator<Item = String>) -> Option<Args> {
         host: false,
         parts: Vec::new(),
         form: None,
+        fabric: None,
     };
     while let Some(flag) = given.next() {
         let value = given.next()?;
@@ -69,6 +74,12 @@ fn parse(mut given: impl Iterator<Item = String>) -> Option<Args> {
             "--listen" => args.listen = Some(value.parse().ok()?),
             "--backend" => args.host = value == "host" || value == "cpu",
             "--form" => args.form = Some(value),
+            "--verbs" => args.fabric = Some(Fabric::Mesh(ports(&value).ok()?)),
+            "--ring" => {
+                let (prev, next) = value.split_once('/')?;
+                let (prev, next) = (ports(prev).ok()?, ports(next).ok()?);
+                args.fabric = Some(Fabric::Ring { prev, next });
+            }
             "--parts" => {
                 let parts = value.split(',').map(|p| p.parse().ok());
                 args.parts = parts.collect::<Option<_>>()?;
@@ -143,17 +154,33 @@ fn graph(model: &str, n: u64) -> Option<graph::Graph> {
     })
 }
 
+/// Room for every token's logits, and then some.
+const CAPACITY: usize = 64 << 20;
+
 /// Joins the ranks over the file, or over sockets.
-fn join(args: &Args) -> Result<Box<dyn Transport>, Box<dyn std::error::Error>> {
+fn meet(args: &Args) -> Result<Box<dyn Transport>, Box<dyn std::error::Error>> {
     if let Some(path) = &args.shm {
-        // Room for every token's logits, and then some.
-        let capacity = 64 << 20;
-        return Ok(Box::new(shm(path, args.rank, args.ranks as u32, capacity)?));
+        return Ok(Box::new(shm(path, args.rank, args.ranks as u32, CAPACITY)?));
     }
     let listen = args.listen.unwrap_or(args.addrs[args.rank as usize]);
     let listener = TcpListener::bind(listen)?;
     eprintln!("rank {}: listening on {listen}", args.rank);
     Ok(Box::new(sockets(args.rank, listener, &args.addrs)?))
+}
+
+/// The sums' transport: RDMA when ports are given.
+fn join(args: &Args) -> Result<Box<dyn Transport>, Box<dyn std::error::Error>> {
+    let mut met = meet(args)?;
+    let Some(fabric) = &args.fabric else {
+        return Ok(met);
+    };
+    let verbs = Verbs::connect(args.rank, args.ranks as u32, fabric, CAPACITY, &mut *met)?;
+    eprintln!(
+        "rank {}: sums over {} RDMA lanes",
+        args.rank,
+        fabric.lanes()
+    );
+    Ok(Box::new(verbs))
 }
 
 fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {

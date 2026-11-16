@@ -1,10 +1,15 @@
 //! Moves bytes between ranks over handles the front end opened.
 
+mod fabric;
+mod ibv;
 mod shm;
 mod sockets;
+mod verbs;
 
+pub use fabric::{Fabric, Port};
 pub use shm::Shm;
 pub use sockets::Sockets;
+pub use verbs::Verbs;
 
 use std::fmt;
 use std::io;
@@ -48,6 +53,8 @@ pub enum Error {
     Io(io::Error),
     /// A handle, slot or round the ranks do not fit.
     Fit(String),
+    /// The RDMA devices or a peer failed.
+    Link(String),
 }
 
 impl fmt::Display for Error {
@@ -55,6 +62,7 @@ impl fmt::Display for Error {
         match self {
             Error::Io(e) => write!(f, "io: {e}"),
             Error::Fit(what) => write!(f, "fit: {what}"),
+            Error::Link(what) => write!(f, "link: {what}"),
         }
     }
 }
@@ -69,3 +77,7 @@ impl From<io::Error> for Error {
 
 #[cfg(test)]
 mod comm_test;
+#[cfg(test)]
+mod fabric_test;
+#[cfg(test)]
+mod ibv_test;
