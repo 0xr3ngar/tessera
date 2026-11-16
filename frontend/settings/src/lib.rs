@@ -2,6 +2,7 @@
 
 use engine_settings::{Backend, Pick, Settings};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// The `TESSERA_` variables.
