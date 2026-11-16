@@ -702,6 +702,7 @@ dependencies = [
  "frontend-settings",
  "serde",
  "serde_json",
+ "tasks",
 ]
 
 [[package]]

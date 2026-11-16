@@ -20,6 +20,11 @@ impl Hf {
         Ok(self.0.encode(text, false)?.get_ids().to_vec())
     }
 
+    /// Ids of `text` with the special tokens the file adds.
+    pub fn encode_special(&self, text: &str) -> Result<Vec<u32>, Error> {
+        Ok(self.0.encode(text, true)?.get_ids().to_vec())
+    }
+
     /// The text of `ids`, minus special tokens. Empty if unknown.
     pub fn decode(&self, ids: &[u32]) -> String {
         self.0.decode(ids, true).unwrap_or_default()
