@@ -3,11 +3,11 @@
 use super::small;
 use graph::{Parts, Placement, Stage, shard};
 use interp::{Tensor, run, run_parts};
-use lower::testing::host;
 use lower::{Device, lower};
 use models::decoder::{Config, Moe, Scales, program};
 use parity::pair;
 use run::Loopback;
+use run::testing::host;
 use testkit::{Noise, fill, max_abs_diff};
 use trace::DimName::{Context, Seqs};
 use trace::{DimName, TensorType};

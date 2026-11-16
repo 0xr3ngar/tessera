@@ -1,9 +1,7 @@
 //! Graphs on runners: decode loops and single launches.
 
 // Linking the crates registers their rules.
-use cpu as _;
-use kernels as _;
-use linear as _;
+use rules as _;
 
 use graph::DimName::{Context, Rows, Segments, Seqs};
 use lower::{Cache, Device};
@@ -23,10 +21,11 @@ pub use engine_comm as comm;
 pub use engine_settings::Backend;
 pub use graph::{Bf16, DimExpr, E4M3, F16, Graph, PathSeg, Shape};
 pub use interp::{Tensor, bind};
-pub use lower::{Error, Pick, Pins, Recipe, Settings, Weight, form, gpu};
+pub use lower::{Error, Pick, Pins, Recipe, Settings, Weight, form};
 pub use mem::form as storage;
 pub use mem::{block, trellis};
 pub use models::{Stack, decoder, eg2, mla, tagger};
+pub use run::gpu;
 pub use trace::{Linear, Norm};
 
 /// Tokens to continue, and when to stop.

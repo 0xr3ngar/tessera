@@ -5,9 +5,9 @@ use graph::DimName::{Context, Seqs};
 use graph::{Graph, PathSeg, shard};
 use interp::{Tensor, run};
 use lower::form::BF16_FORM;
-use lower::testing::runs;
 use lower::{Device, ZoneKind, lower};
 use run::Loopback;
+use run::testing::runs;
 use std::path::Path;
 use testkit::{Noise, cosine_f32, max_abs_diff, weights};
 
@@ -36,7 +36,7 @@ fn path(segs: &[PathSeg]) -> String {
 /// `weights` as HF slices in one bf16 file, experts apart.
 fn write(dir: &Path, g: &Graph, weights: &[Tensor]) {
     let c = bundle::mla::config(CONFIG, 1, ROWS as u64).unwrap();
-    let rules = bundle::mla::rules(&c);
+    let rules = bundle::mla::rules(&c, false);
     let (mut header, mut data) = (Vec::new(), Vec::new());
     let mut slice = |name: String, shape: &[usize], values: &[f32]| {
         let at = data.len();

@@ -1,9 +1,7 @@
 //! The per-model suite: what every model test runs alike.
 
 // Linking these registers their lowering rules.
-use cpu as _;
-use kernels as _;
-use linear as _;
+use rules as _;
 
 mod golden;
 mod gpu;
@@ -20,8 +18,8 @@ use bundle::names::{repo, resolve};
 use checkpoint::{Slice, Stored};
 use interp::{Tensor, run};
 use lower::form::named;
-use lower::testing::{host, runs};
 use lower::{Device, Pick, Pins, Plan, Settings, View, lower, rules};
+use run::testing::{host, runs};
 use run::{Run, open};
 use testkit::{Noise, cosine_f32, fill, max_abs_diff};
 use trace::DimName::{Context, Seqs};

@@ -2,9 +2,9 @@
 
 use super::{Spec, loaded};
 use interp::{Store, Tensor, run, run_kept};
-use lower::testing::runs;
 use lower::{Cache, Device, View};
 use run::Run;
+use run::testing::runs;
 use testkit::{Noise, argmax, cosine_f32, max_abs_diff, weights};
 use trace::DimName::{Context, Rows, Seqs};
 use trace::Graph;

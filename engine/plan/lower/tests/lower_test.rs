@@ -6,12 +6,12 @@ use interp::{Tensor, run};
 use lower::form::{BF16_FORM, F32_FORM};
 use lower::kernels::{Map, MapStage, Widen};
 use lower::sites;
-use lower::testing::{host, runs};
 use lower::{
     Arg, Buffer, Device, Dialect, Draft, Error, Fit, Kernel, KernelRef, Pins, Plan, Slot, Source,
     Step, T, Tree,
 };
 use lower::{assign, lower, peak, rules, schedule, select};
+use run::testing::{host, runs};
 use run::{Held, open};
 use sim::Chip;
 use testkit::{Noise, fill, max_abs_diff, scratch};
@@ -495,8 +495,5 @@ fn unlinked_rules_fail() {
     let Err(Error::Unsupported(what)) = lower::linked(&own) else {
         panic!("only this crate's rules passed as linked");
     };
-    assert!(
-        what.contains("use kernels as _; use linear as _;"),
-        "{what}"
-    );
+    assert!(what.contains("use rules as _;"), "{what}");
 }
