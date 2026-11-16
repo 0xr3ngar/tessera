@@ -337,6 +337,12 @@ impl Device for Context {
         self.compile_kernel(source, entry)
     }
 
+    /// Shared storage, once this thread's launches finish.
+    fn mapped(&self, ptr: u64, size: usize) -> Option<NonNull<u8>> {
+        self.finish().ok()?;
+        self.span(ptr, size).ok()
+    }
+
     /// Commits this thread's command buffer. Returns its GPU seconds.
     fn finish(&self) -> Result<Option<f64>, Error> {
         let taken = PENDING.with(|p| {

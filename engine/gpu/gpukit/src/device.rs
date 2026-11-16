@@ -3,6 +3,7 @@
 use crate::backend::Backend;
 use crate::{Error, Platform};
 use std::collections::HashMap;
+use std::ptr::NonNull;
 use std::sync::{Mutex, OnceLock};
 
 /// A backend context: memory, kernels and process-wide caches.
@@ -33,6 +34,11 @@ pub trait Device: Clone + Send + Sync + 'static {
 
     /// Lets this thread's launches overlap the one before.
     fn programmatic(&self, _on: bool) {}
+
+    /// The bytes at `ptr`, when the host addresses them.
+    fn mapped(&self, _ptr: u64, _size: usize) -> Option<NonNull<u8>> {
+        None
+    }
 
     /// Pinned host memory: its host and device addresses.
     fn pin(&self, _size: usize) -> Result<(u64, u64), Error> {
@@ -181,18 +187,21 @@ impl<D: Device> DeviceBuffer<D> {
     }
 }
 
-/// Device memory for a zone: never mapped, always copied.
+/// Device memory for a zone, mapped when shared.
 impl<D: Device> mem::Backing for DeviceBuffer<D> {
     fn bytes(&self) -> usize {
         self.size
     }
 
     fn mapped(&self) -> Option<&[u8]> {
-        None
+        let at = self.ctx.mapped(self.ptr, self.size)?;
+        // The mapping lives as long as the allocation.
+        Some(unsafe { std::slice::from_raw_parts(at.as_ptr(), self.size) })
     }
 
     fn mapped_mut(&mut self) -> Option<&mut [u8]> {
-        None
+        let at = self.ctx.mapped(self.ptr, self.size)?;
+        Some(unsafe { std::slice::from_raw_parts_mut(at.as_ptr(), self.size) })
     }
 
     fn upload(&mut self, at: usize, bytes: &[u8]) -> Result<(), mem::Error> {
