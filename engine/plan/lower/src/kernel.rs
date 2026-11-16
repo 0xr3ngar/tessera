@@ -2,8 +2,8 @@
 
 use crate::abi::{Launch, Source};
 use crate::plan::Step;
-use gpukit::Platform;
 use graph::Order;
+use platform::Platform;
 use sim::{Load, ZoneKind};
 use std::fmt;
 use std::sync::Arc;
