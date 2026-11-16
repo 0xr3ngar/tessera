@@ -78,7 +78,7 @@ impl BinOp {
         }
     }
 
-    pub(crate) fn compares(self) -> bool {
+    pub fn compares(self) -> bool {
         use BinOp::*;
         matches!(self, Lt | Le | Gt | Ge | Eq | Ne | And | Or)
     }

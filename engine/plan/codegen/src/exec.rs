@@ -3,6 +3,7 @@
 use crate::form::Form;
 use crate::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt, Ty};
 use crate::kept::Layout;
+use crate::lockstep::products;
 use crate::numerics::Precision;
 use graph::{E2M1, E4M3, F16};
 use std::collections::HashMap;
@@ -583,25 +584,12 @@ impl Group<'_, '_> {
                     let (sa, sb) = (&self.shared[a], &self.shared[b]);
                     let mut block =
                         std::mem::take(&mut self.tiles.get_mut(acc).expect("tile sums").2[s]);
-                    let p = self.precision;
-                    for i in 0..rows {
-                        for j in 0..cols {
-                            let sum = &mut block[i * cols + j];
-                            // The unit sums `p.depth` products, then adds them in.
-                            for chunk in (0..*depth).step_by(p.depth.max(1)) {
-                                let mut part = 0.0f32;
-                                for k in chunk..(chunk + p.depth.max(1)).min(*depth) {
-                                    let (ah, al) = p.split(sa[a0 + i * ld + k].f());
-                                    let (bh, bl) = p.split(sb[b0 + j * ld + k].f());
-                                    // The split's products: hi·hi, hi·lo, lo·hi.
-                                    part = ah.mul_add(bh, part);
-                                    part = ah.mul_add(bl, part);
-                                    part = al.mul_add(bh, part);
-                                }
-                                *sum = p.accumulate(*sum, part);
-                            }
-                        }
-                    }
+                    let (p, ra, rb) = (
+                        self.precision,
+                        |i: usize| sa[a0 + i].f(),
+                        |i: usize| sb[b0 + i].f(),
+                    );
+                    products(p, rows, cols, ld, *depth, ra, rb, &mut block);
                     self.tiles.get_mut(acc).expect("tile sums").2[s] = block;
                 }
             }

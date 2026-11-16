@@ -31,6 +31,7 @@ checkpoint = { path = "frontend/checkpoint" }
 gemm = { path = "engine/gpu/gemm" }
 codegen = { path = "engine/plan/codegen" }
 engine-comm = { path = "engine/plan/comm" }
+emit = { path = "engine/plan/emit" }
 engine = { path = "engine/engine" }
 engine-settings = { path = "engine/settings" }
 findings = { path = "tools/findings" }

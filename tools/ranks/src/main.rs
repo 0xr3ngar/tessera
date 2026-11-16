@@ -2,6 +2,7 @@
 
 // Linking these registers their lowering rules.
 use cpu as _;
+use engine as _;
 use kernels as _;
 use linear as _;
 

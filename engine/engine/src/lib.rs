@@ -17,6 +17,20 @@ use std::sync::mpsc;
 mod model;
 mod schedule;
 
+/// Host kernels compiled from the small graphs' bodies.
+#[allow(
+    clippy::all,
+    dead_code,
+    nonstandard_style,
+    unused_assignments,
+    unused_mut,
+    unused_parens,
+    unused_variables
+)]
+mod compiled {
+    include!(concat!(env!("OUT_DIR"), "/kernels.rs"));
+}
+
 pub use model::Model;
 pub use schedule::{Batch, Fair, Policy, Seq, Sink};
 

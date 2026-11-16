@@ -1,5 +1,6 @@
 //! Runs lowered plans on the host or a GPU.
 
+pub mod compiled;
 mod cpu;
 #[cfg(any(feature = "cuda", feature = "rocm"))]
 mod device;

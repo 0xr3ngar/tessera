@@ -39,6 +39,7 @@ Crate | Description
 [models](engine/models) | Model descriptions, traced into graphs
 [codegen](engine/plan/codegen) | Generates kernel text for every dialect, and counts what it costs
 [engine-comm](engine/plan/comm) | Moves bytes between ranks over sockets or shared memory the front end opened
+[emit](engine/plan/emit) | Rust source for kernel bodies, run in lockstep on the host
 [kernel-macro](engine/plan/kernel-macro) | #[kernel]: a Rust function body as a kernel tree
 [lower](engine/plan/lower) | Lowers a graph to a plan of kernel launches
 [run](engine/plan/run) | Runs lowered plans on the host, Metal, CUDA or ROCm

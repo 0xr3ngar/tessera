@@ -20,6 +20,7 @@ gpukit = { workspace = true }
 graph = { workspace = true }
 lower = { workspace = true }
 mem = { workspace = true }
+scattered-collect = "0.22"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", default-features = false, features = ["std"] }

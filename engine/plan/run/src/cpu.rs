@@ -1,5 +1,6 @@
 //! Replays a plan on the host, each tree in lockstep.
 
+use crate::compiled::{self, Kernel};
 use crate::run::{Base, Run, line};
 use codegen::Precision;
 use codegen::exec::{self, ArgVal, Grid};
@@ -14,6 +15,8 @@ pub(crate) struct Runner {
     base: Base,
     /// Each step's tree. Hand-written kernels have none here.
     bodies: Vec<Option<Body>>,
+    /// Each step's compiled tree, where one is linked in.
+    compiled: Vec<Option<Kernel>>,
     lanes: usize,
     precision: Precision,
 }
@@ -23,6 +26,7 @@ impl Runner {
         let mut runner = Self {
             base: Base::default(),
             bodies: Vec::new(),
+            compiled: Vec::new(),
             lanes,
             precision,
         };
@@ -115,6 +119,11 @@ impl Runner {
         };
         let body = body.clone();
         let mut mapped = self.base.held.mapped_mut(&buffers);
+        if let Some(run) = self.compiled[step]
+            && run(&args, &mut mapped, grid, self.lanes, self.precision)
+        {
+            return Ok(());
+        }
         exec::run(&body, &args, &mut mapped, grid, self.lanes, self.precision);
         Ok(())
     }
@@ -143,6 +152,11 @@ impl Run for Runner {
                 Source::Made(body) => Some(body),
                 Source::Fixed { .. } => None,
             })
+            .collect();
+        self.compiled = plan
+            .steps
+            .iter()
+            .map(|step| compiled::find(step.kernel.source().hash()))
             .collect();
         self.base.plan = plan.clone();
         Ok(())
@@ -177,7 +191,14 @@ impl Run for Runner {
             Precision::CUDA => ", cuda tiles",
             _ => ", hip tiles",
         };
-        format!("cpu {} lanes{tiles}", self.lanes)
+        let (made, compiled) = (
+            self.bodies.iter().flatten().count(),
+            self.compiled.iter().flatten().count(),
+        );
+        format!(
+            "cpu {} lanes{tiles}, {compiled} of {made} compiled",
+            self.lanes
+        )
     }
 
     fn platform(&self) -> Platform {

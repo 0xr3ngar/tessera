@@ -9,6 +9,7 @@ pub mod inline;
 mod intrinsic;
 pub mod ir;
 pub mod kept;
+pub mod lockstep;
 pub mod numerics;
 pub mod prelude;
 mod tile;

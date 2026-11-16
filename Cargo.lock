@@ -412,10 +412,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
+name = "emit"
+version = "0.1.0"
+dependencies = [
+ "codegen",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "engine"
 version = "0.1.0"
 dependencies = [
  "cpu",
+ "emit",
  "frontend-settings",
  "graph",
  "interp",
@@ -1104,6 +1116,7 @@ dependencies = [
  "bundle",
  "checkpoint",
  "cpu",
+ "engine",
  "frontend-settings",
  "graph",
  "interp",
@@ -1244,6 +1257,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prettyplease"
+version = "0.2.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1303,6 +1326,7 @@ dependencies = [
  "bundle",
  "checkpoint",
  "cpu",
+ "engine",
  "engine-comm",
  "frontend-comm",
  "frontend-settings",
@@ -1432,6 +1456,7 @@ dependencies = [
  "mem",
  "objc2",
  "objc2-metal",
+ "scattered-collect",
 ]
 
 [[package]]

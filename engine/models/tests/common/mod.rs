@@ -1,7 +1,8 @@
 //! The per-model suite: what every model test runs alike.
 
-// Linking these registers their lowering rules.
+// Linking these registers their lowering rules and compiled kernels.
 use cpu as _;
+use engine as _;
 use kernels as _;
 use linear as _;
 
@@ -254,6 +255,17 @@ pub fn native(spec: &Spec) {
         let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
         let native = names.iter().filter(|n| n.starts_with("cpu_")).count();
         assert!(native > 0, "{}: no native kernels in {names:?}", spec.name);
+        for step in &plan.steps {
+            let source = step.kernel.source();
+            let compiled = run::compiled::find(source.hash()).is_some();
+            let made = matches!(source, lower::Source::Made(_));
+            assert!(
+                compiled || !made,
+                "{}: {} is not compiled",
+                spec.name,
+                step.kernel.name()
+            );
+        }
         faux_check(
             &format!("{} native as {form}", spec.name),
             &g,
