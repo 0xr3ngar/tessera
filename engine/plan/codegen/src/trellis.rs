@@ -1,4 +1,4 @@
-//! The exlr8 trellis form in kernel text: tile walks and codebook.
+//! The exlr8 trellis form in kernel text: tiles and codebook.
 
 use crate as codegen;
 use crate::form::{Load, form, named};
