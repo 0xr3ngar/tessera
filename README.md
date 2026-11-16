@@ -28,7 +28,6 @@ tessera is not alpha or beta. It's an experiment right now and no numbers are av
 Crate | Description
 --- | ---
 [engine](engine/engine) | Graphs on runners: a decode loop over a stepper, or one launch of a forward graph
-[gemm](engine/gpu/gemm) | The GEMM family: tiled Metal and CUDA bodies with a shared CPU oracle
 [gpukit](engine/gpu/gpukit) | GPU compute infrastructure: pipeline compilation, specialization, caching, buffers
 [graph](engine/ir/graph) | The model graph: typed nodes, symbolic shapes, a JSON form
 [interp](engine/ir/interp) | Runs a graph op by op on the CPU: the reference for every plan
