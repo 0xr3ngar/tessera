@@ -89,22 +89,26 @@ fn planned(name: &str, step: &Graph, weights: &[Tensor], tokens: &[u32], want: &
         let device = Device::guess(&settings);
         let mut plans = Cache::default();
         let mut runner: Option<Box<dyn Run>> = None;
+        // Kept rows span the whole context, as buffers hold them.
+        let context = step
+            .dims
+            .iter()
+            .find(|d| d.name == Context)
+            .map(|d| d.size.max());
         for (rows, want) in launches().iter().zip(want) {
-            let seen = rows.iter().map(|(_, p)| p + 1).max().unwrap_or(1);
             let sizes = [
                 (Seqs, SEQS as u64),
                 (Rows, rows.len() as u64),
-                (Context, seen as u64),
+                (Context, context.unwrap_or(LEN as u64)),
             ];
-            let (plan, bound) = plans.upto(step, 0, &sizes, &[Context], &device).unwrap();
+            let plan = plans.lower(step, 0, &sizes, &device).unwrap();
             let runner = match &mut runner {
                 Some(runner) => {
-                    runner.replan(plan).unwrap();
+                    runner.replan(&plan).unwrap();
                     runner
                 }
                 None => runner.insert(loaded(plan.clone(), step, weights, &settings)),
             };
-            runner.bind_all(&bound);
             let tensors = feeds(tokens, rows);
             let views: Vec<View> = tensors.iter().map(Tensor::view).collect();
             runner.feed(&views).unwrap();

@@ -22,11 +22,11 @@ impl Pattern for Gather {
         }
         let (table, ids) = (node.args[0], node.args[1]);
         let rows = tree.elements(ids);
-        // Stored tables are matrices. Computed ones may have more axes.
-        let shape = &tree.node(table).shape;
-        let table_rows = match shape[..] {
+        // Tables are matrices. Kept rows may have more axes.
+        let kept = matches!(tree.node(table).term, Term::Op(Op::Append(_)));
+        let table_rows = match tree.node(table).shape[..] {
             [rows, _] => rows,
-            [rows, _, ..] if !tree.leaf(table) => rows,
+            [rows, _, ..] if kept => rows,
             _ => return None,
         };
         Some(Self {

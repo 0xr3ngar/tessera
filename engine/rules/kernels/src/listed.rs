@@ -5,29 +5,47 @@ use graph::{Mask, Op};
 use lower::sites::Attend;
 use lower::{Attn, Draft, Kernel, Launch, Shape, Step, T, Term, Tree};
 
-/// The peak, then the sum. Unlisted picks are keys.
+/// One thread per output: the peak, then the weighted sum.
 #[kernel]
-fn listed_value(
+fn listed(
     q: Buf<F32>,
     k: Buf<F32>,
     v: Buf<F32>,
     ids: Buf<U32>,
+    slots: Buf<U32>,
+    positions: Buf<U32>,
+    mut out: BufMut<F32>,
     scale: f32,
-    q_at: u64,
-    d: u32,
-    list: u64,
-    picks: u32,
-    listed: u32,
-    position: u32,
-    first: u32,
+    len: u32,
+    queries: u32,
+    keys: u32,
+    heads: u32,
     kv_heads: u32,
-    kv_head: u32,
     width: u32,
-) -> f32 {
+    picks: u32,
+    ragged: u32,
+    from_list: u32,
+) {
+    if gid() >= len {
+        return;
+    }
+    let d = gid() % width;
+    let head = (gid() / width) % heads;
+    let row = gid() / (width * heads);
+    // Whole sequences end together. Ragged rows carry slot and position.
+    let mut first = row / queries * keys;
+    let mut position = keys - queries + row % queries;
+    if ragged == 1 {
+        first = slots[row as u64] * keys;
+        position = positions[row as u64];
+    }
+    let kv_head = head / (heads / kv_heads);
+    let list = row as u64 * picks as u64;
+    let q_at = (gid() - d) as u64;
     let mut peak = f32::NEG_INFINITY;
     for p in 0..picks {
         let mut j = p;
-        if listed == 1 {
+        if from_list == 1 {
             j = ids[list + p as u64];
         }
         if j <= position {
@@ -39,7 +57,7 @@ fn listed_value(
     let mut sum = 0.0f32;
     for p in 0..picks {
         let mut j = p;
-        if listed == 1 {
+        if from_list == 1 {
             j = ids[list + p as u64];
         }
         if j <= position {
@@ -53,162 +71,49 @@ fn listed_value(
     if total > 0.0 {
         o = sum / total;
     }
-    o
+    out[gid() as u64] = o;
 }
 
-/// Whole sequences: one thread per output element.
-#[kernel]
-fn listed(
-    q: Buf<F32>,
-    k: Buf<F32>,
-    v: Buf<F32>,
-    ids: Buf<U32>,
-    mut out: BufMut<F32>,
-    scale: f32,
-    len: u32,
-    queries: u32,
-    keys: u32,
-    picks: u32,
-    #[build] heads: u32,
-    #[build] kv_heads: u32,
-    #[build] width: u32,
-) {
-    if gid() >= len {
-        return;
-    }
-    let d = gid() % width;
-    let head = (gid() / width) % heads;
-    let row = gid() / (width * heads);
-    let position = keys - queries + row % queries;
-    let first = row / queries * keys;
-    let kv_head = head / (heads / kv_heads);
-    let list = row as u64 * picks as u64;
-    let q_at = (gid() - d) as u64;
-    out[gid() as u64] = listed_value(
-        q, k, v, ids, scale, q_at, d, list, picks, 1, position, first, kv_heads, kv_head, width,
-    );
-}
-
-/// Ragged rows over computed keys: each row's slot and position.
-#[kernel]
-fn listed_rows(
-    q: Buf<F32>,
-    k: Buf<F32>,
-    v: Buf<F32>,
-    ids: Buf<U32>,
-    slots: Buf<U32>,
-    positions: Buf<U32>,
-    mut out: BufMut<F32>,
-    scale: f32,
-    len: u32,
-    keys: u32,
-    picks: u32,
-    listed: u32,
-    #[build] heads: u32,
-    #[build] kv_heads: u32,
-    #[build] width: u32,
-) {
-    if gid() >= len {
-        return;
-    }
-    let d = gid() % width;
-    let head = (gid() / width) % heads;
-    let row = gid() / (width * heads);
-    let first = slots[row as u64] * keys;
-    let kv_head = head / (heads / kv_heads);
-    let list = row as u64 * picks as u64;
-    let q_at = (gid() - d) as u64;
-    out[gid() as u64] = listed_value(
-        q,
-        k,
-        v,
-        ids,
-        scale,
-        q_at,
-        d,
-        list,
-        picks,
-        listed,
-        positions[row as u64],
-        first,
-        kv_heads,
-        kv_head,
-        width,
-    );
-}
-
-/// Sizes, the score scale, and keys listed per query.
-#[derive(Clone, Copy, Debug, Kernel)]
-#[launch(
-    listed(self.sizes.heads as u32, self.sizes.kv_heads as u32, self.sizes.width as u32),
-    name = "listed",
-    sizes = self.sizes.sizes(),
-    work = self.len() * self.picks * self.sizes.width,
-    launches = listed_launches,
-)]
-pub(crate) struct Listed {
-    pub sizes: Attn,
-    pub scale: f32,
-    pub picks: usize,
-}
-
-impl Listed {
-    fn len(&self) -> usize {
-        let a = &self.sizes;
-        a.seqs * a.queries * a.heads * a.width
-    }
-}
-
-/// The launch's buffers, the scale, then `counts`.
-fn launch(step: &Step, len: usize, scale: f32, counts: &[usize]) -> Vec<Launch> {
-    let mut launch = Launch::plain(step, &[len], Shape::Line(len));
-    launch
-        .args
-        .insert(launch.args.len() - 1, lower::Arg::value(&scale));
-    launch
-        .args
-        .extend(counts.iter().map(|n| lower::Arg::count(*n)));
-    vec![launch]
-}
-
-fn listed_launches(k: &Listed, step: &Step) -> Vec<Launch> {
-    let a = &k.sizes;
-    let counts = [
-        a.queries,
-        a.keys.most(),
-        a.heads,
-        a.kv_heads,
-        a.width,
-        k.picks,
-    ];
-    launch(step, k.len(), k.scale, &counts)
-}
-
-/// Query rows over `[Seqs, Keys, KvHeads, Width]` keys, by slot.
-#[derive(Clone, Copy, Debug, Kernel)]
-#[launch(
-    listed_rows(self.heads as u32, self.kv_heads as u32, self.width as u32),
-    name = "listed_rows",
-    sizes = [self.len, self.keys, self.picks],
-    work = self.len * self.picks * self.width,
-    launches = rows_launches,
-)]
-pub(crate) struct ListedRows {
+/// Query rows over `[Seqs, Keys, KvHeads, Width]` keys.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Sizes {
     pub len: usize,
+    /// Queries per sequence. Ragged rows have one each.
+    pub queries: usize,
     pub keys: usize,
     pub heads: usize,
     pub kv_heads: usize,
     pub width: usize,
     pub picks: usize,
+    pub ragged: bool,
     /// Without a list, pick `p` is key `p`.
-    pub listed: bool,
+    pub from_list: bool,
     pub scale: f32,
 }
 
-fn rows_launches(k: &ListedRows, step: &Step) -> Vec<Launch> {
-    let listed = usize::from(k.listed);
-    let counts = [k.keys, k.picks, listed];
-    launch(step, k.len, k.scale, &counts)
+/// Whole sequences over listed keys, or ragged rows by slot.
+#[derive(Clone, Copy, Debug, Kernel)]
+#[launch(
+    listed,
+    name = "listed",
+    sizes = [self.0.len, self.0.keys, self.0.picks],
+    work = self.0.len * self.0.picks * self.0.width,
+    launches = listed_launches,
+)]
+pub(crate) struct Listed(pub Sizes);
+
+fn listed_launches(k: &Listed, step: &Step) -> Vec<Launch> {
+    let s = &k.0;
+    let flags = [usize::from(s.ragged), usize::from(s.from_list)];
+    let counts = [s.queries, s.keys, s.heads, s.kv_heads, s.width, s.picks];
+    let mut launch = Launch::plain(step, &[s.len], Shape::Line(s.len));
+    launch
+        .args
+        .insert(launch.args.len() - 1, lower::Arg::value(&s.scale));
+    launch
+        .args
+        .extend(counts.into_iter().chain(flags).map(lower::Arg::count));
+    vec![launch]
 }
 
 /// Ragged rows over computed keys, not kept rows.
@@ -234,36 +139,50 @@ fn rows(tree: &Tree, at: T) -> Option<Vec<Draft>> {
         Some(&ids) => (ids, *wide(ids).last()?),
         None => (positions, keys),
     };
-    let kernel = ListedRows {
+    let sizes = Sizes {
         len: rows * heads * width,
+        queries: 1,
         keys,
         heads,
         kv_heads,
         width,
         picks,
-        listed: a.picked,
+        ragged: true,
+        from_list: a.picked,
         scale: a.scale,
     };
     let reads = [q, k, v, ids, slots, positions];
-    Some(vec![Draft::new(kernel, reads, kernel.len)])
+    Some(vec![Draft::new(Listed(sizes), reads, sizes.len)])
 }
 
-/// Causal sequences whose keys are all present, or ragged rows.
-fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
-    let Some((site, ids)) = Attend::listed(tree, at) else {
-        return rows(tree, at);
-    };
-    if site.sizes.mask != Mask::Causal || site.sizes.keys.runtime() {
+/// Causal sequences whose keys are all present.
+fn whole(tree: &Tree, site: Attend, ids: T) -> Option<Vec<Draft>> {
+    let a: Attn = site.sizes;
+    if a.mask != Mask::Causal || a.keys.runtime() {
         return None;
     }
-    let picks = *tree.node(ids).shape.last()?;
-    let kernel = Listed {
-        sizes: site.sizes,
+    let sizes = Sizes {
+        len: a.seqs * a.queries * a.heads * a.width,
+        queries: a.queries,
+        keys: a.keys.most(),
+        heads: a.heads,
+        kv_heads: a.kv_heads,
+        width: a.width,
+        picks: *tree.node(ids).shape.last()?,
+        ragged: false,
+        from_list: true,
         scale: site.scale,
-        picks,
     };
-    let reads = [site.q, site.k, site.v, ids];
-    Some(vec![Draft::new(kernel, reads, kernel.len())])
+    // Slots and positions go unread, so the list stands in.
+    let reads = [site.q, site.k, site.v, ids, ids, ids];
+    Some(vec![Draft::new(Listed(sizes), reads, sizes.len)])
+}
+
+fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
+    match Attend::listed(tree, at) {
+        Some((site, ids)) => whole(tree, site, ids),
+        None => rows(tree, at),
+    }
 }
 
 lower::rule!("listed", propose);
