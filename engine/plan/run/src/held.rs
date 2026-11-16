@@ -10,7 +10,8 @@ use std::collections::HashMap;
 pub struct Held {
     /// Every live buffer.
     all: Vec<Buffer>,
-    weights: HashMap<u32, usize>,
+    /// By weight, and part when a file splits.
+    weights: HashMap<(u32, Option<u8>), usize>,
     kept: HashMap<u32, usize>,
     /// Where each of the plan's buffers lies in `all`.
     bound: Vec<usize>,
@@ -65,10 +66,10 @@ impl Held {
         let mut spare: Vec<Buffer> = old.into_iter().flatten().collect();
         let mut owner = vec![None; plan.buffers.len()];
         for l in &plan.weights {
-            owner[l.slot.buffer as usize] = Some((false, l.weight));
+            owner[l.slot.buffer as usize] = Some((false, (l.weight, l.part)));
         }
         for (index, slot) in &plan.kept {
-            owner[slot.buffer as usize] = Some((true, *index));
+            owner[slot.buffer as usize] = Some((true, (*index, None)));
         }
         self.bound.clear();
         for (b, (&bytes, owner)) in plan.buffers.iter().zip(owner).enumerate() {
@@ -76,8 +77,8 @@ impl Held {
             // Named buffers fit exactly. Scratch may be larger.
             let fits = |buffer: &Buffer| buffer.zone == zone && buffer.bytes() >= bytes;
             let held = match owner {
-                Some((true, index)) => self.kept.get(&index).copied(),
-                Some((false, index)) => self.weights.get(&index).copied(),
+                Some((true, (index, _))) => self.kept.get(&index).copied(),
+                Some((false, key)) => self.weights.get(&key).copied(),
                 None => spare.iter().position(fits).map(|at| {
                     self.all.push(spare.swap_remove(at));
                     self.all.len() - 1
@@ -97,8 +98,8 @@ impl Held {
                 }
             };
             match owner {
-                Some((true, index)) => self.kept.insert(index, at),
-                Some((false, index)) => self.weights.insert(index, at),
+                Some((true, (index, _))) => self.kept.insert(index, at),
+                Some((false, key)) => self.weights.insert(key, at),
                 None => None,
             };
             self.bound.push(at);
