@@ -9,7 +9,9 @@ use gpukit::{Limits, Platform};
 use jit::{Buf, Ctx, Entry};
 use lower::{Arg, Error, Extent, Launch, Plan, Shape, Source};
 use mem::{Buffer, Host};
+use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::OnceLock;
 use std::time::Instant;
 
 pub(crate) struct Runner {
@@ -18,6 +20,8 @@ pub(crate) struct Runner {
     bodies: Vec<Option<Body>>,
     /// Each step's tree as host code, where it compiled.
     compiled: Vec<Option<Entry>>,
+    /// Compiled trees by their kernel's print, across plans.
+    known: HashMap<String, Option<Entry>>,
     lanes: usize,
     precision: Precision,
 }
@@ -28,6 +32,7 @@ impl Runner {
             base: Base::default(),
             bodies: Vec::new(),
             compiled: Vec::new(),
+            known: HashMap::new(),
             lanes,
             precision,
         };
@@ -89,14 +94,23 @@ impl Runner {
             },
             Shape::Runtime(_) => unreachable!("bound before running"),
         };
-        let body = body.clone();
         let mut mapped = self.base.held.mapped_mut(&buffers);
         if let Some(entry) = self.compiled[step]
             && grid.threads <= THREADS
         {
-            return compiled(entry, &args, &mut mapped, grid, self.lanes, &self.precision);
+            let step = &self.base.plan.steps[step];
+            let work = step.kernel.work(step.write.bytes() / 4);
+            return compiled(
+                entry,
+                &args,
+                &mut mapped,
+                grid,
+                work,
+                self.lanes,
+                &self.precision,
+            );
         }
-        exec::run(&body, &args, &mut mapped, grid, self.lanes, self.precision);
+        exec::run(body, &args, &mut mapped, grid, self.lanes, self.precision);
         Ok(())
     }
 }
@@ -126,10 +140,26 @@ impl Run for Runner {
             })
             .collect();
         // A tree that does not compile runs in lockstep instead.
-        self.compiled = (self.bodies.iter())
-            .map(|body| body.as_ref().and_then(|b| jit::compile(b).ok()))
-            .collect();
-        self.base.plan = plan.clone();
+        let mut compiled = Vec::with_capacity(plan.steps.len());
+        for (step, body) in plan.steps.iter().zip(&self.bodies) {
+            let Some(body) = body else {
+                compiled.push(None);
+                continue;
+            };
+            // Printing a kernel is cheaper than hashing its text.
+            let key = format!("{:?}", step.kernel);
+            let entry = match self.known.get(&key) {
+                Some(entry) => *entry,
+                None => {
+                    let entry = jit::compile(body).ok();
+                    self.known.insert(key, entry);
+                    entry
+                }
+            };
+            compiled.push(entry);
+        }
+        self.compiled = compiled;
+        self.base.adopt(plan);
         Ok(())
     }
 
@@ -178,14 +208,26 @@ impl Run for Runner {
     }
 }
 
-/// Threads a launch is worth spreading over.
-const SPREAD: usize = 2048;
+/// Multiply-adds a launch is worth spreading over cores.
+const SPREAD: f64 = 65536.0;
 
-/// Group ranges across the threads at hand.
-fn ranges(groups: usize, threads: usize) -> Vec<(usize, usize)> {
-    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
-    // Starting threads costs more than a small launch does.
-    let cores = if groups * threads < SPREAD { 1 } else { cores };
+/// Workers with room for a body's lane arrays.
+fn pool() -> &'static rayon::ThreadPool {
+    static POOL: OnceLock<rayon::ThreadPool> = OnceLock::new();
+    POOL.get_or_init(|| {
+        rayon::ThreadPoolBuilder::new()
+            .stack_size(32 << 20)
+            .build()
+            .expect("a thread pool")
+    })
+}
+
+/// Group ranges over the cores, or one for small `work`.
+fn ranges(groups: usize, work: f64) -> Vec<(usize, usize)> {
+    let cores = match work >= SPREAD {
+        true => pool().current_num_threads(),
+        false => 1,
+    };
     let workers = cores.min(groups).max(1);
     let per = groups.div_ceil(workers);
     (0..workers)
@@ -200,12 +242,13 @@ struct Shared(Ctx);
 // SAFETY: every field points at memory that outlives the launch.
 unsafe impl Sync for Shared {}
 
-/// One launch of `entry` over `grid`, groups spread over threads.
+/// One launch of `entry` over `grid`, spread over the pool.
 fn compiled(
     entry: Entry,
     args: &[ArgVal],
     mapped: &mut [&mut [u8]],
     grid: Grid,
+    work: f64,
     lanes: usize,
     precision: &Precision,
 ) -> Result<(), Error> {
@@ -241,19 +284,16 @@ fn compiled(
         lanes,
         precision,
     });
-    let (ranges, shared) = (ranges(grid.groups, grid.threads), &shared);
+    let (ranges, shared) = (ranges(grid.groups, work), &shared);
     let run = |(lo, hi): (usize, usize)| {
         // SAFETY: the entry was compiled for this body's parameters.
         unsafe { entry(&shared.0, lo, hi) }
     };
     match ranges.len() {
         1 => run(ranges[0]),
-        _ => std::thread::scope(|scope| {
+        _ => pool().scope(|scope| {
             for range in &ranges {
-                let builder = std::thread::Builder::new().stack_size(64 << 20);
-                builder
-                    .spawn_scoped(scope, || run(*range))
-                    .expect("a worker thread");
+                scope.spawn(move |_| run(*range));
             }
         }),
     }
