@@ -4,7 +4,9 @@ use crate::run::{Base, Run, line};
 use codegen::Precision;
 use codegen::exec::{self, ArgVal, Grid};
 use codegen::ir::{Body, Param, Ty};
+use codegen::lockstep::THREADS;
 use gpukit::{Limits, Platform};
+use jit::{Buf, Ctx, Entry};
 use lower::{Arg, Error, Extent, Launch, Plan, Shape, Source};
 use mem::{Buffer, Host};
 use std::ops::Range;
@@ -14,6 +16,8 @@ pub(crate) struct Runner {
     base: Base,
     /// Each step's tree. Hand-written kernels have none here.
     bodies: Vec<Option<Body>>,
+    /// Each step's tree as host code, where it compiled.
+    compiled: Vec<Option<Entry>>,
     lanes: usize,
     precision: Precision,
 }
@@ -23,6 +27,7 @@ impl Runner {
         let mut runner = Self {
             base: Base::default(),
             bodies: Vec::new(),
+            compiled: Vec::new(),
             lanes,
             precision,
         };
@@ -115,6 +120,11 @@ impl Runner {
         };
         let body = body.clone();
         let mut mapped = self.base.held.mapped_mut(&buffers);
+        if let Some(entry) = self.compiled[step]
+            && grid.threads <= THREADS
+        {
+            return compiled(entry, &args, &mut mapped, grid, self.lanes, &self.precision);
+        }
         exec::run(&body, &args, &mut mapped, grid, self.lanes, self.precision);
         Ok(())
     }
@@ -143,6 +153,10 @@ impl Run for Runner {
                 Source::Made(body) => Some(body),
                 Source::Fixed { .. } => None,
             })
+            .collect();
+        // A tree that does not compile runs in lockstep instead.
+        self.compiled = (self.bodies.iter())
+            .map(|body| body.as_ref().and_then(|b| jit::compile(b).ok()))
             .collect();
         self.base.plan = plan.clone();
         Ok(())
@@ -177,7 +191,16 @@ impl Run for Runner {
             Precision::CUDA => ", cuda tiles",
             _ => ", hip tiles",
         };
-        format!("cpu {} lanes{tiles}", self.lanes)
+        let (compiled, made) = self.compiled();
+        format!(
+            "cpu {} lanes{tiles}, {compiled} of {made} compiled",
+            self.lanes
+        )
+    }
+
+    fn compiled(&self) -> (usize, usize) {
+        let made = self.bodies.iter().flatten().count();
+        (self.compiled.iter().flatten().count(), made)
     }
 
     fn platform(&self) -> Platform {
@@ -186,5 +209,85 @@ impl Run for Runner {
 
     fn precision(&self) -> Precision {
         self.precision
+    }
+}
+
+/// Group ranges across the threads at hand.
+fn ranges(groups: usize) -> Vec<(usize, usize)> {
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let workers = cores.min(groups).max(1);
+    let per = groups.div_ceil(workers);
+    (0..workers)
+        .map(|w| (w * per, ((w + 1) * per).min(groups)))
+        .filter(|(lo, hi)| lo < hi)
+        .collect()
+}
+
+/// A context the worker threads share. Groups write disjoint rows.
+struct Shared(Ctx);
+
+// SAFETY: every field points at memory that outlives the launch.
+unsafe impl Sync for Shared {}
+
+/// One launch of `entry` over `grid`, groups spread over threads.
+fn compiled(
+    entry: Entry,
+    args: &[ArgVal],
+    mapped: &mut [&mut [u8]],
+    grid: Grid,
+    lanes: usize,
+    precision: &Precision,
+) -> Result<(), Error> {
+    let bufs: Vec<Buf> = mapped
+        .iter_mut()
+        .map(|b| Buf {
+            ptr: b.as_mut_ptr(),
+            len: b.len(),
+        })
+        .collect();
+    let args: Vec<jit::Arg> = args
+        .iter()
+        .map(|a| match *a {
+            ArgVal::Buf { at, skip, .. } => jit::Arg {
+                buf: at,
+                skip,
+                bits: 0,
+            },
+            ArgVal::U32(v) => jit::Arg {
+                bits: v,
+                ..jit::Arg::default()
+            },
+            ArgVal::F32(v) => jit::Arg {
+                bits: v.to_bits(),
+                ..jit::Arg::default()
+            },
+        })
+        .collect();
+    let shared = Shared(Ctx {
+        bufs: bufs.as_ptr(),
+        args: args.as_ptr(),
+        threads: grid.threads,
+        lanes,
+        precision,
+    });
+    let (ranges, shared) = (ranges(grid.groups), &shared);
+    let run = |(lo, hi): (usize, usize)| {
+        // SAFETY: the entry was compiled for this body's parameters.
+        unsafe { entry(&shared.0, lo, hi) }
+    };
+    match ranges.len() {
+        1 => run(ranges[0]),
+        _ => std::thread::scope(|scope| {
+            for range in &ranges {
+                let builder = std::thread::Builder::new().stack_size(64 << 20);
+                builder
+                    .spawn_scoped(scope, || run(*range))
+                    .expect("a worker thread");
+            }
+        }),
+    }
+    match jit::failure() {
+        Some(why) => Err(Error::Unsupported(why.into())),
+        None => Ok(()),
     }
 }

@@ -4,7 +4,7 @@ mod golden_test;
 mod rotation_test;
 mod rows_test;
 
-use crate::common::{Check, Compare, Golden, Spec, Tolerance, small_stack, suite};
+use crate::common::{Check, Compare, Golden, Spec, Tolerance, suite};
 use lower::form::F32_FORM;
 use models::Rotated;
 use models::eg2::{Config, probe, program};
@@ -13,19 +13,7 @@ use trace::{Graph, Linear};
 
 /// Two small layers, one sliding and one full.
 fn small() -> Graph {
-    let c = Config {
-        stack: small_stack(256, 128, 256),
-        kv_heads: 1,
-        full_every: 2,
-        full_head_dim: 256,
-        per_layer: 128,
-        embedding: 128,
-        window: 4,
-        theta: 1e4,
-        full_theta: 1e6,
-        eps: 1e-6,
-    };
-    program::<Linear>(&c)
+    program::<Linear>(&models::small::eg2())
 }
 
 fn release() -> Graph {

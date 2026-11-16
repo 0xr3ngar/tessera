@@ -1,24 +1,11 @@
 //! SmolLM2-360M: a Llama decoder with tied embeddings.
 
-use crate::common::{LOGITS, Spec, Stepper, decoder, small_stack, suite};
-use models::decoder::{Config, Scales, Swiglu, program, stepper};
+use crate::common::{LOGITS, Spec, Stepper, decoder, suite};
+use models::decoder::{Config, Swiglu, program, stepper};
 use trace::Composite::{Attention, Mlp};
 use trace::Graph;
 
-/// Two small layers with no head norms.
-fn small_config() -> Config {
-    Config {
-        stack: small_stack(64, 32, 128),
-        kv_heads: 1,
-        rope_theta: 1e4,
-        eps: 1e-5,
-        experts: 0,
-        top_k: 0,
-        scales: Scales::default(),
-    }
-}
-
-decoder!((), Swiglu, small_config(), Config::smollm2);
+decoder!((), Swiglu, models::small::smollm2(), Config::smollm2);
 
 const SPEC: Spec = Spec {
     name: "smollm2",

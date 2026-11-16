@@ -79,11 +79,6 @@ pub fn interpreted(g: &Graph, weights: &[Tensor], seqs: usize, tokens: &[u32]) -
 /// A manifest's text and the graph its file feeds.
 pub type Manifest = (&'static str, fn() -> Graph);
 
-/// Two layers of two heads, for a faux run.
-pub fn small_stack(hidden: u64, head_dim: u64, ffn: u64) -> models::Stack {
-    models::Stack::sized([64, hidden, 2, 2, head_dim, ffn], 4, 16)
-}
-
 /// A decoder's graphs: `decoder!(HeadNorm, Mlp, small config, release config fn)`.
 macro_rules! decoder {
     ($norm:ty, $mlp:ty, $small:expr, $release:expr) => {
@@ -217,7 +212,7 @@ fn faux_check(
     data: &(Vec<Tensor>, Vec<Tensor>),
     settings: &Settings,
     device: Device,
-) {
+) -> Box<dyn Run> {
     let (weights, inputs) = data;
     let form = device.pins.form(&[]);
     // The interpreter sees the weights as the form keeps them.
@@ -237,6 +232,7 @@ fn faux_check(
         runner.device()
     );
     assert!(off < 1e-3 && cos > 0.9999, "{label}: off {off:e} cos {cos}");
+    runner
 }
 
 /// Random weights on native CPU kernels, against the interpreter.
@@ -254,13 +250,10 @@ pub fn native(spec: &Spec) {
         let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
         let native = names.iter().filter(|n| n.starts_with("cpu_")).count();
         assert!(native > 0, "{}: no native kernels in {names:?}", spec.name);
-        faux_check(
-            &format!("{} native as {form}", spec.name),
-            &g,
-            &data,
-            &cpu,
-            device,
-        );
+        let label = format!("{} native as {form}", spec.name);
+        let runner = faux_check(&label, &g, &data, &cpu, device);
+        let (compiled, made) = runner.compiled();
+        assert_eq!(compiled, made, "{label}: every tree compiles");
     }
 }
 
