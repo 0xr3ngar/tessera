@@ -9,9 +9,10 @@ use lower::{Device, Form, Pins, Weight, lower};
 use run::Run;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 use testkit::{argmax, cosine_f32, max_abs_diff};
 use trace::DimName::{self, Context, Seqs};
-use trace::Graph;
+use trace::{DType, Graph};
 
 /// A recorded reference, and how closely to match it.
 pub struct Golden {
@@ -67,6 +68,8 @@ pub struct Reference {
     pub cases: Vec<Case>,
     /// The checkpoint, which probes read again.
     pub checkpoint: Option<PathBuf>,
+    /// Held while the reference lives: one loads at a time.
+    pub turn: MutexGuard<'static, ()>,
 }
 
 /// Sequences of one length, and the outputs recorded for them.
@@ -144,28 +147,44 @@ fn floats(path: &Path) -> Vec<f32> {
     bytes.as_chunks::<4>().0.iter().map(wide).collect()
 }
 
-/// `g`'s weights from `offer` as floats, packed ones decoded.
+/// `g`'s weights from `offer`. Packed forms other than bf16 decode.
 pub fn pulled(model: &str, g: &Graph, offer: &dyn Offer) -> Vec<Tensor> {
     let rules = repo(model).unwrap_or_default();
-    let (weights, _) = bundle::pull(g, offer, 0, &[&rules]).unwrap();
-    let mut out = Vec::new();
-    for (w, gw) in weights.into_iter().zip(&g.weights) {
+    let mut out = Vec::with_capacity(g.weights.len());
+    let shape = |at: usize| -> Vec<usize> {
+        let axis = |e: &graph::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
+        g.weights[at].ty.shape.0.iter().map(axis).collect()
+    };
+    bundle::each(g, offer, &[&rules], |w, form| {
+        let shape = shape(out.len());
         out.push(match w {
+            Weight::Floats(t) if form.name() == BF16_FORM.name() => {
+                Tensor::from_bytes(shape, DType::Bf16, &form.pack(t.floats().unwrap()))
+            }
             Weight::Floats(t) => t,
+            Weight::Packed(f, bytes) if f.block() == 1 => {
+                Tensor::from_bytes(shape, f.dtype(), &bytes)
+            }
             Weight::Packed(f, bytes) => {
-                let axis = |e: &graph::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
-                let shape: Vec<usize> = gw.ty.shape.0.iter().map(axis).collect();
                 let n = f.elements(bytes.len());
                 Tensor::f32(shape, (0..n).map(|i| f.unpack(&bytes, i)).collect())
             }
         });
-    }
+    })
+    .unwrap();
     out
 }
 
 /// `g`'s weights from the safetensors file at `path`.
 fn safetensors(model: &str, g: &Graph, path: &Path) -> Vec<Tensor> {
     pulled(model, g, &File::open(path).unwrap())
+}
+
+/// The one turn to hold a real checkpoint.
+pub fn turn() -> MutexGuard<'static, ()> {
+    static TURN: Mutex<()> = Mutex::new(());
+    // A failed test still hands the turn on.
+    TURN.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// How far an output may stray from the reference.
@@ -205,6 +224,7 @@ impl Golden {
             weights: safetensors(model, g, &file),
             cases: cases(&dir),
             checkpoint: Some(file),
+            turn: turn(),
         })
     }
 

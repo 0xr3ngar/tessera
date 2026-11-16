@@ -1,6 +1,6 @@
 //! The nanogpt's recorded logits.
 
-use crate::common::{Case, Reference};
+use crate::common::{Case, Reference, turn};
 use interp::Tensor;
 use testkit::{Noise, weights_with};
 use trace::Graph;
@@ -113,5 +113,6 @@ pub fn read(g: &Graph) -> Reference {
         weights: weights(g),
         cases: vec![case],
         checkpoint: None,
+        turn: turn(),
     }
 }
