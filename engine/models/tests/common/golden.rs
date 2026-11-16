@@ -1,6 +1,6 @@
 //! Recorded references, and the outputs each model must match.
 
-use super::{Spec, inputs, interpreted, loaded, settings};
+use super::{Spec, inputs, interpreted, loaded, runs};
 use bundle::names::repo;
 use checkpoint::{File, Offer};
 use interp::Tensor;
@@ -199,7 +199,7 @@ impl Golden {
         if let Some(read) = self.record {
             return Some(read(g));
         }
-        let dir = settings().reference(model)?;
+        let dir = testkit::reference(model)?;
         let file = dir.join("model.safetensors");
         Some(Reference {
             weights: safetensors(model, g, &file),
@@ -274,22 +274,23 @@ pub fn golden(spec: &Spec) {
         golden.release(&format!("{} cpu", case.name), &out, case);
     }
     golden.probes(spec.name, &reference);
-    let settings = settings();
-    if settings.gpu().is_none() && !golden.anywhere {
-        return eprintln!("no GPU here; skipped");
-    }
-    let device = Device::guess(&settings).pinned(Pins::all(golden.form));
-    let mut runner: Option<Box<dyn Run>> = None;
-    for case in &reference.cases {
-        let plan = lower(&g, 0, &case.sizes(), &device).unwrap();
-        let r = match runner.as_mut() {
-            Some(r) => r,
-            None => runner.insert(loaded(plan.clone(), &g, &reference.weights, &settings)),
-        };
-        r.replan(&plan).unwrap();
-        let inputs = case.inputs();
-        let out = r.run(&[inputs[0].view(), inputs[1].view()]).unwrap();
-        let label = format!("{} on {}", case.name, r.device());
-        golden.release(&label, out[0].floats().unwrap(), case);
+    for settings in runs() {
+        if settings.gpu().is_none() && !golden.anywhere {
+            continue;
+        }
+        let device = Device::guess(&settings).pinned(Pins::all(golden.form));
+        let mut runner: Option<Box<dyn Run>> = None;
+        for case in &reference.cases {
+            let plan = lower(&g, 0, &case.sizes(), &device).unwrap();
+            let r = match runner.as_mut() {
+                Some(r) => r,
+                None => runner.insert(loaded(plan.clone(), &g, &reference.weights, &settings)),
+            };
+            r.replan(&plan).unwrap();
+            let inputs = case.inputs();
+            let out = r.run(&[inputs[0].view(), inputs[1].view()]).unwrap();
+            let label = format!("{} on {}", case.name, r.device());
+            golden.release(&label, out[0].floats().unwrap(), case);
+        }
     }
 }

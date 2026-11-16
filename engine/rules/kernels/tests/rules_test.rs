@@ -2,12 +2,12 @@
 
 use kernels as _;
 
-use frontend_settings::read as settings;
 use graph::DimName::{Context, HeadDim, Heads, Rows, Seqs};
 use graph::{DType, Dim, DimName, Graph, NodeId, verify};
 use interp::{Tensor, run};
 use lower::form::{BF16_FORM, F32_FORM};
-use lower::{Device, Limits, Pins, Plan, Platform, View, cut, lower, rules};
+use lower::testing::{host, runs};
+use lower::{Device, Limits, Pins, Plan, Platform, Settings, View, cut, lower, rules};
 use run::open;
 use testkit::graphs::{self, floats, ids};
 use testkit::{Noise, fill, max_abs_diff};
@@ -29,9 +29,9 @@ fn attention() -> Graph {
 }
 
 /// Runs entry 0 both ways. Returns the largest difference.
-fn gap(g: &Graph, inputs: &[Tensor], device: &Device) -> f32 {
+fn gap(g: &Graph, inputs: &[Tensor], device: &Device, settings: &Settings) -> f32 {
     let want = run(g, &[], 0, inputs).unwrap();
-    let mut runner = open(lower(g, 0, &SIZES, device).unwrap(), &settings()).unwrap();
+    let mut runner = open(lower(g, 0, &SIZES, device).unwrap(), settings).unwrap();
     let feeds: Vec<View> = inputs.iter().map(Tensor::view).collect();
     let got = runner.run(&feeds).unwrap().remove(0);
     if want[0].dtype() != DType::U32 {
@@ -42,8 +42,14 @@ fn gap(g: &Graph, inputs: &[Tensor], device: &Device) -> f32 {
     if same { 0.0 } else { f32::INFINITY }
 }
 
-#[test]
-fn each_rule_matches_cpu() {
+/// The rules this crate registers.
+fn ours() -> Vec<&'static lower::Rule> {
+    let ours = rules().into_iter();
+    ours.filter(|r| r.module.starts_with("kernels::")).collect()
+}
+
+/// Every rule's launches under `settings`. Returns the rules used.
+fn rules_match(settings: &Settings) -> Vec<&'static str> {
     let mut noise = Noise(7);
     let d = dims();
     // Rows of 600: more entries than threads for the argmax.
@@ -55,13 +61,10 @@ fn each_rule_matches_cpu() {
         graphs::table(&d, 32, 16),
         graphs::picks(&d, 16),
     ];
-    let ours: Vec<&lower::Rule> = rules()
-        .into_iter()
-        .filter(|r| r.module.starts_with("kernels::"))
-        .collect();
+    let ours = ours();
     let mut used: Vec<&str> = Vec::new();
     for (g, rule) in graphs.iter().flat_map(|g| ours.iter().map(move |r| (g, r))) {
-        let device = Device::guess(&settings()).favoring(rule.name);
+        let device = Device::guess(settings).favoring(rule.name);
         let plan = lower(g, 0, &SIZES, &device).unwrap();
         let mut seen: Vec<&[NodeId]> = Vec::new();
         for step in &plan.steps {
@@ -78,17 +81,22 @@ fn each_rule_matches_cpu() {
                 .iter()
                 .map(|p| fill(&sub, &p.ty, &SIZES, &mut noise).unwrap())
                 .collect();
-            let off = gap(&sub, &inputs, &device);
+            let off = gap(&sub, &inputs, &device, settings);
             assert!(off < 1e-4, "{:?} is off by {off:e}", step.kernel);
         }
     }
-    // A new rule needs a graph in `testkit::graphs`.
-    for rule in ours {
-        assert!(
-            used.contains(&rule.name),
-            "no graph exercises {}",
-            rule.name
-        );
+    used
+}
+
+#[test]
+fn each_rule_matches_cpu() {
+    for settings in runs() {
+        let used = rules_match(&settings);
+        // A new rule needs a graph in `testkit::graphs`.
+        for rule in ours() {
+            let name = rule.name;
+            assert!(used.contains(&name), "no graph exercises {name}");
+        }
     }
 }
 
@@ -118,13 +126,13 @@ fn names(plan: &Plan) -> Vec<&'static str> {
 #[test]
 fn attention_streams() {
     let g = attention();
-    let plan = lower(&g, 0, &SIZES, &Device::guess(&settings())).unwrap();
+    let plan = lower(&g, 0, &SIZES, &Device::guess(&host())).unwrap();
     assert_eq!(count(&plan, "attend") + count(&plan, "flash"), 1);
 }
 
 #[test]
 fn rotations_share_angles() {
-    let plan = lower(&rotations(), 0, &SIZES, &Device::guess(&settings())).unwrap();
+    let plan = lower(&rotations(), 0, &SIZES, &Device::guess(&host())).unwrap();
     assert_eq!((count(&plan, "angles"), count(&plan, "rope")), (1, 2));
 }
 
@@ -132,8 +140,8 @@ fn rotations_share_angles() {
 fn favoring_stays_local() {
     // No rule competes with rope, so favoring it changes nothing.
     let g = rotations();
-    let plain = lower(&g, 0, &SIZES, &Device::guess(&settings())).unwrap();
-    let favored = Device::guess(&settings()).favoring("rope");
+    let plain = lower(&g, 0, &SIZES, &Device::guess(&host())).unwrap();
+    let favored = Device::guess(&host()).favoring("rope");
     assert!(
         plain == lower(&g, 0, &SIZES, &favored).unwrap(),
         "a favored rule skewed its readers' choice"
@@ -158,7 +166,7 @@ fn trips_are_counted() {
 #[test]
 fn limits_bar_kernels() {
     let g = graphs::rows(&dims(), 32);
-    let guess = Device::guess(&settings()).favoring("lane_norm");
+    let guess = Device::guess(&host()).favoring("lane_norm");
     assert!(names(&lower(&g, 0, &SIZES, &guess).unwrap()).contains(&"lane_norm"));
     // A 64-lane device runs none of the 32-lane kernels.
     let wide = Limits {
@@ -173,7 +181,7 @@ fn limits_bar_kernels() {
 #[test]
 fn tables_keep_forms() {
     let g = graphs::table(&dims(), 32, 16);
-    let guess = Device::guess(&settings());
+    let guess = Device::guess(&host());
     let narrow = guess.clone().pinned(Pins::all(BF16_FORM));
     assert!(names(&lower(&g, 0, &SIZES, &narrow).unwrap()).contains(&"gather_bf16"));
     // A table pinned f32 stays f32.

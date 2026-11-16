@@ -22,7 +22,6 @@ gpukit = { workspace = true }
 mem = { workspace = true }
 
 [dev-dependencies]
-frontend-settings = { workspace = true }
 interp = { workspace = true }
 run = { workspace = true }
 trace = { workspace = true }

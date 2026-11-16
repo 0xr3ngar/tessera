@@ -18,9 +18,9 @@ pub use step::steps;
 
 use bundle::names::{repo, resolve};
 use checkpoint::{Slice, Stored};
-use frontend_settings::read as settings;
 use interp::{Tensor, run};
 use lower::form::named;
+use lower::testing::{host, runs};
 use lower::{Device, Pick, Pins, Plan, Settings, View, lower, rules};
 use run::{Run, open};
 use testkit::{Noise, cosine_f32, fill, max_abs_diff};
@@ -242,7 +242,7 @@ pub fn native(spec: &Spec) {
     let data = faux_data(&g);
     let cpu = Settings {
         backend: Pick::Cpu,
-        ..settings()
+        ..host()
     };
     for form in ["f32", "bf16", "q8_0", "q4_0", "nvfp4"] {
         let device = Device::guess(&cpu).pinned(Pins::all(named(form).unwrap()));
@@ -265,13 +265,14 @@ pub fn faux(spec: &Spec) {
     let Some(small) = spec.small else { return };
     let g = small();
     let data = faux_data(&g);
-    for form in ["f32", "bf16", "q8_0", "q4_0", "nvfp4"] {
-        let device = Device::guess(&settings()).pinned(Pins::all(named(form).unwrap()));
+    let forms = ["f32", "bf16", "q8_0", "q4_0", "nvfp4"];
+    for (settings, form) in runs().iter().flat_map(|s| forms.map(|f| (s, f))) {
+        let device = Device::guess(settings).pinned(Pins::all(named(form).unwrap()));
         faux_check(
             &format!("{} as {form}", spec.name),
             &g,
             &data,
-            &settings(),
+            settings,
             device,
         );
     }
@@ -282,12 +283,16 @@ pub fn faux_rules(spec: &Spec) {
     let Some(small) = spec.small else { return };
     let g = small();
     let data = faux_data(&g);
-    for rule in rules() {
+    let runs = runs();
+    let pairs = runs
+        .iter()
+        .flat_map(|s| rules().into_iter().map(move |r| (s, r)));
+    for (settings, rule) in pairs {
         for form in ["f32", "bf16"] {
             let pins = Pins::all(named(form).unwrap());
-            let device = Device::guess(&settings()).favoring(rule.name).pinned(pins);
+            let device = Device::guess(settings).favoring(rule.name).pinned(pins);
             let label = format!("{} favoring {} as {form}", spec.name, rule.name);
-            faux_check(&label, &g, &data, &settings(), device);
+            faux_check(&label, &g, &data, settings, device);
         }
     }
 }

@@ -63,11 +63,11 @@ fn rules_split() {
 /// Each case: the text, then spaCy's tokens as `[text, space_after]`.
 type Case = (String, Vec<(String, bool)>);
 
-/// Matches spaCy on the texts in `$TESSERA_SPACY/tokens.json`.
+/// Matches spaCy on the spacy reference's `tokens.json`.
 #[test]
 fn spacy_parity() {
-    let Some(dir) = frontend_settings::read().reference("spacy") else {
-        eprintln!("TESSERA_SPACY unset: skipped");
+    let Some(dir) = testkit::reference("spacy") else {
+        eprintln!("no spacy reference here: skipped");
         return;
     };
     let t = Spacy::open(&dir).unwrap();
