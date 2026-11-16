@@ -57,7 +57,7 @@ fn shares_round_trip() {
     for form in [&Q8_0 as &dyn Form, &Q4_0, &NVFP4] {
         let bytes = form.pack(&data);
         same_part(form, &bytes, [2, 4, 32], [1, 2]);
-        same_part(form, &bytes, [8, 2, 16], [1, 1]);
+        same_part(form, &bytes, [4, 2, 32], [1, 1]);
         // Half a block is no part.
         assert!(form.share(&bytes, [16, 2, 8], [1, 1]).is_none());
     }
