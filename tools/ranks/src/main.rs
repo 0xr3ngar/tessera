@@ -151,7 +151,7 @@ fn model(name: &str, fixture: &Path, n: u64) -> Result<Loaded, Box<dyn std::erro
             return Ok((r.graph, r.weights, r.pins));
         }
         "eg2" => {
-            let e = bundle::encoder::encoder(&fixture.join("exlr8"), 1, n)
+            let e = bundle::encoder::encoder(&fixture.join("exlr8"), [1, n], false)
                 .map_err(|e| e.to_string())?;
             return Ok((e.graph, e.weights, lower::Pins::default()));
         }

@@ -4,17 +4,42 @@ use crate::Error;
 use bundle::encoder::encoder;
 use bundle::tokenize::hf::Hf;
 use engine::{Model, Recipe, Settings, Tensor};
-use std::collections::BTreeMap;
 use std::path::Path;
 
 /// Tokens per text, `<bos>` and `<eos>` included.
 const MAX_TOKENS: usize = 1024;
-/// The most texts of one length a launch carries.
+/// The most texts a launch carries.
 const SEQS: usize = 16;
+/// The most padded rows a launch carries.
+const ROWS: usize = 4096;
 
 pub struct Embedder {
     model: Model,
     tokenizer: Hf,
+    /// Texts of unlike length share launches, padded.
+    padded: bool,
+}
+
+/// Texts that share a launch: shortest first, or equal unpadded.
+fn groups(ids: &[Vec<u32>], padded: bool) -> Vec<Vec<usize>> {
+    let mut order: Vec<usize> = (0..ids.len()).collect();
+    order.sort_by_key(|&i| ids[i].len());
+    let mut out: Vec<Vec<usize>> = Vec::new();
+    for i in order {
+        let len = ids[i].len();
+        let joins = out.last().is_some_and(|g| {
+            let fits = match padded {
+                true => (g.len() + 1) * len <= ROWS,
+                false => ids[g[0]].len() == len,
+            };
+            g.len() < SEQS && fits
+        });
+        match out.last_mut() {
+            Some(g) if joins => g.push(i),
+            _ => out.push(vec![i]),
+        }
+    }
+    out
 }
 
 /// Each row scaled to unit length.
@@ -27,12 +52,15 @@ fn unit(mut v: Vec<f32>) -> Vec<f32> {
 impl Embedder {
     /// Loads the exlr8 release in `dir` where `settings` say.
     pub fn open(dir: &Path, settings: &Settings) -> Result<Self, Error> {
-        let e = encoder(dir, SEQS as u64, MAX_TOKENS as u64)?;
+        // GPUs lack a fast kernel for listed keys.
+        let padded = settings.gpu().is_none();
+        let e = encoder(dir, [SEQS as u64, MAX_TOKENS as u64], padded)?;
         let mut model = Model::open(e.graph, &Recipe::default(), settings)?;
         model.load(&e.weights)?;
         Ok(Self {
             model,
             tokenizer: e.tokenizer,
+            padded,
         })
     }
 
@@ -61,32 +89,66 @@ impl Embedder {
         self.embed_ids(&ids)
     }
 
-    /// The same for ids. Texts of one length share launches.
+    /// The same for ids, a few texts per launch.
     pub fn embed_ids(&mut self, ids: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Error> {
-        let mut by_len: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         for (at, t) in ids.iter().enumerate() {
             if t.is_empty() || t.len() > MAX_TOKENS {
                 return Err(format!("text {at} has {} tokens", t.len()).into());
             }
-            by_len.entry(t.len()).or_default().push(at);
         }
         let mut out = vec![Vec::new(); ids.len()];
-        for (len, all) in by_len {
-            for group in all.chunks(SEQS) {
-                let tokens: Vec<u32> = group.iter().flat_map(|&i| ids[i].clone()).collect();
-                let positions = (0..group.len()).flat_map(|_| 0..len as u32).collect();
-                let shape = vec![group.len(), len];
-                let inputs = [
-                    Tensor::u32(shape.clone(), tokens),
-                    Tensor::u32(shape, positions),
-                ];
-                let got = self.model.run(&inputs)?;
-                let floats = got[0].floats()?;
-                let width = floats.len() / group.len();
-                for (&i, row) in group.iter().zip(floats.chunks(width)) {
-                    out[i] = unit(row.to_vec());
-                }
+        for group in groups(ids, self.padded) {
+            let got = self.launch(ids, &group)?;
+            for (i, v) in group.into_iter().zip(got) {
+                out[i] = v;
             }
+        }
+        Ok(out)
+    }
+
+    /// One launch of `group`, padded to its longest text.
+    fn launch(&mut self, ids: &[Vec<u32>], group: &[usize]) -> Result<Vec<Vec<f32>>, Error> {
+        let (n, len) = (
+            group.len(),
+            group.iter().map(|&i| ids[i].len()).max().unwrap_or(1),
+        );
+        let mut tokens = vec![0; n * len];
+        for (row, &i) in tokens.chunks_mut(len).zip(group) {
+            row[..ids[i].len()].copy_from_slice(&ids[i]);
+        }
+        let positions = (0..n).flat_map(|_| 0..len as u32).collect();
+        let shape = vec![n, len];
+        let mut inputs = vec![
+            Tensor::u32(shape.clone(), tokens),
+            Tensor::u32(shape, positions),
+        ];
+        if self.padded {
+            // Each row lists its own text's keys. `len` lists none.
+            let mut lists = Vec::with_capacity(n * len * len);
+            for &i in group {
+                let own = ids[i].len() as u32;
+                let list = (0..len as u32).map(|j| if j < own { j } else { len as u32 });
+                let list: Vec<u32> = list.collect();
+                (0..len).for_each(|_| lists.extend_from_slice(&list));
+            }
+            inputs.push(Tensor::u32(vec![n, len, len], lists));
+        }
+        let got = self.model.run(&inputs)?;
+        let floats = got[0].floats()?;
+        let per = floats.len() / n;
+        let mut out = Vec::with_capacity(n);
+        for (&i, block) in group.iter().zip(floats.chunks(per)) {
+            if !self.padded {
+                out.push(unit(block.to_vec()));
+                continue;
+            }
+            // The text's own rows. The unit scale divides.
+            let width = per / len;
+            let mut sum = vec![0.0f32; width];
+            for row in block.chunks(width).take(ids[i].len()) {
+                sum.iter_mut().zip(row).for_each(|(s, v)| *s += v);
+            }
+            out.push(unit(sum));
         }
         Ok(out)
     }

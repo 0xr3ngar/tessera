@@ -1,20 +1,18 @@
 //! Whole-sequence attention, a thread per query and head.
 
-use crate::{GUESS, source};
+use crate::{GUESS, small, source};
 use codegen::kept;
 use codegen::prelude::*;
 use graph::Mask;
-use lower::{Arg, Attn, Draft, Kernel, Launch, Shape, Step, T, Tree, ZoneKind, sites};
+use lower::{Arg, Attn, Draft, Kernel, Launch, Step, T, Tree, ZoneKind, sites};
 
-/// The widest head a thread's sums hold.
-const WIDEST: usize = 256;
-
-/// Scores, softmax and weighted values in one pass per query.
+/// One pass per query, over its keys or listed `ids`.
 #[kernel]
-fn cpu_attend(
+fn cpu_attend<const LISTED: bool>(
     q: Buf<F32>,
     k: Buf<F32>,
     v: Buf<F32>,
+    ids: Buf<U32>,
     mut out: BufMut<F32>,
     scale: f32,
     jobs: u32,
@@ -25,6 +23,7 @@ fn cpu_attend(
     #[build] width: u32,
     #[build] before: u32,
     #[build] after: u32,
+    #[build] picks: u32,
 ) {
     if gid() >= jobs {
         return;
@@ -44,27 +43,29 @@ fn cpu_attend(
     let reach = position + 1 + after;
     let to = if reach < keys { reach } else { keys };
     let kh = h / (heads / kv_heads);
-    let mut acc = [0.0f32; WIDEST];
-    for d in 0..width {
-        acc[d as usize] = 0.0;
-    }
+    let list = (s * queries + t) as u64 * picks as u64;
+    let count = if LISTED { picks } else { to - from };
+    // The first key's zero `keep` clears the output row.
     let mut most = -1.0e30f32;
     let mut total = 0.0f32;
-    for j in from..to {
-        let ko = ((s * keys + j) * kv_heads + kh) as u64 * width as u64;
-        let score = q.dot(qo, k, ko, width) * scale;
-        let top = max(most, score);
-        let keep = exp(most - top);
-        let p = exp(score - top);
-        total = total * keep + p;
-        for d in 0..width {
-            acc[d as usize] = acc[d as usize] * keep + p * v[ko + d as u64];
+    for i in 0..count {
+        let j = if LISTED {
+            ids[list + i as u64]
+        } else {
+            from + i
+        };
+        if j >= from && j < to {
+            let ko = ((s * keys + j) * kv_heads + kh) as u64 * width as u64;
+            let score = q.dot(qo, k, ko, width) * scale;
+            let top = max(most, score);
+            let keep = exp(most - top);
+            let p = exp(score - top);
+            total = total * keep + p;
+            out.mix(qo, keep, p, v, ko, width);
+            most = top;
         }
-        most = top;
     }
-    for d in 0..width {
-        out[qo + d as u64] = acc[d as usize] / total;
-    }
+    out.mix(qo, 1.0 / total, 0.0, v, 0, width);
 }
 
 /// Softmax attention over `[seqs, rows, heads, width]` tensors.
@@ -82,6 +83,8 @@ fn cpu_attend(
 pub struct Attend {
     pub scale: f32,
     pub sizes: Attn,
+    /// Keys listed per query, or zero for all.
+    pub picks: usize,
 }
 
 impl Attend {
@@ -102,20 +105,18 @@ impl Attend {
     fn body(&self) -> codegen::ir::Body {
         let a = &self.sizes;
         let (before, after) = self.window();
-        cpu_attend_ir(
-            a.queries as u32,
-            a.keys.most() as u32,
-            a.heads as u32,
-            a.kv_heads as u32,
-            a.width as u32,
-            before,
-            after,
-        )
+        let sizes = (a.queries as u32, a.keys.most() as u32, a.heads as u32);
+        let (queries, keys, heads) = sizes;
+        let (kv, width, picks) = (a.kv_heads as u32, a.width as u32, self.picks as u32);
+        match self.picks {
+            0 => cpu_attend_ir::<false>(queries, keys, heads, kv, width, before, after, 0),
+            _ => cpu_attend_ir::<true>(queries, keys, heads, kv, width, before, after, picks),
+        }
     }
 }
 
 fn attend_launches(k: &Attend, step: &Step) -> Vec<Launch> {
-    let mut launches = vec![Launch::plain(step, &[k.jobs()], Shape::Line(k.jobs()))];
+    let mut launches = vec![Launch::plain(step, &[k.jobs()], small(k.jobs()))];
     // The scale sits before the counts.
     let at = launches[0].args.len() - 1;
     launches[0].args.insert(at, lower::Arg::value(&k.scale));
@@ -146,10 +147,6 @@ fn cpu_attend_rows(
     let position = positions[row as u64];
     let kvh = qh / (heads / kv_heads);
     let q_off = ((row * heads + qh) * width) as u64;
-    let mut acc = [0.0f32; WIDEST];
-    for d in 0..width {
-        acc[d as usize] = 0.0;
-    }
     let mut most = -1.0e30f32;
     let mut total = 0.0f32;
     // The row sees its slot up to its own position.
@@ -165,14 +162,10 @@ fn cpu_attend_rows(
         let keep = exp(most - top);
         let p = exp(score - top);
         total = total * keep + p;
-        for d in 0..width {
-            acc[d as usize] = acc[d as usize] * keep + p * v[kv_off + d as u64];
-        }
+        out.mix(q_off, keep, p, v, kv_off, width);
         most = top;
     }
-    for d in 0..width {
-        out[q_off + d as u64] = acc[d as usize] / total;
-    }
+    out.mix(q_off, 1.0 / total, 0.0, v, 0, width);
 }
 
 /// Scaled query rows over kept keys, by slot and position.
@@ -197,16 +190,13 @@ fn rows_launches(k: &AttendRows, step: &Step) -> Vec<Launch> {
     args.extend(a.kept_args());
     vec![Launch {
         args,
-        shape: Shape::Line(a.queries * a.heads),
+        shape: small(a.queries * a.heads),
     }]
 }
 
 /// Whole sequences with fixed keys, or rows over kept keys.
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let site: sites::Attend = tree.site(at)?;
-    if site.sizes.width > WIDEST {
-        return None;
-    }
     if site.rows.is_some() {
         return site.ragged(AttendRows(site.sizes));
     }
@@ -217,8 +207,30 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let kernel = Attend {
         scale: site.scale,
         sizes: site.sizes,
+        picks: 0,
     };
-    Some(vec![Draft::new(kernel, [site.q, site.k, site.v], out)])
+    // Only the listed kernel reads its fourth buffer.
+    Some(vec![Draft::new(
+        kernel,
+        [site.q, site.k, site.v, site.k],
+        out,
+    )])
+}
+
+/// Whole sequences, each query reading its listed keys.
+fn listed(tree: &Tree, at: T) -> Option<Vec<Draft>> {
+    let (site, ids) = sites::Attend::listed(tree, at)?;
+    if site.sizes.keys.runtime() {
+        return None;
+    }
+    let out = site.sizes.seqs * site.out();
+    let kernel = Attend {
+        scale: site.scale,
+        sizes: site.sizes,
+        picks: *tree.node(ids).shape.last()?,
+    };
+    Some(vec![Draft::new(kernel, [site.q, site.k, site.v, ids], out)])
 }
 
 lower::rule!("cpu_attend", propose);
+lower::rule!("cpu_listed", listed);

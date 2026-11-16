@@ -1,4 +1,4 @@
-//! Causal attention over listed keys, or computed keys by row.
+//! Masked attention over listed keys, or computed keys by row.
 
 use codegen::prelude::*;
 use graph::{Mask, Op};
@@ -25,6 +25,8 @@ fn listed(
     picks: u32,
     ragged: u32,
     from_list: u32,
+    before: u32,
+    after: u32,
 ) {
     if gid() >= len {
         return;
@@ -39,6 +41,17 @@ fn listed(
         first = slots[row as u64] * keys;
         position = positions[row as u64];
     }
+    // Keys the mask lets this query see.
+    let from = if position > before {
+        position - before
+    } else {
+        0
+    };
+    let to = if position + after < keys {
+        position + after + 1
+    } else {
+        keys
+    };
     let kv_head = head / (heads / kv_heads);
     let list = row as u64 * picks as u64;
     let q_at = (gid() - d) as u64;
@@ -48,7 +61,7 @@ fn listed(
         if from_list == 1 {
             j = ids[list + p as u64];
         }
-        if j <= position {
+        if j >= from && j < to {
             let k_at = ((first + j) * kv_heads + kv_head) as u64 * width as u64;
             peak = max(peak, q.dot(q_at, k, k_at, width) * scale);
         }
@@ -60,7 +73,7 @@ fn listed(
         if from_list == 1 {
             j = ids[list + p as u64];
         }
-        if j <= position {
+        if j >= from && j < to {
             let k_at = ((first + j) * kv_heads + kv_head) as u64 * width as u64;
             let e = exp(q.dot(q_at, k, k_at, width) * scale - peak);
             total += e;
@@ -89,6 +102,8 @@ pub(crate) struct Sizes {
     /// Without a list, pick `p` is key `p`.
     pub from_list: bool,
     pub scale: f32,
+    /// Keys a query sees before and after its position.
+    pub window: (usize, usize),
 }
 
 /// Whole sequences over listed keys, or ragged rows by slot.
@@ -104,7 +119,12 @@ pub(crate) struct Listed(pub Sizes);
 
 fn listed_launches(k: &Listed, step: &Step) -> Vec<Launch> {
     let s = &k.0;
-    let flags = [usize::from(s.ragged), usize::from(s.from_list)];
+    let flags = [
+        usize::from(s.ragged),
+        usize::from(s.from_list),
+        s.window.0,
+        s.window.1,
+    ];
     let counts = [s.queries, s.keys, s.heads, s.kv_heads, s.width, s.picks];
     let mut launch = Launch::plain(step, &[s.len], Shape::Line(s.len));
     launch
@@ -150,17 +170,24 @@ fn rows(tree: &Tree, at: T) -> Option<Vec<Draft>> {
         ragged: true,
         from_list: a.picked,
         scale: a.scale,
+        window: (keys, 0),
     };
     let reads = [q, k, v, ids, slots, positions];
     Some(vec![Draft::new(Listed(sizes), reads, sizes.len)])
 }
 
-/// Causal sequences whose keys are all present.
+/// Sequences whose keys are all present, under any mask.
 fn whole(tree: &Tree, site: Attend, ids: T) -> Option<Vec<Draft>> {
     let a: Attn = site.sizes;
-    if a.mask != Mask::Causal || a.keys.runtime() {
+    if a.keys.runtime() {
         return None;
     }
+    let keys = a.keys.most();
+    let window = match a.mask {
+        Mask::Causal => (keys, 0),
+        Mask::Bidirectional => (keys, keys),
+        Mask::Within(n) => (n as usize, n as usize),
+    };
     let sizes = Sizes {
         len: a.seqs * a.queries * a.heads * a.width,
         queries: a.queries,
@@ -172,6 +199,7 @@ fn whole(tree: &Tree, site: Attend, ids: T) -> Option<Vec<Draft>> {
         ragged: false,
         from_list: true,
         scale: site.scale,
+        window,
     };
     // Slots and positions go unread, so the list stands in.
     let reads = [site.q, site.k, site.v, ids, ids, ids];

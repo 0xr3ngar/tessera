@@ -552,6 +552,81 @@ impl Lowerer<'_, '_> {
                         .expect("a sum"),
                 )
             }
+            Intrinsic::Dots => {
+                let [out, at, stride, x, x_at, w, w_at, k, rows] = args else {
+                    return Err("a dots takes nine arguments".into());
+                };
+                let mut bufs = Vec::new();
+                for name in [out, x, w] {
+                    let Expr::Var(name) = name else {
+                        return Err("a dots names its buffers".into());
+                    };
+                    let Kind::Buffer {
+                        form,
+                        ptr,
+                        len,
+                        skip,
+                    } = self.kind(name)?
+                    else {
+                        return Err(format!("`{name}` is not a buffer"));
+                    };
+                    bufs.push((form.name(), ptr, len, skip));
+                }
+                let f = match (bufs[0].0, bufs[1].0, bufs[2].0) {
+                    ("f32", "f32", "f32") => "dots_f32",
+                    ("f32", "f32", "bf16") => "dots_bf16",
+                    other => return Err(format!("no dots over {other:?}")),
+                };
+                let mut call = Vec::new();
+                for ((_, ptr, len, skip), (first, more)) in
+                    bufs.iter()
+                        .zip([(at, Some(stride)), (x_at, None), (w_at, None)])
+                {
+                    let first = self.index(first, t)?;
+                    call.extend([*ptr, *len, self.b.ins().iadd(*skip, first)]);
+                    if let Some(more) = more {
+                        call.push(self.index(more, t)?);
+                    }
+                }
+                call.extend([self.index(k, t)?, self.index(rows, t)?]);
+                self.call(f, &call);
+                Val::S(self.iconst(types::I8, 0))
+            }
+            Intrinsic::Mix => {
+                let [out, at, keep, p, b, b_at, n] = args else {
+                    return Err("a mix takes seven arguments".into());
+                };
+                let (Expr::Var(out), Expr::Var(b)) = (out, b) else {
+                    return Err("a mix names its buffers".into());
+                };
+                let (
+                    Kind::Buffer {
+                        form: fo,
+                        ptr: po,
+                        len: lo,
+                        skip: so,
+                    },
+                    Kind::Buffer {
+                        form: fb,
+                        ptr: pb,
+                        len: lb,
+                        skip: sb,
+                    },
+                ) = (self.kind(out)?, self.kind(b)?)
+                else {
+                    return Err("a mix runs over buffers".into());
+                };
+                if fo.name() != "f32" || fb.name() != "f32" {
+                    return Err("a mix runs over f32 rows".into());
+                }
+                let scales = self.floats(&[keep.clone(), p.clone()], t)?;
+                let (at, b_at, n) = (self.index(at, t)?, self.index(b_at, t)?, self.index(n, t)?);
+                let at = self.b.ins().iadd(so, at);
+                let b_at = self.b.ins().iadd(sb, b_at);
+                let call = [po, lo, at, scales[0], scales[1], pb, lb, b_at, n];
+                self.call("mix_f32", &call);
+                Val::S(self.iconst(types::I8, 0))
+            }
             Intrinsic::F16 | Intrinsic::E4M3 | Intrinsic::E2M1 => {
                 let v = self.u32s(args, t)?;
                 let f = match i {

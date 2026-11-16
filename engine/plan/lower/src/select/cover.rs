@@ -7,6 +7,8 @@ use crate::rule::{Draft, Read, Rule, ways};
 use crate::tree::{T, Term, Tree};
 use graph::{Op, Stage, View};
 use sim::ZoneKind;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 /// The cheapest cover found at one node, in one zone.
 pub(crate) struct Choice {
@@ -262,6 +264,16 @@ impl Cover<'_> {
 
 /// A tree runs on a CPU too, in lockstep.
 fn fits(d: &Draft, kind: ZoneKind) -> bool {
-    d.kernel.runs_on() == kind
-        || (kind == ZoneKind::Cpu && matches!(d.kernel.source(), Source::Made(_)))
+    d.kernel.runs_on() == kind || (kind == ZoneKind::Cpu && made(d))
+}
+
+/// Whether a kernel is a tree, asked once per name.
+fn made(d: &Draft) -> bool {
+    // Building a body costs more than the cover.
+    static MADE: OnceLock<Mutex<HashMap<&'static str, bool>>> = OnceLock::new();
+    let name = d.kernel.name();
+    let mut known = MADE.get_or_init(Mutex::default).lock().expect("made");
+    *known
+        .entry(name)
+        .or_insert_with(|| matches!(d.kernel.source(), Source::Made(_)))
 }

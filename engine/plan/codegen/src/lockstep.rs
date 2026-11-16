@@ -82,6 +82,35 @@ pub fn st_u32(bytes: &mut [u8], at: usize, v: u32) {
     bytes[at * 4..at * 4 + 4].copy_from_slice(&v.to_le_bytes());
 }
 
+/// `n` floats from `at` become `out * keep + p * b`.
+pub fn mix_f32(out: &mut [u8], at: usize, keep: f32, p: f32, b: &[u8], b_at: usize, n: usize) {
+    let mut other = Vec::new();
+    let b = f32_row(b, b_at, n, &mut other);
+    let slice = &mut out[at * 4..(at + n) * 4];
+    // SAFETY: f32 has no invalid bit patterns.
+    let (head, body, _) = unsafe { slice.align_to_mut::<f32>() };
+    if head.is_empty() && body.len() == n {
+        // A zero `keep` drops old values. They may be junk.
+        match keep == 0.0 {
+            true => body.iter_mut().zip(b).for_each(|(o, x)| *o = p * x),
+            false => body
+                .iter_mut()
+                .zip(b)
+                .for_each(|(o, x)| *o = *o * keep + p * x),
+        }
+        return;
+    }
+    for (i, x) in b.iter().enumerate() {
+        let (o, _) = slice[i * 4..].split_first_chunk::<4>().expect("four bytes");
+        let old = if keep == 0.0 {
+            0.0
+        } else {
+            f32::from_le_bytes(*o) * keep
+        };
+        slice[i * 4..i * 4 + 4].copy_from_slice(&(old + p * x).to_le_bytes());
+    }
+}
+
 /// The u32 at byte offset `at`.
 #[inline(always)]
 pub fn word(bytes: &[u8], at: usize) -> u32 {
@@ -322,6 +351,129 @@ fn f32_row<'a>(bytes: &'a [u8], at: usize, n: usize, scratch: &'a mut Vec<f32>) 
     let (words, _) = slice.as_chunks::<4>();
     scratch.extend(words.iter().map(|c| f32::from_le_bytes(*c)));
     scratch
+}
+
+/// Depth a block sums while its rows stay in cache.
+const SPAN: usize = 256;
+/// Rows and columns of one block of sums.
+pub const BLOCK: usize = 16;
+
+/// `a + x * y`, lane by lane.
+#[inline(always)]
+fn lanes(a: [f32; 4], x: [f32; 4], y: [f32; 4]) -> [f32; 4] {
+    // Fused only where one instruction does it.
+    match cfg!(any(target_arch = "aarch64", target_feature = "fma")) {
+        true => std::array::from_fn(|l| x[l].mul_add(y[l], a[l])),
+        false => std::array::from_fn(|l| a[l] + x[l] * y[l]),
+    }
+}
+
+/// `R` rows of `x` against four rows of `w`.
+fn tile<const R: usize>(x: [&[f32]; R], w: [&[f32]; 4]) -> [[f32; 4]; R] {
+    let len = w[0].len();
+    let steps = len / 4;
+    let xs = x.map(|r| &r[..steps * 4].as_chunks::<4>().0[..steps]);
+    let [w0, w1, w2, w3] = w.map(|r| &r[..steps * 4].as_chunks::<4>().0[..steps]);
+    // Four lanes per sum, so each load feeds four products.
+    let mut acc = [[[0.0f32; 4]; 4]; R];
+    for i in 0..steps {
+        let (a, b, c, d) = (w0[i], w1[i], w2[i], w3[i]);
+        for r in 0..R {
+            let xv = xs[r][i];
+            let row = &mut acc[r];
+            row[0] = lanes(row[0], xv, a);
+            row[1] = lanes(row[1], xv, b);
+            row[2] = lanes(row[2], xv, c);
+            row[3] = lanes(row[3], xv, d);
+        }
+    }
+    let mut out = [[0.0f32; 4]; R];
+    for r in 0..R {
+        for c in 0..4 {
+            out[r][c] = acc[r][c].iter().sum::<f32>();
+            for i in steps * 4..len {
+                out[r][c] += x[r][i] * w[c][i];
+            }
+        }
+    }
+    out
+}
+
+/// Rows `first..first + R` against columns `col..col + 4`.
+fn quad<const R: usize>(x: &[&[f32]], w: &[&[f32]], at: (usize, usize), sums: &mut Sums) {
+    let (first, col) = at;
+    let got = tile::<R>(
+        std::array::from_fn(|r| x[first + r]),
+        std::array::from_fn(|c| w[col + c]),
+    );
+    for (r, line) in got.iter().enumerate() {
+        for (c, v) in line.iter().enumerate() {
+            sums[first + r][col + c] += v;
+        }
+    }
+}
+
+type Sums = [[f32; BLOCK]; BLOCK];
+
+/// Where a block reads and writes, in elements.
+pub struct Dots {
+    pub at: usize,
+    pub stride: usize,
+    pub x_at: usize,
+    pub w_at: usize,
+    pub k: usize,
+}
+
+/// `rows` of `x` against `BLOCK` rows of `w`, into `out`.
+pub fn dots_form(form: &dyn Load, out: &mut [u8], x: &[u8], w: &[u8], d: &Dots, rows: usize) {
+    let (k, rows) = (d.k, rows.min(BLOCK));
+    let mut held: [Vec<f32>; BLOCK] = std::array::from_fn(|_| Vec::new());
+    let mut xr: [&[f32]; BLOCK] = [&[]; BLOCK];
+    for (r, h) in held.iter_mut().enumerate().take(rows) {
+        xr[r] = f32_row(x, d.x_at + r * k, k, h);
+    }
+    let wide = form.name() == "f32";
+    let mut kept: [Vec<f32>; BLOCK] = std::array::from_fn(|_| Vec::new());
+    let mut wr: [&[f32]; BLOCK] = [&[]; BLOCK];
+    if wide {
+        for (c, h) in kept.iter_mut().enumerate() {
+            wr[c] = f32_row(w, d.w_at + c * k, k, h);
+        }
+    }
+    // bf16 rows widen one span at a time.
+    let mut narrow = vec![[0.0f32; SPAN]; if wide { 0 } else { BLOCK }];
+    let mut sums: Sums = [[0.0; BLOCK]; BLOCK];
+    for start in (0..k).step_by(SPAN) {
+        let end = (start + SPAN).min(k);
+        for (c, line) in narrow.iter_mut().enumerate() {
+            let first = d.w_at + c * k + start;
+            for (i, v) in line[..end - start].iter_mut().enumerate() {
+                let b = &w[(first + i) * 2..(first + i) * 2 + 2];
+                *v = f32::from_bits(u32::from(u16::from_le_bytes([b[0], b[1]])) << 16);
+            }
+        }
+        let ws: [&[f32]; BLOCK] = match wide {
+            true => wr.map(|r| &r[start..end]),
+            false => std::array::from_fn(|c| &narrow[c][..end - start]),
+        };
+        let xs = xr.map(|r| r.get(start..end).unwrap_or(&[]));
+        for first in (0..rows).step_by(4) {
+            for col in (0..BLOCK).step_by(4) {
+                let at = (first, col);
+                match rows - first {
+                    1 => quad::<1>(&xs, &ws, at, &mut sums),
+                    2 => quad::<2>(&xs, &ws, at, &mut sums),
+                    3 => quad::<3>(&xs, &ws, at, &mut sums),
+                    _ => quad::<4>(&xs, &ws, at, &mut sums),
+                }
+            }
+        }
+    }
+    for (r, line) in sums.iter().enumerate().take(rows) {
+        for (c, v) in line.iter().enumerate() {
+            st_f32(out, d.at + r * d.stride + c, *v);
+        }
+    }
 }
 
 /// `x` against bf16 `w`, widened as it is multiplied.

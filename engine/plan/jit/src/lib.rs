@@ -80,6 +80,9 @@ helpers! {
     dot_q8_0(P, P, P, P, P, P, P) -> F32;
     dot_q4_0(P, P, P, P, P, P, P) -> F32;
     dot_nvfp4(P, P, P, P, P, P, P) -> F32;
+    mix_f32(P, P, P, F32, F32, P, P, P, P);
+    dots_f32(P, P, P, P, P, P, P, P, P, P, P, P);
+    dots_bf16(P, P, P, P, P, P, P, P, P, P, P, P);
     st_f32(P, P, P, F32);
     st_u32(P, P, P, I32);
     word(P, P, P) -> I32;

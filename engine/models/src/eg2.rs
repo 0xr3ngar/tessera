@@ -3,8 +3,8 @@
 use crate::shared::{Attend, Dense, Side, Stack, tokens};
 use trace::DimName::*;
 use trace::{
-    Act, Composite, Dim, DimExpr, Embed, Graph, Mask, Model, Norm, Pairs, Role, Scalar, Tensor,
-    Weights, each,
+    Act, Composite, DType, Dim, DimExpr, Embed, EntryKind, Graph, Mask, Model, Norm, Pairs, Port,
+    Role, Scalar, Tensor, TensorType, Weights, each,
 };
 
 pub struct Config {
@@ -139,13 +139,34 @@ fn trunk<D: Dense>(
     attention: &[Attention<D>],
     [tokens, positions]: [&Tensor; 2],
 ) -> Tensor {
+    listed(m, c, w, attention, [tokens, positions], None)
+}
+
+/// The same, each query reading only `keys` when given.
+fn listed<D: Dense>(
+    m: &Model,
+    c: &Config,
+    w: &Eg2<D>,
+    attention: &[Attention<D>],
+    [tokens, positions]: [&Tensor; 2],
+    keys: Option<&Tensor>,
+) -> Tensor {
     let (eps, hidden) = (c.eps, c.stack.hidden as f32);
     let inputs = m.embed(tokens, &w.embed).scale(hidden.sqrt());
     let mut x = inputs.clone();
     for (l, layer) in w.layers.iter().enumerate() {
         let ple = layer.ple_in.apply(&inputs).scale(hidden.powf(-0.5));
         let ple = ple.rms_norm(&w.ple_norm, eps);
-        let attend = || [attend(m, c, l as u64, &attention[l], &x, positions)];
+        let attend = || {
+            [attend(
+                m,
+                c,
+                (l as u64, &attention[l]),
+                &x,
+                [positions],
+                keys,
+            )]
+        };
         let [attn] = m.composite(Composite::Attention, attend);
         x = x.add(&attn);
         let h = x.rms_norm(&layer.pre_ff, eps);
@@ -181,10 +202,10 @@ fn geglu<D: Dense>(h: &Tensor, l: &Layer<D>) -> Tensor {
 fn attend<D: Dense>(
     m: &Model,
     c: &Config,
-    l: u64,
-    a: &Attention<D>,
+    (l, a): (u64, &Attention<D>),
     x: &Tensor,
-    positions: &Tensor,
+    [positions]: [&Tensor; 1],
+    keys: Option<&Tensor>,
 ) -> Tensor {
     let [head, kv_heads] = c.heads(l);
     let (theta, mask) = match c.full(l) {
@@ -200,7 +221,7 @@ fn attend<D: Dense>(
         None => t.rms(c.eps),
     };
     let out = heads.apply([&a.q, &a.k, &a.v], &h, turn, |qkv| {
-        m.attend(mask, 1.0, qkv, None)
+        m.attend(mask, 1.0, qkv, keys)
     });
     out.rms_norm(&a.post, c.eps)
 }
@@ -220,6 +241,28 @@ type Stage<D> = fn(&Model, &Config, &Eg2<D>, &[Attention<D>], [&Tensor; 2]) -> T
 /// One forward entry: tokens and positions in, embeddings out.
 pub fn program<D: Dense>(c: &Config) -> Graph {
     staged(c, forward::<D>)
+}
+
+/// Padded texts reading listed `Keys`: a row per token.
+pub fn batched<D: Dense>(c: &Config) -> Graph {
+    let m = Model::new(c.dims());
+    let w: Eg2<D> = trace::declare(&m);
+    let attention = attention(&m, c);
+    let port = |role, shape: Vec<DimExpr>| Port {
+        role,
+        ty: TensorType::new(shape, DType::U32),
+    };
+    let rows = vec![Seqs.into(), Context.into()];
+    let lists = vec![Seqs.into(), Context.into(), Context.into()];
+    let ports = [
+        port(Role::Tokens, rows.clone()),
+        port(Role::Positions, rows),
+        port(Role::Keys, lists),
+    ];
+    let [tokens, positions, keys] = m.entry(EntryKind::Forward, ports);
+    let x = listed(&m, c, &w, &attention, [&tokens, &positions], Some(&keys));
+    let out = w.proj.apply(&x.rms_norm(&w.norm, c.eps));
+    m.finish([(Role::Logits, &out)])
 }
 
 /// The residual stream after the last layer, for parity checks.
