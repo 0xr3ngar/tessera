@@ -36,7 +36,7 @@ fn path(segs: &[PathSeg]) -> String {
 /// `weights` as HF slices in one bf16 file, experts apart.
 fn write(dir: &Path, g: &Graph, weights: &[Tensor]) {
     let c = bundle::mla::config(CONFIG, 1, ROWS as u64).unwrap();
-    let rules = bundle::mla::rules(&c);
+    let rules = bundle::mla::rules(&c, false);
     let (mut header, mut data) = (Vec::new(), Vec::new());
     let mut slice = |name: String, shape: &[usize], values: &[f32]| {
         let at = data.len();
