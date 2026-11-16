@@ -1,10 +1,10 @@
 //! Padded texts with listed keys match each text alone.
 
 use interp::{Tensor, run};
-use lower::testing::{host, runs};
 use lower::{Device, Pick, Settings, lower};
 use models::eg2::{batched, program};
 use parity::{interpreted, loaded};
+use run::testing::{host, runs};
 use testkit::{Noise, cosine_f32, weights_with};
 use trace::DimName::{Context, Seqs};
 use trace::Linear;
