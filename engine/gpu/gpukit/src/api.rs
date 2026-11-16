@@ -6,10 +6,11 @@ use std::ffi::{CStr, CString, c_int, c_void};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::LocalKey;
 
-use crate::Error;
+use crate::backend::Backend;
 use crate::device::{Caches, Device};
 use crate::dl::image_hash;
 use crate::launch::{KernelArgs, Launch};
+use crate::{Error, Platform};
 
 /// A driver handle: a module, function, stream or graph.
 pub type Handle = *mut c_void;
@@ -81,7 +82,11 @@ pub trait Api: Sync + Sized + 'static {
     /// Device state beyond the shared parts.
     type Own;
 
+    const BACKEND: Backend;
+
     fn error(msg: String) -> Error;
+    /// The device as asked, with its table row.
+    fn describe(ctx: &Context<Self>) -> Platform;
     fn open() -> Result<Context<Self>, Error>;
     fn caches() -> &'static Caches<Context<Self>>;
     /// This thread's capture stream, or null.
@@ -233,11 +238,6 @@ impl<A: Api> Context<A> {
         recorded.and(ended.map_err(E::from))?;
         graph.exec = api.instantiate(graph.graph)?;
         Ok(graph)
-    }
-
-    /// Lets this thread's launches overlap the one before.
-    pub fn programmatic(&self, on: bool) {
-        A::programmatic(on);
     }
 
     /// Runs a captured graph on the default stream, after copies.
@@ -398,6 +398,9 @@ impl<A: Api> Drop for Graph<A> {
 
 impl<A: Api> Device for Context<A> {
     type Kernel = Kernel<A>;
+    type Graph = Graph<A>;
+
+    const BACKEND: Backend = A::BACKEND;
 
     fn open() -> Result<Self, Error> {
         A::open()
@@ -409,6 +412,46 @@ impl<A: Api> Device for Context<A> {
 
     fn caches() -> &'static Caches<Self> {
         A::caches()
+    }
+
+    fn name(&self) -> String {
+        self.0.name.clone()
+    }
+
+    fn platform(&self) -> Platform {
+        A::describe(self)
+    }
+
+    fn finish(&self) -> Result<Option<f64>, Error> {
+        self.synchronize()?;
+        Ok(None)
+    }
+
+    fn programmatic(&self, on: bool) {
+        A::programmatic(on);
+    }
+
+    fn pin(&self, size: usize) -> Result<(u64, u64), Error> {
+        Context::pin(self, size)
+    }
+
+    fn unpin(&self, host: u64) {
+        Context::unpin(self, host);
+    }
+
+    fn graphs(&self) -> bool {
+        true
+    }
+
+    fn capture<E: From<Error>>(
+        &self,
+        record: impl FnOnce() -> Result<(), E>,
+    ) -> Result<Graph<A>, E> {
+        Context::capture(self, record)
+    }
+
+    fn replay(&self, graph: &Graph<A>) -> Result<(), Error> {
+        Context::replay(self, graph)
     }
 
     fn alloc(&self, size: usize) -> Result<u64, Error> {

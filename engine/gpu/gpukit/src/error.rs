@@ -13,6 +13,8 @@ pub enum Error {
     Rocm(String),
     /// Malformed input data (a shape/size mismatch in a payload).
     Format(&'static str),
+    /// A Metal device, buffer or dispatch failure.
+    Metal(String),
 }
 
 impl std::fmt::Display for Error {
@@ -24,6 +26,7 @@ impl std::fmt::Display for Error {
             Self::Cuda(msg) => write!(f, "cuda: {msg}"),
             Self::Rocm(msg) => write!(f, "rocm: {msg}"),
             Self::Format(msg) => write!(f, "format error: {msg}"),
+            Self::Metal(msg) => write!(f, "metal: {msg}"),
         }
     }
 }

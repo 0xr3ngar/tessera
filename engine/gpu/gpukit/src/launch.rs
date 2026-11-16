@@ -31,24 +31,26 @@ pub struct KernelArgs {
 }
 
 enum Arg {
-    U32(u32),
-    I32(i32),
-    F32(f32),
-    U64(u64),
-    /// Byte blob in 8-byte-aligned storage (for small POD structs).
-    Aligned(Box<[u64]>),
+    /// A device address.
+    Pointer(u64),
+    /// `len` bytes of a value, in 8-byte-aligned storage.
+    Value { words: Box<[u64]>, len: usize },
 }
 
+#[cfg(any(feature = "cuda", feature = "rocm"))]
 impl Arg {
     fn as_mut_ptr(&mut self) -> *mut std::ffi::c_void {
         match self {
-            Arg::U32(v) => std::ptr::from_mut(v).cast(),
-            Arg::I32(v) => std::ptr::from_mut(v).cast(),
-            Arg::F32(v) => std::ptr::from_mut(v).cast(),
-            Arg::U64(v) => std::ptr::from_mut(v).cast(),
-            Arg::Aligned(v) => v.as_mut_ptr().cast(),
+            Arg::Pointer(v) => std::ptr::from_mut(v).cast(),
+            Arg::Value { words, .. } => words.as_mut_ptr().cast(),
         }
     }
+}
+
+/// One argument, as a backend binds it.
+pub enum Bound<'a> {
+    Pointer(u64),
+    Bytes(&'a [u8]),
 }
 
 impl KernelArgs {
@@ -56,37 +58,37 @@ impl KernelArgs {
         Self::default()
     }
 
-    pub fn u32(&mut self, v: u32) -> &mut Self {
-        self.args.push(Arg::U32(v));
+    fn word(&mut self, word: u64, len: usize) -> &mut Self {
+        let words = vec![word].into_boxed_slice();
+        self.args.push(Arg::Value { words, len });
         self
+    }
+
+    pub fn u32(&mut self, v: u32) -> &mut Self {
+        self.word(v as u64, 4)
     }
 
     pub fn i32(&mut self, v: i32) -> &mut Self {
-        self.args.push(Arg::I32(v));
-        self
+        self.word(v as u32 as u64, 4)
     }
 
     pub fn f32(&mut self, v: f32) -> &mut Self {
-        self.args.push(Arg::F32(v));
-        self
+        self.word(v.to_bits() as u64, 4)
     }
 
     pub fn u64(&mut self, v: u64) -> &mut Self {
-        self.args.push(Arg::U64(v));
-        self
+        self.word(v, 8)
     }
 
     /// Bind a device pointer (a kernel T* argument).
     pub fn device_ptr(&mut self, p: u64) -> &mut Self {
-        self.u64(p)
+        self.args.push(Arg::Pointer(p));
+        self
     }
 
     /// Two consecutive u32s (a uint2 kernel parameter).
     pub fn u32x2(&mut self, a: u32, b: u32) -> &mut Self {
-        let packed = [(a as u64) | ((b as u64) << 32)];
-        self.args
-            .push(Arg::Aligned(packed.to_vec().into_boxed_slice()));
-        self
+        self.word((a as u64) | ((b as u64) << 32), 8)
     }
 
     /// Bind a small value needing at most 8-byte alignment.
@@ -99,13 +101,27 @@ impl KernelArgs {
                 bytes.len(),
             );
         }
-        self.args.push(Arg::Aligned(words));
+        let len = bytes.len();
+        self.args.push(Arg::Value { words, len });
         self
     }
 
     // Call only on a complete list, so slots stay put.
+    #[cfg(any(feature = "cuda", feature = "rocm"))]
     pub(crate) fn pointers(&mut self) -> Vec<*mut std::ffi::c_void> {
         self.args.iter_mut().map(Arg::as_mut_ptr).collect()
+    }
+
+    /// Each argument in order, for binding by index.
+    pub fn bound(&self) -> impl Iterator<Item = Bound<'_>> {
+        self.args.iter().map(|a| match a {
+            Arg::Pointer(p) => Bound::Pointer(*p),
+            Arg::Value { words, len } => {
+                // The words are plain data, read as bytes in place.
+                let at = words.as_ptr().cast::<u8>();
+                Bound::Bytes(unsafe { std::slice::from_raw_parts(at, *len) })
+            }
+        })
     }
 }
 
