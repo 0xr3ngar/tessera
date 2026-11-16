@@ -2,8 +2,7 @@
 
 use crate::file::{Error, File};
 use crate::offer::{Offer, Slice, Stored};
-use codegen::trellis;
-use graph::{E4M3, F16};
+use engine::{E4M3, F16, trellis};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

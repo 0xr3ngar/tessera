@@ -2,8 +2,7 @@
 
 use checkpoint::exlr8::Release;
 use checkpoint::{File, Gguf, Offer};
-use engine::{Engine, Row};
-use lower::{Pins, Recipe};
+use engine::{Engine, Pins, Recipe, Row};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -113,7 +112,7 @@ struct Report {
 }
 
 /// `prompt` in `m` slots, then `new` rows each, timed twice.
-fn run(engine: &mut Engine, prompt: &[u32], m: usize, new: usize) -> Result<Run, lower::Error> {
+fn run(engine: &mut Engine, prompt: &[u32], m: usize, new: usize) -> Result<Run, engine::Error> {
     let row = |slot: usize, token: u32, position: usize| Row {
         slot: slot as u32,
         token,
@@ -180,7 +179,7 @@ fn evaluate(args: &Args) -> Result<Report, Failure> {
         None => Recipe {
             pins: loaded
                 .pins
-                .unwrap_or_else(|| Pins::all(lower::form::BF16_FORM)),
+                .unwrap_or_else(|| Pins::all(engine::form::BF16_FORM)),
             ..Recipe::default()
         },
     };

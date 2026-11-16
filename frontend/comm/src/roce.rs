@@ -1,6 +1,6 @@
 //! RoCE ports by device name, with GID indexes from sysfs.
 
-use engine_comm::{Error, Port};
+use engine::comm::{Error, Port};
 use std::fs;
 use std::path::PathBuf;
 

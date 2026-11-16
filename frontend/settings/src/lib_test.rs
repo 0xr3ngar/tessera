@@ -8,6 +8,6 @@ fn reads_variables() {
     }
     let s = crate::read();
     assert_eq!(s.host_lanes, 8);
-    assert_eq!(s.emulate, Some(engine_settings::Backend::Cuda));
+    assert_eq!(s.emulate, Some(engine::Backend::Cuda));
     assert_eq!(s.gpu(), None);
 }

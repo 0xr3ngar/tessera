@@ -19,7 +19,6 @@ rocm = ["engine/rocm", "tasks/rocm"]
 axum = "0.8"
 engine = { workspace = true }
 bundle = { workspace = true }
-lower = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 frontend-settings = { workspace = true }
 tasks = { workspace = true }

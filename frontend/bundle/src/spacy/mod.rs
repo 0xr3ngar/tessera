@@ -7,10 +7,8 @@ mod thinc;
 
 use crate::tokenize::Error;
 use crate::tokenize::spacy::Spacy;
-use graph::{Graph, PathSeg};
-use interp::{Tensor, bind};
-use lower::Weight;
-use models::tagger::{Config, PIECES, path, piece, program};
+use engine::tagger::{Config, PIECES, path, piece, program};
+use engine::{Graph, PathSeg, Tensor, Weight, bind};
 use std::collections::HashMap;
 use std::path::Path;
 use thinc::{Array, Node};

@@ -1,6 +1,6 @@
 //! Ranks on threads over RDMA loopback, when `TESSERA_VERBS` names ports.
 
-use engine_comm::{Fabric, Port, Transport, Verbs};
+use engine::comm::{Fabric, Port, Transport, Verbs};
 use frontend_comm::{ports, sockets};
 use std::net::TcpListener;
 use std::sync::Mutex;

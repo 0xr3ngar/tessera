@@ -6,9 +6,7 @@ use kernels as _;
 use linear as _;
 
 use graph::DimName::{Context, Rows, Segments, Seqs};
-use graph::Graph;
-use interp::Tensor;
-use lower::{Cache, Device, Error, Recipe, Settings, Weight};
+use lower::{Cache, Device};
 use run::{Run, open};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -19,6 +17,16 @@ mod schedule;
 
 pub use model::Model;
 pub use schedule::{Batch, Fair, Policy, Seq, Sink};
+
+// The front end reaches the engine crates only through these.
+pub use codegen::{block, trellis};
+pub use engine_comm as comm;
+pub use engine_settings::Backend;
+pub use graph::{Bf16, DimExpr, E4M3, F16, Graph, PathSeg, Shape};
+pub use interp::{Tensor, bind};
+pub use lower::{Error, Pick, Pins, Recipe, Settings, Weight, form, gpu};
+pub use models::{Stack, decoder, tagger};
+pub use trace::Norm;
 
 /// Tokens to continue, and when to stop.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

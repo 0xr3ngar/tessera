@@ -104,7 +104,7 @@ fn reads_gguf() {
         let q8 = &slices[3];
         assert_eq!(
             (q8.elements(), q8.stored),
-            (32, Stored::Form(&codegen::block::Q8_0))
+            (32, Stored::Form(&engine::block::Q8_0))
         );
         assert_eq!(Offer::packed(&g, "q8").unwrap(), vec![23; 34]);
         assert!(matches!(Offer::packed(&g, "f"), Err(Error::DType(_))));

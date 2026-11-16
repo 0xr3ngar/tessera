@@ -4,7 +4,7 @@
 use kernels as _;
 use linear as _;
 
-use engine_comm::Transport;
+use engine::comm::Transport;
 use frontend_comm::{shm, sockets};
 use frontend_settings::read as settings;
 use graph::{Graph, shard};
