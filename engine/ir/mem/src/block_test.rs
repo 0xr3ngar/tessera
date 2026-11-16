@@ -75,4 +75,13 @@ fn shares_round_trip() {
     let inputs = packed(256, 128, INPUT_SIDE, &noise(128 * 256 * 2 / 8));
     same_part(&TRELLIS_K2, &inputs, [128, 256, 1], [128, 128]);
     assert!(TRELLIS_K2.share(&inputs, [1, 128, 256], [0, 64]).is_none());
+    // A set: matrices behind one header, cut whole.
+    let (a, b) = (noise(128 * 256 * 2 / 8), noise(128 * 256 * 2 / 8));
+    let set = packed(256, 128, INPUT_SIDE, &[a, b.clone()].concat());
+    let second = packed(256, 128, INPUT_SIDE, &b);
+    for i in (0..128 * 256).step_by(97) {
+        let got = TRELLIS_K2.unpack(&set, 128 * 256 + i);
+        assert_eq!(got, TRELLIS_K2.unpack(&second, i), "element {i}");
+    }
+    same_part(&TRELLIS_K2, &set, [1, 2, 128 * 256], [1, 1]);
 }
