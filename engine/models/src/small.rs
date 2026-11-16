@@ -95,7 +95,9 @@ pub fn glm53() -> mla::Config {
         keep: 4,
         every: 2,
     };
+    // Rotations turn 128 channels at a time.
     mla::Config {
+        stack: Stack::sized([64, 128, 3, 2, 32, 128], 4, 16),
         index: Some(index),
         ..deepseek()
     }
