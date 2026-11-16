@@ -1,7 +1,7 @@
 //! The HIP runtime behind the shared context.
 
 use std::cell::Cell;
-use std::ffi::{CStr, c_char, c_int};
+use std::ffi::{CStr, c_char, c_int, c_void};
 use std::sync::OnceLock;
 use std::thread::LocalKey;
 
@@ -258,6 +258,20 @@ impl Api for Runtime {
 
     fn free(&self, ptr: u64) {
         unsafe { (self.hip_free)(ptr) };
+    }
+
+    fn host_alloc(&self, size: usize) -> Result<(u64, u64), Error> {
+        let mut host = std::ptr::null_mut();
+        let code = unsafe { (self.hip_host_malloc)(&mut host, size, hip::HOST_MALLOC_MAPPED) };
+        self.check(code, "hipHostMalloc")?;
+        let mut device = 0;
+        let code = unsafe { (self.hip_host_get_device_pointer)(&mut device, host, 0) };
+        self.check(code, "hipHostGetDevicePointer")?;
+        Ok((host as u64, device))
+    }
+
+    fn host_free(&self, host: u64) {
+        unsafe { (self.hip_host_free)(host as *mut c_void) };
     }
 
     fn upload(&self, ptr: u64, bytes: &[u8]) -> Result<(), Error> {

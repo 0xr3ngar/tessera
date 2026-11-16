@@ -19,8 +19,7 @@ pub mod metal;
 #[cfg(any(feature = "cuda", feature = "rocm"))]
 mod api;
 pub mod device;
-#[cfg(any(feature = "cuda", feature = "rocm"))]
-mod dl;
+pub mod dl;
 pub mod launch;
 #[cfg(any(feature = "cuda", feature = "rocm"))]
 mod rtc;

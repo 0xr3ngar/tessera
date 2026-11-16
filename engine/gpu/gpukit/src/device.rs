@@ -34,6 +34,13 @@ pub trait Device: Clone + Send + Sync + 'static {
     /// Lets this thread's launches overlap the one before.
     fn programmatic(&self, _on: bool) {}
 
+    /// Pinned host memory: its host and device addresses.
+    fn pin(&self, _size: usize) -> Result<(u64, u64), Error> {
+        Err(Self::error("this device pins no host memory".into()))
+    }
+
+    fn unpin(&self, _host: u64) {}
+
     /// Whether `capture` records launches here.
     fn graphs(&self) -> bool {
         false

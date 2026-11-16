@@ -112,6 +112,9 @@ pub trait Api: Sync + Sized + 'static {
     fn launch(&self, call: &Call) -> Result<(), Error>;
     fn alloc(&self, size: usize) -> Result<u64, Error>;
     fn free(&self, ptr: u64);
+    /// Pinned host memory the device maps: (host, device).
+    fn host_alloc(&self, size: usize) -> Result<(u64, u64), Error>;
+    fn host_free(&self, host: u64);
     fn upload(&self, ptr: u64, bytes: &[u8]) -> Result<(), Error>;
     fn download(&self, ptr: u64, bytes: &mut [u8]) -> Result<(), Error>;
     fn zero(&self, ptr: u64, size: usize) -> Result<(), Error>;
@@ -260,6 +263,18 @@ impl<A: Api> Context<A> {
             .unwrap()
             .insert(key, Arc::clone(&module));
         Ok(module)
+    }
+
+    /// Pinned host memory the device maps: (host, device).
+    pub fn pin(&self, size: usize) -> Result<(u64, u64), Error> {
+        self.locked(|a| a.host_alloc(size))
+    }
+
+    pub fn unpin(&self, host: u64) {
+        let _hold = self.hold();
+        if self.set_current().is_ok() {
+            self.0.api.host_free(host);
+        }
     }
 
     /// Compile for this device and resolve `entry`.
@@ -414,6 +429,14 @@ impl<A: Api> Device for Context<A> {
 
     fn programmatic(&self, on: bool) {
         A::programmatic(on);
+    }
+
+    fn pin(&self, size: usize) -> Result<(u64, u64), Error> {
+        Context::pin(self, size)
+    }
+
+    fn unpin(&self, host: u64) {
+        Context::unpin(self, host);
     }
 
     fn graphs(&self) -> bool {

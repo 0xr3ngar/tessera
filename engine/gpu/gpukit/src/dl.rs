@@ -22,7 +22,7 @@ fn last_error() -> String {
 }
 
 /// A shared library that stays open until the process exits.
-pub(crate) struct Library(*mut c_void);
+pub struct Library(*mut c_void);
 
 impl Library {
     /// Open the first name that loads, else the last error.
@@ -41,7 +41,8 @@ impl Library {
         Err(last)
     }
 
-    /// Resolve `name`. `F` must be its true fn type.
+    /// # Safety
+    /// `F` must be the symbol's true fn type.
     pub unsafe fn function<F: Copy>(&self, name: &str) -> Result<F, String> {
         assert_eq!(size_of::<F>(), size_of::<*mut c_void>());
         let c_name = CString::new(name).map_err(|e| format!("bad symbol name: {e}"))?;
@@ -54,7 +55,8 @@ impl Library {
 }
 
 /// The C string at `p`, or empty when null.
-pub fn message(p: *const c_char) -> String {
+#[cfg(any(feature = "cuda", feature = "rocm"))]
+pub(crate) fn message(p: *const c_char) -> String {
     if p.is_null() {
         return String::new();
     }
@@ -71,6 +73,7 @@ pub fn once<T>(
 }
 
 /// Entry points from the first library that loads.
+#[macro_export]
 macro_rules! library {
     (
         $(#[$meta:meta])*
@@ -83,20 +86,29 @@ macro_rules! library {
             $($fvis $field: $ty,)+
         }
 
+        /// Symbol names, by field.
+        struct Symbols {
+            $($field: &'static str,)+
+        }
+        const SYMBOLS: Symbols = Symbols { $($field: $sym,)+ };
+
         impl $name {
             fn open() -> Result<Self, String> {
                 let lib = $crate::dl::Library::open_first(&[$($file.to_string()),+])?;
                 Ok(Self {
-                    $($field: unsafe { lib.function::<$ty>($sym) }
-                        .map_err(|e| format!("{}: {e}", $what))?,)+
+                    $($field: {
+                        let found: Result<$ty, String> = unsafe { lib.function(SYMBOLS.$field) };
+                        found.map_err(|e| format!("{}: {e}", $what))?
+                    },)+
                 })
             }
         }
     };
 }
-pub(crate) use library;
+pub use library;
 
 /// FNV-1a: unlike `DefaultHasher`, stable across runs.
+#[cfg(any(feature = "cuda", feature = "rocm"))]
 pub(crate) fn image_hash(image: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for b in image {

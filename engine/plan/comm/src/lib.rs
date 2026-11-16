@@ -1,10 +1,17 @@
 //! Moves bytes between ranks over handles the front end opened.
 
+mod fabric;
+mod ibv;
+pub mod reduce;
 mod shm;
 mod sockets;
+mod verbs;
 
+pub use fabric::{Fabric, Port};
+pub use reduce::{Pinned, Pinning, Reduce};
 pub use shm::Shm;
 pub use sockets::Sockets;
+pub use verbs::Verbs;
 
 use std::fmt;
 use std::io;
@@ -15,6 +22,10 @@ pub trait Transport {
     fn ranks(&self) -> u32;
     /// Every rank's bytes, in rank order, `mine` among them.
     fn exchange(&mut self, mine: &[u8]) -> Result<Vec<Vec<u8>>, Error>;
+    /// A device's way to run the rounds itself, if any.
+    fn device(&mut self) -> Option<Reduce> {
+        None
+    }
 }
 
 impl<T: Transport + ?Sized> Transport for Box<T> {
@@ -28,6 +39,10 @@ impl<T: Transport + ?Sized> Transport for Box<T> {
 
     fn exchange(&mut self, mine: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
         (**self).exchange(mine)
+    }
+
+    fn device(&mut self) -> Option<Reduce> {
+        (**self).device()
     }
 }
 
@@ -48,6 +63,8 @@ pub enum Error {
     Io(io::Error),
     /// A handle, slot or round the ranks do not fit.
     Fit(String),
+    /// The RDMA devices or a peer failed.
+    Link(String),
 }
 
 impl fmt::Display for Error {
@@ -55,6 +72,7 @@ impl fmt::Display for Error {
         match self {
             Error::Io(e) => write!(f, "io: {e}"),
             Error::Fit(what) => write!(f, "fit: {what}"),
+            Error::Link(what) => write!(f, "link: {what}"),
         }
     }
 }
@@ -69,3 +87,7 @@ impl From<io::Error> for Error {
 
 #[cfg(test)]
 mod comm_test;
+#[cfg(test)]
+mod fabric_test;
+#[cfg(test)]
+mod ibv_test;

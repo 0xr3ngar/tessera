@@ -4,7 +4,7 @@ use crate::held::Held;
 use codegen::Precision;
 use gpukit::{Limits, Platform};
 use graph::DimName;
-use lower::{Error, Launch, Launching, Plan, Slot, Weight};
+use lower::{Arg, Error, Launch, Launching, Plan, Shape, Slot, Weight};
 use mem::{Tensor, View, copy};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -75,6 +75,20 @@ pub trait Run {
     }
     /// Runs these steps in order and waits for them.
     fn submit(&mut self, steps: Range<usize>) -> Result<(), Error>;
+    /// Whether `launch_fixed` runs here.
+    fn fixed(&self) -> bool {
+        false
+    }
+    /// Runs a hand-written kernel once and waits for it.
+    fn launch_fixed(
+        &self,
+        _source: &'static str,
+        _entry: &'static str,
+        _args: &[Arg],
+        _shape: Shape,
+    ) -> Result<(), Error> {
+        Err(Error::Unsupported("a fixed kernel on this runner".into()))
+    }
     /// How to launch from now on, where the device can.
     fn launching(&mut self, _: Launching) {}
     /// Runs one step `times` over. Returns seconds per run.
