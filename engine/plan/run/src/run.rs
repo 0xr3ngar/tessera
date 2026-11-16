@@ -75,6 +75,10 @@ pub trait Run {
     fn repeat(&mut self, step: usize, times: usize) -> Result<f64, Error>;
     /// The backend and the hardware it drives.
     fn device(&self) -> String;
+    /// Steps running compiled host code, out of steps with trees.
+    fn compiled(&self) -> (usize, usize) {
+        (0, 0)
+    }
     /// What the hardware gives one group of threads.
     fn limits(&self) -> Limits {
         self.platform().limits

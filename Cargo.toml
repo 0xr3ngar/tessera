@@ -40,6 +40,7 @@ gpukit = { path = "engine/gpu/gpukit" }
 bundle = { path = "frontend/bundle" }
 graph = { path = "engine/ir/graph" }
 interp = { path = "engine/ir/interp" }
+jit = { path = "engine/plan/jit" }
 kernel-macro = { path = "engine/plan/kernel-macro" }
 kernels = { path = "engine/rules/kernels" }
 cpu = { path = "engine/rules/cpu" }

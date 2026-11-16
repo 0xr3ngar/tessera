@@ -4,16 +4,9 @@ use crate::common::{Spec, suite};
 use models::tagger::{Config, program};
 use trace::Graph;
 
-/// Two features of eight rows, one window layer, block-wide rows.
+/// Two features of eight rows, one window layer.
 fn small() -> Graph {
-    let c = Config {
-        rows: vec![8, 8],
-        width: 32,
-        depth: 1,
-        tags: 32,
-        max_context: 16,
-    };
-    program(&c)
+    program(&models::small::tagger())
 }
 
 fn release() -> Graph {

@@ -1,0 +1,293 @@
+//! What compiled lockstep kernels call: reads, shuffles and tiles.
+
+use crate::block::{NVFP4, Q4_0, Q8_0};
+use crate::exec::{ArgVal, Grid};
+use crate::form::Form;
+use crate::numerics::Precision;
+use graph::{Bf16, E2M1, E4M3, F16};
+
+/// The most threads one compiled group holds.
+pub const THREADS: usize = 256;
+
+/// A compiled body. False means the grid was too wide.
+pub type Kernel = fn(&[ArgVal], &mut [&mut [u8]], Grid, usize, Precision) -> bool;
+
+/// A buffer argument: launch index and elements to skip.
+pub fn buf(arg: &ArgVal) -> (usize, usize) {
+    match arg {
+        ArgVal::Buf { at, skip, .. } => (*at, *skip),
+        other => panic!("{other:?} where a buffer was due"),
+    }
+}
+
+pub fn u32(arg: &ArgVal) -> u32 {
+    match arg {
+        ArgVal::U32(v) => *v,
+        other => panic!("{other:?} where a u32 was due"),
+    }
+}
+
+pub fn f32(arg: &ArgVal) -> f32 {
+    match arg {
+        ArgVal::F32(v) => *v,
+        other => panic!("{other:?} where an f32 was due"),
+    }
+}
+
+#[inline(always)]
+pub fn rd_f32(bytes: &[u8], at: usize) -> f32 {
+    let b = &bytes[at * 4..at * 4 + 4];
+    f32::from_le_bytes([b[0], b[1], b[2], b[3]])
+}
+
+#[inline(always)]
+pub fn rd_bf16(bytes: &[u8], at: usize) -> f32 {
+    let b = &bytes[at * 2..at * 2 + 2];
+    Bf16(u16::from_le_bytes([b[0], b[1]])).into()
+}
+
+#[inline(always)]
+pub fn rd_u32(bytes: &[u8], at: usize) -> u32 {
+    let b = &bytes[at * 4..at * 4 + 4];
+    u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+}
+
+#[inline(always)]
+pub fn rd_u8(bytes: &[u8], at: usize) -> u32 {
+    u32::from(bytes[at])
+}
+
+#[inline(always)]
+pub fn rd_q8_0(bytes: &[u8], at: usize) -> f32 {
+    Q8_0.unpack(bytes, at)
+}
+
+#[inline(always)]
+pub fn rd_q4_0(bytes: &[u8], at: usize) -> f32 {
+    Q4_0.unpack(bytes, at)
+}
+
+#[inline(always)]
+pub fn rd_nvfp4(bytes: &[u8], at: usize) -> f32 {
+    NVFP4.unpack(bytes, at)
+}
+
+#[inline(always)]
+pub fn st_f32(bytes: &mut [u8], at: usize, v: f32) {
+    bytes[at * 4..at * 4 + 4].copy_from_slice(&v.to_le_bytes());
+}
+
+#[inline(always)]
+pub fn st_u32(bytes: &mut [u8], at: usize, v: u32) {
+    bytes[at * 4..at * 4 + 4].copy_from_slice(&v.to_le_bytes());
+}
+
+/// The u32 at byte offset `at`.
+#[inline(always)]
+pub fn word(bytes: &[u8], at: usize) -> u32 {
+    let b = &bytes[at..at + 4];
+    u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+}
+
+/// The u16 at byte offset `at`, widened.
+#[inline(always)]
+pub fn half(bytes: &[u8], at: usize) -> u32 {
+    u32::from(u16::from_le_bytes([bytes[at], bytes[at + 1]]))
+}
+
+/// The `n` bits of `w` from bit `low`.
+#[inline(always)]
+pub fn field(w: u32, low: u32, n: u32) -> u32 {
+    (w >> low) & ((1u64 << n) - 1) as u32
+}
+
+/// An `n`-bit field as a signed value.
+#[inline(always)]
+pub fn signed(w: u32, low: u32, n: u32) -> f32 {
+    let shift = 32 - n;
+    (((field(w, low, n) << shift) as i32) >> shift) as f32
+}
+
+#[inline(always)]
+pub fn f16(w: u32, low: u32) -> f32 {
+    f32::from(F16(field(w, low, 16) as u16))
+}
+
+#[inline(always)]
+pub fn e4m3(w: u32, low: u32) -> f32 {
+    f32::from(E4M3(field(w, low, 8) as u8))
+}
+
+#[inline(always)]
+pub fn e2m1(w: u32, low: u32) -> f32 {
+    f32::from(E2M1(field(w, low, 4) as u8))
+}
+
+macro_rules! wide {
+    ($($name:ident = $op:tt),*) => {$(
+        #[inline(always)]
+        pub fn $name(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+            [a[0] $op b[0], a[1] $op b[1], a[2] $op b[2], a[3] $op b[3]]
+        }
+    )*};
+}
+
+wide!(add4 = +, sub4 = -, mul4 = *, div4 = /);
+
+/// Each lane's value from lane `m` away in its group.
+pub fn shfl_xor(v: &[f32; THREADS], m: &[u32; THREADS], n: usize, lanes: usize) -> [f32; THREADS] {
+    let mut out = *v;
+    for t in 0..n {
+        let other = t ^ (m[t] as usize);
+        if other / lanes == t / lanes && other < n {
+            out[t] = v[other];
+        }
+    }
+    out
+}
+
+/// Each live lane takes its group's sum of live lanes.
+pub fn sum32(v: &mut [f32; THREADS], mask: &[bool; THREADS], n: usize, lanes: usize) {
+    let mut group = 0;
+    while group < n {
+        let end = (group + lanes).min(n);
+        let mut sum = 0.0;
+        for t in group..end {
+            if mask[t] {
+                sum += v[t];
+            }
+        }
+        for t in group..end {
+            if mask[t] {
+                v[t] = sum;
+            }
+        }
+        group = end;
+    }
+}
+
+/// `rows` by `cols` sums per SIMD group of `lanes` threads.
+pub struct Tiles {
+    rows: usize,
+    cols: usize,
+    lanes: usize,
+    blocks: Vec<Vec<f32>>,
+}
+
+impl Tiles {
+    pub fn new(rows: usize, cols: usize, n: usize, lanes: usize) -> Self {
+        let simds = n.div_ceil(lanes);
+        Self {
+            rows,
+            cols,
+            lanes,
+            blocks: vec![vec![0.0; rows * cols]; simds],
+        }
+    }
+
+    /// Sums each lane holds.
+    pub fn per(&self) -> usize {
+        (self.rows * self.cols).div_ceil(self.lanes)
+    }
+
+    pub fn zero(&mut self) {
+        for block in &mut self.blocks {
+            block.fill(0.0);
+        }
+    }
+
+    /// Lane `t`'s sum `e`: live, row, column and value.
+    pub fn each(&self, t: usize, e: usize, live: bool) -> (bool, u32, u32, f32) {
+        let at = t % self.lanes + e * self.lanes;
+        let on = live && at < self.rows * self.cols;
+        let (r, c) = ((at / self.cols) as u32, (at % self.cols) as u32);
+        let v = if on {
+            self.blocks[t / self.lanes][at]
+        } else {
+            0.0
+        };
+        (on, r, c, v)
+    }
+
+    /// The row of lane `t`'s sum `e`.
+    pub fn row(&self, t: usize, e: usize) -> u32 {
+        ((t % self.lanes + e * self.lanes) / self.cols) as u32
+    }
+
+    /// Scales lane `t`'s sum `e` by `by`.
+    pub fn scale(&mut self, t: usize, e: usize, by: f32) {
+        let at = t % self.lanes + e * self.lanes;
+        if at < self.rows * self.cols {
+            self.blocks[t / self.lanes][at] *= by;
+        }
+    }
+
+    /// Adds `depth` columns of `a` times `b`, unit rounded.
+    #[allow(clippy::too_many_arguments, reason = "mirrors the tile statement")]
+    pub fn block(
+        &mut self,
+        a: &[f32],
+        a_at: &[u32; THREADS],
+        b: &[f32],
+        b_at: &[u32; THREADS],
+        stride: &[u32; THREADS],
+        depth: usize,
+        mask: &[bool; THREADS],
+        n: usize,
+        p: Precision,
+    ) {
+        for s in 0..self.blocks.len() {
+            // Any live lane of the SIMD group names its slabs.
+            let range = s * self.lanes..((s + 1) * self.lanes).min(n);
+            let Some(t) = range.into_iter().find(|t| mask[*t]) else {
+                continue;
+            };
+            let (a0, b0, ld) = (a_at[t] as usize, b_at[t] as usize, stride[t] as usize);
+            let sa = |i: usize| a[a0 + i];
+            let sb = |i: usize| b[b0 + i];
+            products(
+                p,
+                self.rows,
+                self.cols,
+                ld,
+                depth,
+                sa,
+                sb,
+                &mut self.blocks[s],
+            );
+        }
+    }
+}
+
+/// `block[i][j] += sum of a[i][k] * b[j][k]`, as `p` rounds.
+#[allow(clippy::too_many_arguments, reason = "every tile operand")]
+pub(crate) fn products(
+    p: Precision,
+    rows: usize,
+    cols: usize,
+    ld: usize,
+    depth: usize,
+    a: impl Fn(usize) -> f32,
+    b: impl Fn(usize) -> f32,
+    block: &mut [f32],
+) {
+    let chunk = p.depth.max(1);
+    for i in 0..rows {
+        for j in 0..cols {
+            let sum = &mut block[i * cols + j];
+            // The unit sums `p.depth` products, then adds them in.
+            for start in (0..depth).step_by(chunk) {
+                let mut part = 0.0f32;
+                for k in start..(start + chunk).min(depth) {
+                    let (ah, al) = p.split(a(i * ld + k));
+                    let (bh, bl) = p.split(b(j * ld + k));
+                    // The split's products: hi·hi, hi·lo, lo·hi.
+                    part = ah.mul_add(bh, part);
+                    part = ah.mul_add(bl, part);
+                    part = al.mul_add(bh, part);
+                }
+                *sum = p.accumulate(*sum, part);
+            }
+        }
+    }
+}

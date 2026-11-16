@@ -18,6 +18,7 @@ engine-comm = { workspace = true }
 engine-settings = { workspace = true }
 gpukit = { workspace = true }
 graph = { workspace = true }
+jit = { workspace = true }
 lower = { workspace = true }
 mem = { workspace = true }
 
