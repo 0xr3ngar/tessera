@@ -1,8 +1,6 @@
 //! dlopen for the backends whose runtimes load at run time.
 
-use crate::Error;
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
-use std::sync::OnceLock;
 
 const RTLD_NOW: c_int = 2;
 
@@ -22,11 +20,11 @@ fn last_error() -> String {
 }
 
 /// A shared library that stays open until the process exits.
-pub struct Library(*mut c_void);
+pub(crate) struct Library(*mut c_void);
 
 impl Library {
     /// Open the first name that loads, else the last error.
-    pub fn open_first(names: &[String]) -> Result<Self, String> {
+    pub(crate) fn open_first(names: &[String]) -> Result<Self, String> {
         let mut last = String::from("no library names to try");
         for name in names {
             let Ok(c_name) = CString::new(name.as_str()) else {
@@ -43,7 +41,7 @@ impl Library {
 
     /// # Safety
     /// `F` must be the symbol's true fn type.
-    pub unsafe fn function<F: Copy>(&self, name: &str) -> Result<F, String> {
+    pub(crate) unsafe fn function<F: Copy>(&self, name: &str) -> Result<F, String> {
         assert_eq!(size_of::<F>(), size_of::<*mut c_void>());
         let c_name = CString::new(name).map_err(|e| format!("bad symbol name: {e}"))?;
         let raw = unsafe { dlsym(self.0, c_name.as_ptr()) };
@@ -55,7 +53,6 @@ impl Library {
 }
 
 /// The C string at `p`, or empty when null.
-#[cfg(any(feature = "cuda", feature = "rocm"))]
 pub(crate) fn message(p: *const c_char) -> String {
     if p.is_null() {
         return String::new();
@@ -64,16 +61,16 @@ pub(crate) fn message(p: *const c_char) -> String {
 }
 
 /// Opens a library once per process. `fail` words the error.
-pub fn once<T>(
-    cell: &'static OnceLock<Result<T, String>>,
+#[cfg(any(feature = "cuda", feature = "rocm"))]
+pub(crate) fn once<T>(
+    cell: &'static std::sync::OnceLock<Result<T, String>>,
     open: impl FnOnce() -> Result<T, String>,
-    fail: impl FnOnce(&str) -> Error,
-) -> Result<&'static T, Error> {
+    fail: impl FnOnce(&str) -> crate::Error,
+) -> Result<&'static T, crate::Error> {
     cell.get_or_init(open).as_ref().map_err(|msg| fail(msg))
 }
 
 /// Entry points from the first library that loads.
-#[macro_export]
 macro_rules! library {
     (
         $(#[$meta:meta])*
@@ -105,7 +102,7 @@ macro_rules! library {
         }
     };
 }
-pub use library;
+pub(crate) use library;
 
 /// FNV-1a: unlike `DefaultHasher`, stable across runs.
 #[cfg(any(feature = "cuda", feature = "rocm"))]

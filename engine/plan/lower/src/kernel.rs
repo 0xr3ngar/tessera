@@ -104,26 +104,14 @@ impl Needs {
 }
 
 /// A kernel a plan can hold, share and compare.
-#[derive(Clone)]
+#[derive(Clone, derive_more::Deref, derive_more::Debug)]
+#[deref(forward)]
+#[debug("{_0:?}")]
 pub struct KernelRef(Arc<dyn Kernel>);
 
 impl KernelRef {
     pub fn new(kernel: impl Kernel + 'static) -> Self {
         Self(Arc::new(kernel))
-    }
-}
-
-impl std::ops::Deref for KernelRef {
-    type Target = dyn Kernel;
-
-    fn deref(&self) -> &Self::Target {
-        &*self.0
-    }
-}
-
-impl fmt::Debug for KernelRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
     }
 }
 

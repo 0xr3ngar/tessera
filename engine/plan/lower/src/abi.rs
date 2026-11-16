@@ -55,12 +55,6 @@ impl Arg {
     }
 }
 
-impl From<usize> for Shape {
-    fn from(n: usize) -> Shape {
-        Shape::Line(n)
-    }
-}
-
 impl From<Extent> for Shape {
     fn from(e: Extent) -> Shape {
         Shape::line(e)
@@ -107,16 +101,18 @@ impl Shape {
 }
 
 /// How threads are laid out over the work.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, derive_more::From)]
 pub enum Shape {
     /// One thread per element, in groups of 256.
     Line(usize),
+    #[from(ignore)]
     Grid {
         across: usize,
         down: usize,
         threads: usize,
     },
     /// A line whose length is read at launch.
+    #[from(ignore)]
     Runtime(Extent),
 }
 

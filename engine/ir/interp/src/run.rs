@@ -3,10 +3,11 @@
 use crate::cpu;
 use crate::tensor::Error;
 use graph::{
-    DimExpr, DimName, Graph, Mask, NodeId, Numerics, Op, Parts, PathSeg, Placement, Select, Shape,
-    Size, Stage, View, Weight,
+    DType, DimExpr, DimName, Graph, Mask, NodeId, Numerics, Op, Parts, PathSeg, Placement, Select,
+    Shape, Size, Stage, View,
 };
 use mem::Tensor;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
@@ -211,13 +212,26 @@ fn part(parts: &Parts, axis: u32, whole: usize, r: usize) -> Result<(usize, usiz
     })
 }
 
-/// Rank `r`'s slice of a split weight.
-fn share(w: &Tensor, placement: Placement, r: usize, parts: &Parts) -> Result<Tensor, Error> {
+/// A weight as f32. A bf16 weight widens here.
+fn weight(w: &Tensor) -> Result<Tensor, Error> {
+    match w.dtype() {
+        DType::Bf16 => Ok(Tensor::f32(w.shape.clone(), w.view().to_f32()?)),
+        _ => Ok(w.clone()),
+    }
+}
+
+/// Rank `r`'s part of a weight. Whole ones are borrowed.
+fn share<'w>(
+    w: &'w Tensor,
+    placement: Placement,
+    r: usize,
+    parts: &Parts,
+) -> Result<Cow<'w, Tensor>, Error> {
     let Placement::Split { axis } = placement else {
-        return Ok(w.clone());
+        return Ok(Cow::Borrowed(w));
     };
     let (first, count) = part(parts, axis, w.shape[axis as usize], r)?;
-    Ok(slice(w, axis as usize, first, count))
+    Ok(Cow::Owned(slice(w, axis as usize, first, count)))
 }
 
 /// The sum over ranks, in rank order.
@@ -271,14 +285,11 @@ fn run_on(
     }
     let mut shares = Vec::with_capacity(ranks);
     for r in 0..ranks {
-        let own = |(w, t): (&Weight, &Tensor)| share(t, w.ty.placement, r, parts);
-        shares.push(
-            g.weights
-                .iter()
-                .zip(weights)
-                .map(own)
-                .collect::<Result<Vec<_>, _>>()?,
-        );
+        let mut own = Vec::with_capacity(weights.len());
+        for (w, t) in g.weights.iter().zip(weights) {
+            own.push(share(t, w.ty.placement, r, parts)?);
+        }
+        shares.push(own);
     }
     let ctx = |r: usize, first: usize| Context {
         sizes: &sizes,
@@ -400,7 +411,7 @@ struct Context<'a> {
     sizes: &'a Sizes<'a>,
     entry: usize,
     inputs: &'a [Tensor],
-    weights: &'a [Tensor],
+    weights: &'a [Cow<'a, Tensor>],
     /// The first row of a routed table this rank holds.
     first: usize,
 }
@@ -412,7 +423,7 @@ impl Context<'_> {
                 Ok(self.inputs[*port as usize].clone())
             }
             Op::Input { .. } => Err(Error::Unsupported("another entry's input".into())),
-            Op::Weight(i) => Ok(self.weights[*i as usize].clone()),
+            Op::Weight(i) => weight(&self.weights[*i as usize]),
             Op::Matmul => cpu::matmul(num, args[0], args[1]),
             Op::Attend(a) if a.ragged => {
                 cpu::attend_rows(num, a, [args[0], args[1], args[2]], [args[3], args[4]])

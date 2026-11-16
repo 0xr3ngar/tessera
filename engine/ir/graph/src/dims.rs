@@ -90,15 +90,17 @@ impl Dim {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, derive_more::From)]
 pub enum DimExpr {
     Dim(DimName),
     Const(u64),
+    #[from(ignore)]
     Mul(Box<DimExpr>, Box<DimExpr>),
+    #[from(ignore)]
     Add(Box<DimExpr>, Box<DimExpr>),
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, derive_more::From)]
 pub struct Shape(pub Vec<DimExpr>);
 
 /// Coefficients keyed by sorted bounded-dimension monomials.
@@ -204,18 +206,6 @@ impl Shape {
     }
 }
 
-impl From<DimName> for DimExpr {
-    fn from(name: DimName) -> Self {
-        DimExpr::Dim(name)
-    }
-}
-
-impl From<u64> for DimExpr {
-    fn from(c: u64) -> Self {
-        DimExpr::Const(c)
-    }
-}
-
 impl<T: Into<DimExpr>> Mul<T> for DimExpr {
     type Output = DimExpr;
     fn mul(self, rhs: T) -> DimExpr {
@@ -247,12 +237,6 @@ impl<T: Into<DimExpr>> Add<T> for DimName {
 impl<const N: usize> From<[DimName; N]> for Shape {
     fn from(names: [DimName; N]) -> Self {
         Shape(names.into_iter().map(DimExpr::Dim).collect())
-    }
-}
-
-impl From<Vec<DimExpr>> for Shape {
-    fn from(exprs: Vec<DimExpr>) -> Self {
-        Shape(exprs)
     }
 }
 

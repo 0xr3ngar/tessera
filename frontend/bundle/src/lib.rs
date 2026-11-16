@@ -79,10 +79,24 @@ pub fn pull(
     layers: u64,
     rules: &[&[Rule]],
 ) -> Result<(Vec<Weight>, Pins), Box<dyn Error + Send + Sync>> {
+    let mut weights = Vec::with_capacity(graph.weights.len());
+    let mut forms: Vec<&'static dyn Form> = Vec::with_capacity(graph.weights.len());
+    each(graph, offer, rules, |weight, form| {
+        weights.push(weight);
+        forms.push(form);
+    })?;
+    Ok((weights, gguf::pins(graph, &forms, layers)))
+}
+
+/// Each weight in graph order, read one at a time.
+pub fn each(
+    graph: &Graph,
+    offer: &dyn Offer,
+    rules: &[&[Rule]],
+    mut take: impl FnMut(Weight, &'static dyn Form),
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let slices = offer.slices();
     let claims = names::resolve(graph, &slices, rules)?;
-    let mut weights = Vec::with_capacity(claims.len());
-    let mut forms: Vec<&'static dyn Form> = Vec::with_capacity(claims.len());
     for (c, w) in claims.iter().zip(&graph.weights) {
         let slice = slices.iter().find(|s| s.name == c.name).expect("resolved");
         let axis = |e: &engine::DimExpr| e.value(&graph.dims, &|_| None).map(|n| n as usize);
@@ -95,10 +109,9 @@ pub fn pull(
             (Stored::Bf16, _) => (floats(offer, slice, c.rows, shape)?, BF16_FORM),
             _ => (floats(offer, slice, c.rows, shape)?, F32_FORM),
         };
-        weights.push(weight);
-        forms.push(form);
+        take(weight, form);
     }
-    Ok((weights, gguf::pins(graph, &forms, layers)))
+    Ok(())
 }
 
 /// A slice's floats, or its `rows`, in the graph's shape.

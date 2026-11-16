@@ -1,7 +1,6 @@
 //! Moves bytes between ranks over handles the front end opened.
 
 mod fabric;
-mod ibv;
 pub mod reduce;
 mod shm;
 mod sockets;
@@ -13,7 +12,6 @@ pub use shm::Shm;
 pub use sockets::Sockets;
 pub use verbs::Verbs;
 
-use std::fmt;
 use std::io;
 
 /// Moves bytes between ranks. One round trip per call.
@@ -58,36 +56,19 @@ pub fn summed<'a>(parts: impl Iterator<Item = &'a [f32]>) -> Vec<f32> {
     sum.expect("a rank")
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    Io(io::Error),
+    #[error("io: {0}")]
+    Io(#[from] io::Error),
     /// A handle, slot or round the ranks do not fit.
+    #[error("fit: {0}")]
     Fit(String),
     /// The RDMA devices or a peer failed.
+    #[error("link: {0}")]
     Link(String),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Io(e) => write!(f, "io: {e}"),
-            Error::Fit(what) => write!(f, "fit: {what}"),
-            Error::Link(what) => write!(f, "link: {what}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Error::Io(e)
-    }
 }
 
 #[cfg(test)]
 mod comm_test;
 #[cfg(test)]
 mod fabric_test;
-#[cfg(test)]
-mod ibv_test;

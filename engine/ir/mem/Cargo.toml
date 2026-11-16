@@ -7,4 +7,5 @@ publish.workspace = true
 description = "Buffers in zones, and typed views onto them"
 
 [dependencies]
+thiserror = "2"
 graph = { workspace = true }

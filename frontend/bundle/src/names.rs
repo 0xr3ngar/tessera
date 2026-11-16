@@ -17,7 +17,7 @@ pub struct Claim {
 }
 
 /// Why the weights and the slices do not pair off.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, thiserror::Error)]
 pub struct Unresolved {
     /// Weights no slice fits.
     pub missing: Vec<String>,
@@ -41,8 +41,6 @@ impl fmt::Display for Unresolved {
         Ok(())
     }
 }
-
-impl std::error::Error for Unresolved {}
 
 /// Name parts that say nothing about a weight's role.
 const NOISE: &[&str] = &[
