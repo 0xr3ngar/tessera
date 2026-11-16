@@ -21,7 +21,7 @@ use std::time::Instant;
 use trace::Norm;
 
 const USAGE: &str = "tessera-ranks --rank N (--addrs HOST:PORT,... | --shm PATH --ranks N)
-  [--model qwen3|granite|eg2] [--fixture DIR] [--listen ADDR] [--backend host|gpu] [--parts 3,1]
+  [--model qwen3|granite|eg2|deepseek|glm53] [--fixture DIR] [--listen ADDR] [--backend host|gpu] [--parts 3,1]
   [--form q8_0] [--verbs DEV[:GID],... | --ring PREVDEV,.../NEXTDEV,...] [--repeat N]
   --verbs and --ring move the sums over RDMA, one lane per device, after the
   ranks meet over the sockets or the file.
@@ -124,6 +124,8 @@ fn cluster(ranks: usize, kind: ZoneKind) -> Cluster {
 
 #[cfg(test)]
 mod eg2_test;
+#[cfg(test)]
+mod mla_test;
 
 fn main() -> ExitCode {
     let Some(args) = parse(std::env::args().skip(1)) else {
@@ -146,6 +148,10 @@ fn model(name: &str, fixture: &Path, n: u64) -> Result<Loaded, Box<dyn std::erro
     let g = match name {
         "qwen3" => program::<Norm, Swiglu>(&Config::qwen3(1, n)),
         "granite" => program::<(), Moe>(&Config::granite(1, n)),
+        "deepseek" | "glm53" => {
+            let r = bundle::mla::release(fixture, 1, n).map_err(|e| e.to_string())?;
+            return Ok((r.graph, r.weights, r.pins));
+        }
         "eg2" => {
             let e = bundle::encoder::encoder(&fixture.join("exlr8"), 1, n)
                 .map_err(|e| e.to_string())?;

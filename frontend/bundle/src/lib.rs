@@ -4,6 +4,7 @@ pub mod encoder;
 mod gguf;
 #[cfg(test)]
 mod gguf_test;
+pub mod mla;
 pub mod names;
 #[cfg(test)]
 mod names_test;
@@ -103,6 +104,7 @@ pub fn each(
         let axis = |e: &engine::DimExpr| e.value(&graph.dims, &|_| None).map(|n| n as usize);
         let shape: Option<Vec<usize>> = w.ty.shape.0.iter().map(axis).collect();
         let (weight, form) = match (slice.stored, c.rows) {
+            _ if !c.parts.is_empty() => stacked(offer, slice.stored, &c.parts, shape)?,
             (Stored::Form(f), rows) => {
                 let f = named(f.name()).ok_or_else(|| format!("no loads for {}", f.name()))?;
                 let bytes = match rows {
@@ -117,6 +119,43 @@ pub fn each(
         take(weight, form);
     }
     Ok(())
+}
+
+/// A set's matrices, one slice each, joined in order.
+fn stacked(
+    offer: &dyn Offer,
+    stored: Stored,
+    parts: &[String],
+    shape: Option<Vec<usize>>,
+) -> Result<(Weight, &'static dyn Load), Box<dyn Error + Send + Sync>> {
+    let mut all = Vec::new();
+    match stored {
+        Stored::Bf16 => {
+            for p in parts {
+                all.extend(offer.bf16(p)?);
+            }
+            Ok((Weight::Packed(BF16_FORM, all), BF16_FORM))
+        }
+        // A form without a header joins byte for byte.
+        Stored::Form(f) if f.bytes(0) == 0 => {
+            let f = named(f.name()).ok_or_else(|| format!("no loads for {}", f.name()))?;
+            for p in parts {
+                all.extend(offer.packed(p)?);
+            }
+            Ok((Weight::Packed(f, all), f))
+        }
+        Stored::Form(f) => {
+            Err(format!("a set of {} matrices, each with a header", f.name()).into())
+        }
+        _ => {
+            let mut floats = Vec::new();
+            for p in parts {
+                floats.extend(offer.floats(p)?);
+            }
+            let shape = shape.unwrap_or_else(|| vec![floats.len()]);
+            Ok((Weight::Floats(Tensor::f32(shape, floats)), F32_FORM))
+        }
+    }
 }
 
 /// A bf16 slice's bytes, or its `rows`, kept packed.
