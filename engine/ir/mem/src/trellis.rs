@@ -173,6 +173,40 @@ impl<const K: u32> Form for Trellis<K> {
     fn pack(&self, _: &[f32]) -> Vec<u8> {
         panic!("{} codes are read from a release, never packed", self.name)
     }
+    /// Whole entries along the side the release shards.
+    fn share(
+        &self,
+        bytes: &[u8],
+        [outer, _, inner]: [usize; 3],
+        [first, count]: [usize; 2],
+    ) -> Option<Vec<u8>> {
+        let shape = Shape::read(bytes);
+        let input = shape.side == INPUT_SIDE;
+        // Outputs lead, so an output split has one outer part.
+        let part = match (outer, inner) {
+            (1, i) if i == shape.inp && !input => Shape {
+                out: count,
+                ..shape
+            },
+            (o, 1) if o == shape.out && input => Shape {
+                inp: count,
+                ..shape
+            },
+            _ => return None,
+        };
+        if !first.is_multiple_of(ENTRY) || !count.is_multiple_of(ENTRY) {
+            return None;
+        }
+        let across = if input { shape.out } else { shape.inp };
+        let entry = across * ENTRY * K as usize / 8;
+        let at = HEAD + first / ENTRY * entry;
+        Some(packed(
+            part.inp,
+            part.out,
+            part.side,
+            &bytes[at..at + count / ENTRY * entry],
+        ))
+    }
 }
 
 /// The header, then the entries as the release stores them.

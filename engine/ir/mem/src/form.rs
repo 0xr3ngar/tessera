@@ -32,6 +32,29 @@ pub trait Form: Sync {
         self.block()
     }
 
+    /// Middle-axis parts `first..first + count` of `[outer, whole, inner]`.
+    fn share(
+        &self,
+        bytes: &[u8],
+        [outer, whole, inner]: [usize; 3],
+        [first, count]: [usize; 2],
+    ) -> Option<Vec<u8>> {
+        let (row, at, len) = (whole * inner, first * inner, count * inner);
+        if [row, at, len]
+            .iter()
+            .any(|n| !n.is_multiple_of(self.block()))
+        {
+            return None;
+        }
+        // A header before the first element stays.
+        let mut out = bytes[..self.bytes(0)].to_vec();
+        for o in 0..outer {
+            let from = o * row + at;
+            out.extend_from_slice(&bytes[self.bytes(from)..self.bytes(from + len)]);
+        }
+        Some(out)
+    }
+
     /// `data` as this form keeps it.
     fn roundtrip(&self, data: &[f32]) -> Vec<f32> {
         let packed = self.pack(data);

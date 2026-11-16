@@ -15,13 +15,13 @@ use models::decoder::{Config, Moe, Swiglu, program};
 use run::Rank;
 use sim::Tag;
 use std::net::{SocketAddr, TcpListener};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 use trace::Norm;
 
 const USAGE: &str = "tessera-ranks --rank N (--addrs HOST:PORT,... | --shm PATH --ranks N)
-  [--model qwen3|granite] [--fixture DIR] [--listen ADDR] [--backend host|gpu] [--parts 3,1]
+  [--model qwen3|granite|eg2] [--fixture DIR] [--listen ADDR] [--backend host|gpu] [--parts 3,1]
   [--form q8_0] [--verbs DEV[:GID],... | --ring PREVDEV,.../NEXTDEV,...] [--repeat N]
   --verbs and --ring move the sums over RDMA, one lane per device, after the
   ranks meet over the sockets or the file.
@@ -122,18 +122,8 @@ fn cluster(ranks: usize, kind: ZoneKind) -> Cluster {
     c
 }
 
-/// `w` as floats in the graph's shape.
-fn floats(g: &graph::Graph, at: usize, w: &Weight) -> Tensor {
-    let axis = |e: &graph::DimExpr| e.value(&g.dims, &|_| None).unwrap_or(1) as usize;
-    let shape: Vec<usize> = g.weights[at].ty.shape.0.iter().map(axis).collect();
-    match w {
-        Weight::Floats(t) => Tensor::f32(shape, t.floats().unwrap_or_default().to_vec()),
-        Weight::Packed(f, bytes) => {
-            let n = f.elements(bytes.len());
-            Tensor::f32(shape, (0..n).map(|i| f.unpack(bytes, i)).collect())
-        }
-    }
-}
+#[cfg(test)]
+mod eg2_test;
 
 fn main() -> ExitCode {
     let Some(args) = parse(std::env::args().skip(1)) else {
@@ -149,13 +139,23 @@ fn main() -> ExitCode {
     }
 }
 
-/// The model's forward graph for `n` tokens of one sequence.
-fn graph(model: &str, n: u64) -> Option<graph::Graph> {
-    Some(match model {
+type Loaded = (graph::Graph, Vec<Weight>, lower::Pins);
+
+/// One sequence's graph for `n` tokens, its weights and forms.
+fn model(name: &str, fixture: &Path, n: u64) -> Result<Loaded, Box<dyn std::error::Error>> {
+    let g = match name {
         "qwen3" => program::<Norm, Swiglu>(&Config::qwen3(1, n)),
         "granite" => program::<(), Moe>(&Config::granite(1, n)),
-        _ => return None,
-    })
+        "eg2" => {
+            let e = bundle::encoder::encoder(&fixture.join("exlr8"), 1, n)
+                .map_err(|e| e.to_string())?;
+            return Ok((e.graph, e.weights, lower::Pins::default()));
+        }
+        _ => return Err("a model this tool knows".into()),
+    };
+    let file = checkpoint::File::open(&fixture.join("model.safetensors"))?;
+    let (weights, pins) = bundle::pull(&g, &file, 0, &[]).map_err(|e| e.to_string())?;
+    Ok((g, weights, pins))
 }
 
 /// Room for every token's logits, and then some.
@@ -202,10 +202,11 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         None => testkit::reference(&args.model)
             .ok_or_else(|| format!("no fixture: {} has no reference here", args.model))?,
     };
-    let case = match fixture.join("tokens.txt").is_file() {
-        true => fixture.clone(),
-        false => fixture.join("cases/prompt"),
-    };
+    let case = ["", "cases/prompt", "cases/words"]
+        .map(|at| fixture.join(at))
+        .into_iter()
+        .find(|dir| dir.join("tokens.txt").is_file())
+        .ok_or("no tokens.txt in the fixture")?;
     let text = std::fs::read_to_string(case.join("tokens.txt"))?;
     let line = text
         .lines()
@@ -217,7 +218,7 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         .collect::<Result<_, _>>()?;
     let n = tokens.len();
     let ranks = args.ranks;
-    let g = graph(&args.model, n as u64).ok_or("a model this tool knows")?;
+    let (g, weights, mut pins) = model(&args.model, &fixture, n as u64)?;
     let sharded = shard(&g)?;
     let split = sharded
         .weights
@@ -230,8 +231,6 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         g.weights.len()
     );
 
-    let file = checkpoint::File::open(&fixture.join("model.safetensors"))?;
-    let (weights, mut pins) = bundle::pull(&g, &file, 0, &[]).map_err(|e| e.to_string())?;
     if let Some(form) = &args.form {
         let form = lower::form::named(form).ok_or_else(|| format!("no form `{form}`"))?;
         pins = lower::Pins::all(form);
@@ -279,8 +278,9 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         rank.runner().device()
     );
     let start = Instant::now();
+    // Each rank cuts its part from the packed bytes.
     for (at, w) in weights.iter().enumerate() {
-        rank.load(at as u32, floats(&g, at, w).view())?;
+        rank.load_weight(at as u32, w)?;
     }
     eprintln!(
         "rank {}: loaded in {:.1} s",
@@ -298,7 +298,8 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let out = rank.run(&feeds)?;
     let seconds = start.elapsed().as_secs_f64();
     let logits = out[0].floats()?;
-    let vocab = logits.len() / n;
+    // An embedding is one short row.
+    let vocab = (logits.len() / n).max(1);
     let top = |row: &[f32]| {
         (0..row.len())
             .max_by(|a, b| row[*a].total_cmp(&row[*b]))
@@ -309,6 +310,12 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         "rank {}: forward of {n} tokens in {seconds:.3} s, top ids {ours:?}",
         args.rank
     );
+    if let Ok(bytes) = std::fs::read(case.join("embedding.f32")) {
+        let (words, _) = bytes.as_chunks::<4>();
+        let want: Vec<f32> = words.iter().map(|b| f32::from_le_bytes(*b)).collect();
+        let cos = testkit::cosine_f32(logits, &want);
+        eprintln!("rank {}: embedding cos {cos:.5}", args.rank);
+    }
     if let Ok(bytes) = std::fs::read(case.join("logits.f32")) {
         let (words, _) = bytes.as_chunks::<4>();
         let want: Vec<f32> = words.iter().map(|b| f32::from_le_bytes(*b)).collect();

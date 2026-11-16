@@ -4,7 +4,7 @@ use crate::Run;
 use crate::open;
 use engine_comm::summed;
 use engine_settings::Settings;
-use lower::{Error, Plan};
+use lower::{Error, Plan, Weight};
 use mem::{Tensor, View};
 
 /// One runner per rank. Sums run in rank order.
@@ -33,6 +33,14 @@ impl Loopback {
     pub fn load(&mut self, weight: u32, data: View) -> Result<(), Error> {
         for r in &mut self.ranks {
             r.load(weight, data.clone())?;
+        }
+        Ok(())
+    }
+
+    /// Every rank takes its part of the weight as stored.
+    pub fn load_weight(&mut self, weight: u32, w: &Weight) -> Result<(), Error> {
+        for r in &mut self.ranks {
+            r.load_weight(weight, w)?;
         }
         Ok(())
     }

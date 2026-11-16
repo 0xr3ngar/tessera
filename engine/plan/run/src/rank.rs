@@ -5,7 +5,7 @@ use crate::open;
 use engine_comm::reduce::{CUDA, ENTRY};
 use engine_comm::{Reduce, Transport, summed};
 use engine_settings::Settings;
-use lower::{Arg, Error, Plan, Shape, Step};
+use lower::{Arg, Error, Plan, Shape, Step, Weight};
 use mem::{Tensor, View};
 
 /// One rank: its runner and its way to the others.
@@ -87,6 +87,11 @@ impl<T: Transport> Rank<T> {
     /// Takes this rank's slice of the whole weight.
     pub fn load(&mut self, weight: u32, data: View) -> Result<(), Error> {
         self.runner.load(weight, data)
+    }
+
+    /// Takes this rank's part of the weight as stored.
+    pub fn load_weight(&mut self, weight: u32, w: &Weight) -> Result<(), Error> {
+        self.runner.load_weight(weight, w)
     }
 
     /// Runs every step. Sums wait for every rank.

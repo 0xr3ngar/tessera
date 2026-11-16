@@ -200,7 +200,14 @@ impl<'a> Tree<'a> {
                     return Err(Error::Size(what));
                 };
                 extents[a] = Extent::Fixed(count);
-                share = Some(Share { axis, first, count });
+                let inner = extents[a + 1..].iter().map(Extent::most).product();
+                share = Some(Share {
+                    axis,
+                    first,
+                    count,
+                    whole,
+                    inner,
+                });
             }
             let shape: Vec<usize> = extents.iter().map(Extent::most).collect();
             let from = NodeId(i as u32);
