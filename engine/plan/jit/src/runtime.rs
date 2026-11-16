@@ -1,7 +1,7 @@
 //! What compiled bodies call: buffers, math, shuffles and tiles.
 
 use codegen::Precision;
-use codegen::lockstep::{self, THREADS, Tiles};
+use host::lockstep::{self, THREADS, Tiles};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 /// A buffer as the compiled code sees it.

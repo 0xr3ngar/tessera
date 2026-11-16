@@ -303,7 +303,7 @@ pub enum Param {
 }
 
 impl Param {
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         match self {
             Param::Buffer { name, .. }
             | Param::Scalar { name, .. }

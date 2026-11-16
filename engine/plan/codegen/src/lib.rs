@@ -3,13 +3,11 @@
 pub mod block;
 mod count;
 mod dialect;
-pub mod exec;
 pub mod form;
 pub mod inline;
 mod intrinsic;
 pub mod ir;
 pub mod kept;
-pub mod lockstep;
 pub mod numerics;
 pub mod prelude;
 mod tile;

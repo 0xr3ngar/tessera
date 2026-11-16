@@ -5,7 +5,6 @@ use crate::runtime::{Arg, Buf, Ctx};
 use crate::signature;
 use codegen::ir::{Body, Expr, Intrinsic, Param, Stmt, Ty};
 use codegen::kept::Layout;
-use codegen::lockstep::THREADS;
 use cranelift_codegen::ir::{
     FuncRef, Function, InstBuilder, MemFlagsData, StackSlot, StackSlotData, StackSlotKind, Type,
     Value, condcodes::IntCC, types,
@@ -14,6 +13,7 @@ use cranelift_codegen::isa::TargetFrontendConfig;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::JITModule;
 use cranelift_module::{Linkage, Module};
+use host::lockstep::THREADS;
 use std::collections::HashMap;
 
 pub(crate) type Res<T = ()> = Result<T, String>;

@@ -3,10 +3,10 @@
 use crate::Error;
 use crate::run::{Base, Run, line};
 use codegen::Precision;
-use codegen::exec::{self, ArgVal, Grid};
 use codegen::ir::{Body, Param, Ty};
-use codegen::lockstep::THREADS;
 use gpukit::{Limits, Platform};
+use host::exec::{self, ArgVal, Grid};
+use host::lockstep::THREADS;
 use jit::{Buf, Ctx, Entry};
 use lower::{Arg, Extent, Launch, Plan, Shape, Source};
 use mem::{Buffer, Host};

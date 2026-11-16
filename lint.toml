@@ -65,7 +65,7 @@ layers = [
     ["engine/gpu/", "engine/settings/"],
     ["engine/plan/sim/", "engine/plan/kernel-macro/"],
     ["engine/plan/codegen/"],
-    ["engine/plan/lower/", "engine/plan/comm/"],
+    ["engine/plan/lower/", "engine/plan/comm/", "engine/plan/host/"],
     ["engine/plan/jit/"],
     ["engine/plan/run/"],
     ["engine/rules/"],

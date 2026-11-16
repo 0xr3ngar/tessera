@@ -43,6 +43,7 @@ tessera is not alpha or beta. It's an experiment right now and no numbers are av
 <tr><td colspan="2">&emsp;<a href="engine/plan"><b>plan/</b></a></td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/plan/codegen">codegen</a></td><td>Generates kernel text for every dialect, and counts what it costs</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/plan/comm">engine-comm</a></td><td>Moves bytes between ranks over sockets, shared memory or RDMA</td></tr>
+<tr><td>&emsp;&emsp;<a href="engine/plan/host">host</a></td><td>Runs kernel bodies on the host, each group in lockstep</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/plan/jit">jit</a></td><td>Kernel bodies compiled for the host with Cranelift when a plan is made</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/plan/kernel-macro">kernel-macro</a></td><td>#[kernel]: a Rust function body as a kernel tree</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/plan/lower">lower</a></td><td>Lowers a graph to a plan of kernel launches</td></tr>
