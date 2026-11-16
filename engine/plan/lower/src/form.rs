@@ -8,6 +8,7 @@ pub use codegen::form::{BF16_FORM, Bf16, F32, F32_FORM, LOADS, Load, U32, U32_FO
 
 /// A weight as a file holds it.
 pub enum Weight {
+    /// Plain floats: f32, or bf16 as stored.
     Floats(Tensor),
     /// One form's bytes, as `Form::pack` lays them out.
     Packed(&'static dyn Load, Vec<u8>),

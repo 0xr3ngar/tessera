@@ -1,5 +1,6 @@
 //! An allocation in one zone, behind whatever backend holds it.
 
+use crate::file::FileRange;
 use crate::layout::Layout;
 use crate::view::{View, ViewMut};
 use crate::{Error, mismatch};
@@ -16,6 +17,10 @@ pub trait Backing: Any {
     fn upload(&mut self, at: usize, bytes: &[u8]) -> Result<(), Error>;
     /// Device to host, `at` bytes in. Synchronous.
     fn download(&self, at: usize, out: &mut [u8]) -> Result<(), Error>;
+    /// The file bytes this memory maps, if any.
+    fn source(&self) -> Option<&FileRange> {
+        None
+    }
     fn as_any(&self) -> &dyn Any;
 }
 
@@ -29,6 +34,11 @@ impl Host {
         let mut words = Vec::with_capacity(bytes.div_ceil(4));
         words.resize(bytes.div_ceil(4), 0);
         Self(words)
+    }
+
+    /// Zeroed by the system: pages cost nothing until touched.
+    pub fn lazy(bytes: usize) -> Self {
+        Self(vec![0; bytes.div_ceil(4)])
     }
 }
 

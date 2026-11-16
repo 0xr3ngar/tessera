@@ -7,8 +7,8 @@ use codegen::ir::{Body, Param, Ty};
 use codegen::lockstep::THREADS;
 use gpukit::{Limits, Platform};
 use jit::{Buf, Ctx, Entry};
-use lower::{Arg, Error, Extent, Launch, Plan, Shape, Source};
-use mem::{Buffer, Host};
+use lower::{Arg, Error, Extent, Launch, Plan, Shape, Slot, Source};
+use mem::{Buffer, FileRange, Host};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::OnceLock;
@@ -124,12 +124,22 @@ impl Run for Runner {
         &mut self.base
     }
 
+    /// A private map: pages load as kernels read them.
+    fn adopt(&mut self, slot: Slot, range: &FileRange) -> Result<bool, Error> {
+        if !self.base.held.whole(slot) || !range.at.is_multiple_of(slot.form.grain() as u64) {
+            return Ok(false);
+        }
+        let zone = self.base.held.get(slot).zone;
+        self.base.held.adopt(slot, Buffer::new(zone, range.map()?));
+        Ok(true)
+    }
+
     fn replan(&mut self, plan: &Plan) -> Result<(), Error> {
         if !self.base.fresh(plan)? {
             return Ok(());
         }
         self.base.held.bind(plan, |zone, bytes| {
-            Ok(Buffer::new(zone, Host::new(bytes.max(4))))
+            Ok(Buffer::new(zone, Host::lazy(bytes.max(4))))
         })?;
         self.bodies = plan
             .steps

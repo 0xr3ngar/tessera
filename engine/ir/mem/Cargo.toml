@@ -10,3 +10,4 @@ description = "Buffers in zones, typed views onto them, and storage forms"
 thiserror = "2"
 graph = { workspace = true }
 scattered-collect = "0.22"
+memmap2 = "0.9"

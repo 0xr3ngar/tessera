@@ -25,7 +25,7 @@ pub use graph::{Bf16, DimExpr, E4M3, F16, Graph, PathSeg, Shape};
 pub use interp::{Tensor, bind};
 pub use lower::{Error, Pick, Pins, Recipe, Settings, Weight, form, gpu};
 pub use mem::form as storage;
-pub use mem::{block, trellis};
+pub use mem::{Buffer, DType, FileRange, block, trellis};
 pub use models::{Stack, decoder, tagger};
 pub use trace::Norm;
 

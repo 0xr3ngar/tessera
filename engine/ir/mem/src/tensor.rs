@@ -42,6 +42,17 @@ impl Tensor {
         }
     }
 
+    /// `buffer`'s bytes as `dtype` elements, filling `shape`.
+    pub fn over(shape: Vec<usize>, dtype: DType, buffer: Buffer) -> Self {
+        Self {
+            count: buffer.bytes() / dtype.bytes(),
+            layout: Layout::contiguous(shape.clone()),
+            shape,
+            dtype,
+            buffer,
+        }
+    }
+
     pub fn f32(shape: Vec<usize>, v: Vec<f32>) -> Self {
         Self::from_bytes(shape, DType::F32, bytes_of(&v))
     }
@@ -123,6 +134,13 @@ impl Tensor {
     /// The same bytes under another shape.
     pub fn reshaped(&self, shape: Vec<usize>) -> Self {
         Self::from_bytes(shape, self.dtype, self.bytes())
+    }
+
+    /// The same buffer under another shape, without a copy.
+    pub fn into_shape(mut self, shape: Vec<usize>) -> Self {
+        self.layout = Layout::contiguous(shape.clone());
+        self.shape = shape;
+        self
     }
 
     /// Elements by index, keeping the element type.

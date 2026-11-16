@@ -37,6 +37,17 @@ impl Held {
             .view(slot.start(), slot.form.dtype(), vec![slot.len])
     }
 
+    /// Whether the slot fills its buffer from the start.
+    pub fn whole(&self, slot: Slot) -> bool {
+        slot.start() == 0 && self.get(slot).bytes() == slot.form.bytes(slot.len)
+    }
+
+    /// Puts `buffer` in place of the slot's own.
+    pub fn adopt(&mut self, slot: Slot, buffer: Buffer) {
+        let at = self.bound[slot.buffer as usize];
+        self.all[at] = buffer;
+    }
+
     /// `bytes` into the slot, as the form packed them.
     pub fn upload(&mut self, slot: Slot, bytes: &[u8]) -> Result<(), Error> {
         let at = self.bound[slot.buffer as usize];

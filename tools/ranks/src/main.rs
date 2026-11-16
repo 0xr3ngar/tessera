@@ -127,7 +127,7 @@ fn floats(g: &graph::Graph, at: usize, w: &Weight) -> Tensor {
     let axis = |e: &graph::DimExpr| e.value(&g.dims, &|_| None).unwrap_or(1) as usize;
     let shape: Vec<usize> = g.weights[at].ty.shape.0.iter().map(axis).collect();
     match w {
-        Weight::Floats(t) => Tensor::f32(shape, t.floats().unwrap_or_default().to_vec()),
+        Weight::Floats(t) => Tensor::f32(shape, t.view().to_f32().unwrap_or_default()),
         Weight::Packed(f, bytes) => {
             let n = f.elements(bytes.len());
             Tensor::f32(shape, (0..n).map(|i| f.unpack(bytes, i)).collect())

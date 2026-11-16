@@ -5,7 +5,7 @@ use codegen::Precision;
 use gpukit::{Limits, Platform};
 use graph::DimName;
 use lower::{Arg, Error, Launch, Launching, Plan, Shape, Slot, Weight};
-use mem::{Tensor, View, copy};
+use mem::{FileRange, Tensor, View, copy};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::OnceLock;
@@ -117,6 +117,11 @@ pub trait Run {
         Ok(data.slice(share.axis as usize, share.first, share.count))
     }
 
+    /// File bytes as the slot's buffer, where the device can.
+    fn adopt(&mut self, _slot: Slot, _range: &FileRange) -> Result<bool, Error> {
+        Ok(false)
+    }
+
     /// Uploads a weight as stored, widened where a slot differs.
     fn load_weight(&mut self, weight: u32, w: &Weight) -> Result<(), Error> {
         let Weight::Packed(form, bytes) = w else {
@@ -204,6 +209,12 @@ pub trait Run {
         for slot in slots {
             if slot.len != data.len() {
                 return Err(Error::Size(format!("weight {weight}")));
+            }
+            let plain = slot.form.block() == 1 && data.dtype() == slot.form.dtype();
+            if let Some(range) = data.source().filter(|_| plain)
+                && self.adopt(slot, &range)?
+            {
+                continue;
             }
             self.write(slot, data.clone())?;
         }

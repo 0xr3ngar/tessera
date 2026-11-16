@@ -2,6 +2,7 @@
 
 pub mod block;
 mod buffer;
+mod file;
 pub mod form;
 mod layout;
 mod tensor;
@@ -9,6 +10,7 @@ pub mod trellis;
 mod view;
 
 pub use buffer::{Backing, Buffer, Host};
+pub use file::{FileRange, Mapped};
 pub use graph::DType;
 pub use layout::Layout;
 pub use tensor::Tensor;

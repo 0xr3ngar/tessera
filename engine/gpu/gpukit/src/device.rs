@@ -2,9 +2,10 @@
 
 use crate::backend::Backend;
 use crate::{Error, Platform};
+use std::any::Any;
 use std::collections::HashMap;
 use std::ptr::NonNull;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// A backend context: memory, kernels and process-wide caches.
 pub trait Device: Clone + Send + Sync + 'static {
@@ -13,6 +14,8 @@ pub trait Device: Clone + Send + Sync + 'static {
     type Graph: Send + 'static;
 
     const BACKEND: Backend;
+    /// Whether fresh allocations already read as zero.
+    const ZEROED: bool = false;
 
     /// Opens the default device.
     fn open() -> Result<Self, Error>;
@@ -37,6 +40,12 @@ pub trait Device: Clone + Send + Sync + 'static {
 
     /// The bytes at `ptr`, when the host addresses them.
     fn mapped(&self, _ptr: u64, _size: usize) -> Option<NonNull<u8>> {
+        None
+    }
+
+    /// # Safety
+    /// Whole host pages, alive while the address is used.
+    unsafe fn wrap(&self, _host: NonNull<u8>, _len: usize) -> Option<u64> {
         None
     }
 
@@ -124,9 +133,11 @@ pub fn cached_source<D: Device>(
 
 /// A device allocation, freed on drop.
 pub struct DeviceBuffer<D: Device> {
-    ctx: D,
-    ptr: u64,
-    size: usize,
+    pub(crate) ctx: D,
+    pub(crate) ptr: u64,
+    pub(crate) size: usize,
+    /// Host memory a wrapped buffer reads. Wrapped buffers are read-only.
+    pub(crate) keep: Option<Arc<dyn Any + Send + Sync>>,
 }
 
 impl<D: Device> DeviceBuffer<D> {
@@ -136,7 +147,22 @@ impl<D: Device> DeviceBuffer<D> {
             ptr: ctx.alloc(size)?,
             ctx: ctx.clone(),
             size,
+            keep: None,
         })
+    }
+
+    /// Allocate one buffer that reads as zero.
+    pub fn zeroed(ctx: &D, size: usize) -> Result<Self, Error> {
+        let buffer = Self::alloc(ctx, size)?;
+        if !D::ZEROED {
+            buffer.zero()?;
+        }
+        Ok(buffer)
+    }
+
+    /// Whether the buffer reads host memory in place.
+    pub fn wrapped(&self) -> bool {
+        self.keep.is_some()
     }
 
     pub fn size(&self) -> usize {
@@ -159,6 +185,9 @@ impl<D: Device> DeviceBuffer<D> {
     /// Host to device. Synchronous.
     pub fn write_bytes(&self, bytes: &[u8]) -> Result<(), Error> {
         self.assert_fits(bytes.len());
+        if self.wrapped() {
+            return Err(D::error("a write to a wrapped buffer".into()));
+        }
         self.ctx.upload(self.ptr, bytes)
     }
 
@@ -200,12 +229,18 @@ impl<D: Device> mem::Backing for DeviceBuffer<D> {
     }
 
     fn mapped_mut(&mut self) -> Option<&mut [u8]> {
+        if self.wrapped() {
+            return None;
+        }
         let at = self.ctx.mapped(self.ptr, self.size)?;
         Some(unsafe { std::slice::from_raw_parts_mut(at.as_ptr(), self.size) })
     }
 
     fn upload(&mut self, at: usize, bytes: &[u8]) -> Result<(), mem::Error> {
         self.assert_fits(at + bytes.len());
+        if self.wrapped() {
+            return Err(mem::Error::Device("a write to a wrapped buffer".into()));
+        }
         let ptr = self.ptr + at as u64;
         self.ctx
             .upload(ptr, bytes)

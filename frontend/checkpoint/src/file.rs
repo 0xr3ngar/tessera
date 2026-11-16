@@ -1,12 +1,12 @@
 //! One safetensors file: a JSON header, then tensor bytes.
 
 use crate::offer::{Offer, Slice, Stored};
-use engine::{Bf16, F16};
+use engine::{Bf16, Buffer, DType, F16, FileRange, Tensor};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read};
 use std::path::Path;
 
 #[derive(Debug, thiserror::Error)]
@@ -40,7 +40,7 @@ struct Entry {
 
 /// Where the bytes live.
 enum Backing {
-    Disk(fs::File),
+    Disk(FileRange),
     /// Read by range requests.
     Web(String),
 }
@@ -96,7 +96,7 @@ impl File {
         }
         let mut header = vec![0u8; len as usize];
         file.read_exact(&mut header)?;
-        Self::parse(Backing::Disk(file), &header, size)
+        Self::parse(Backing::Disk(FileRange::new(file)?), &header, size)
     }
 
     /// A file served over http, one tensor per request.
@@ -137,13 +137,18 @@ impl File {
         match &self.backing {
             Backing::Disk(file) => {
                 let mut bytes = vec![0u8; (end - start) as usize];
-                let mut file = file;
-                file.seek(SeekFrom::Start(self.data + start))?;
-                file.read_exact(&mut bytes)?;
+                self.range(file, start, end)?.read(&mut bytes)?;
                 Ok(bytes)
             }
             Backing::Web(url) => fetch(url, self.data + start, end - start),
         }
+    }
+
+    /// Bytes `start..end` of the tensor area, as a file range.
+    fn range(&self, file: &FileRange, start: u64, end: u64) -> Result<FileRange, Error> {
+        let at = (self.data + start) as usize;
+        let past = || format(format_args!("bytes {start}..{end} past the file"));
+        file.sub(at, (end - start) as usize).ok_or_else(past)
     }
 
     pub fn shape(&self, name: &str) -> Option<&[usize]> {
@@ -207,10 +212,20 @@ impl Offer for File {
         Err(Error::DType(format!("{name} holds floats, not a form")))
     }
 
-    fn bf16(&self, name: &str) -> Result<Vec<u8>, Error> {
-        match self.entries.get(name).map(|e| stored(&e.dtype)) {
-            Some(Stored::Bf16) => self.bytes(name),
-            _ => Err(Error::DType(format!("{name} is not bf16"))),
+    /// On disk the tensor maps the file, unread.
+    fn bf16(&self, name: &str) -> Result<Tensor, Error> {
+        let e = (self.entries.get(name)).ok_or_else(|| Error::Missing(name.into()))?;
+        if stored(&e.dtype) != Stored::Bf16 {
+            return Err(Error::DType(format!("{name} is not bf16")));
+        }
+        let [start, end] = e.data_offsets;
+        let shape = e.shape.clone();
+        match &self.backing {
+            Backing::Disk(file) => {
+                let mapped = self.range(file, start, end)?.map()?;
+                Ok(Tensor::over(shape, DType::Bf16, Buffer::new(0, mapped)))
+            }
+            Backing::Web(_) => Ok(Tensor::from_bytes(shape, DType::Bf16, &self.bytes(name)?)),
         }
     }
 }

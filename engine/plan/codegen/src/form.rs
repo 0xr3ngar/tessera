@@ -19,6 +19,11 @@ pub trait Load: Form {
         false
     }
 
+    /// The byte boundary a weight's start must lie on.
+    fn grain(&self) -> usize {
+        16
+    }
+
     /// Distance between a lane's two wide loads, in elements.
     fn pairs(&self) -> usize {
         0
@@ -127,6 +132,10 @@ impl Load for Bf16 {
     }
     fn wide(&self) -> &'static str {
         "uint2"
+    }
+    /// Its widest load is two words.
+    fn grain(&self) -> usize {
+        8
     }
     /// Two bf16 share each word: low half first.
     fn part(&self, wide: &str, h: char) -> String {

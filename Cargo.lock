@@ -861,6 +861,7 @@ dependencies = [
  "objc2-metal",
  "serde",
  "serde_json",
+ "testkit",
  "thiserror",
 ]
 
@@ -1322,6 +1323,7 @@ name = "mem"
 version = "0.1.0"
 dependencies = [
  "graph",
+ "memmap2",
  "scattered-collect",
  "thiserror",
 ]

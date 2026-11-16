@@ -33,3 +33,25 @@ fn compile_race_free() {
         h.join().expect("worker panicked: a pipeline race?");
     }
 }
+
+/// A file range wraps where aligned, else reads in.
+#[test]
+fn fill_from_file() {
+    use crate::device::DeviceBuffer;
+    use crate::fill::{Fill, Source};
+    let Ok(ctx) = Context::new() else {
+        return eprintln!("skip: no Metal device");
+    };
+    let bytes: Vec<u8> = (0..40_000u32).map(|i| (i % 251) as u8).collect();
+    let path = testkit::stage("fill", &bytes);
+    let file = mem::FileRange::new(std::fs::File::open(&path).unwrap()).unwrap();
+    for (at, want) in [(16, Fill::Wrap), (20, Fill::Read)] {
+        let range = file.sub(at, 30_000).unwrap();
+        let (buffer, fill) = DeviceBuffer::fill(&ctx, Source::File(&range), 16).unwrap();
+        assert_eq!(fill, want);
+        let mut out = vec![0; 30_000];
+        buffer.read_bytes(&mut out).unwrap();
+        assert_eq!(out, bytes[at..at + 30_000]);
+    }
+    std::fs::remove_file(path).unwrap();
+}

@@ -41,6 +41,14 @@ impl Allocs {
         base
     }
 
+    /// Drops the buffer holding `ptr`.
+    fn remove(&mut self, ptr: u64) {
+        if let Some((base, _)) = self.by_base.range(..=ptr).next_back() {
+            let base = *base;
+            self.by_base.remove(&base);
+        }
+    }
+
     /// The buffer holding `ptr`, and how far in it lies.
     fn find(&self, ptr: u64) -> Result<(&Buf, usize), Error> {
         let (base, buffer) = self
@@ -251,6 +259,7 @@ impl Device for Context {
     type Graph = ();
 
     const BACKEND: Backend = Backend::Metal;
+    const ZEROED: bool = true;
 
     fn open() -> Result<Self, Error> {
         Self::new()
@@ -295,7 +304,7 @@ impl Device for Context {
         })
     }
 
-    /// Shared storage, zeroed, at least four bytes long.
+    /// Shared storage at least four bytes long. Metal zeroes it.
     fn alloc(&self, size: usize) -> Result<u64, Error> {
         let shared = MTLResourceOptions::StorageModeShared;
         let buffer = self
@@ -303,13 +312,26 @@ impl Device for Context {
             .device
             .newBufferWithLength_options(size.max(4), shared);
         let buffer = buffer.ok_or(Error::Gpu("buffer allocation"))?;
-        let all = buffer.length();
-        unsafe { std::ptr::write_bytes(buffer.contents().as_ptr().cast::<u8>(), 0, all) };
         Ok(lock(&self.0.allocs).add(buffer))
     }
 
+    unsafe fn wrap(&self, host: NonNull<u8>, len: usize) -> Option<u64> {
+        let shared = MTLResourceOptions::StorageModeShared;
+        let device = &self.0.device;
+        // The caller keeps the pages alive and aligned.
+        let buffer = unsafe {
+            device.newBufferWithBytesNoCopy_length_options_deallocator(
+                host.cast(),
+                len,
+                shared,
+                None,
+            )
+        }?;
+        Some(lock(&self.0.allocs).add(buffer))
+    }
+
     fn free(&self, ptr: u64) {
-        lock(&self.0.allocs).by_base.remove(&ptr);
+        lock(&self.0.allocs).remove(ptr);
     }
 
     fn upload(&self, ptr: u64, bytes: &[u8]) -> Result<(), Error> {

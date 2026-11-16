@@ -1,6 +1,7 @@
 //! Typed windows onto buffers, and copies between them.
 
 use crate::buffer::Buffer;
+use crate::file::FileRange;
 use crate::layout::Layout;
 use crate::tensor::Tensor;
 use crate::{Error, mismatch};
@@ -67,6 +68,15 @@ impl<'a> View<'a> {
 
     pub fn zone(&self) -> u32 {
         self.buffer.zone
+    }
+
+    /// The file bytes under a contiguous view, if any.
+    pub fn source(&self) -> Option<FileRange> {
+        if !self.layout.is_contiguous() {
+            return None;
+        }
+        let range = self.buffer.backing().source()?;
+        range.sub(self.at, self.dtype.bytes() * self.len())
     }
 
     /// Bytes from `at` to the furthest element, as stored.

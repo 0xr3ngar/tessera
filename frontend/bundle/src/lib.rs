@@ -17,7 +17,7 @@ pub use template::{Message, Template};
 use checkpoint::{File, Offer, Stored};
 use engine::decoder::{self, Config, Moe, Scales, Swiglu};
 use engine::form::{BF16_FORM, F32_FORM, Load, named};
-use engine::{Graph, Norm, Pins, Stack, Tensor, Weight};
+use engine::{DType, Graph, Norm, Pins, Stack, Tensor, Weight};
 use names::Rule;
 use serde::Deserialize;
 use std::error::Error;
@@ -110,7 +110,7 @@ pub fn each(
                 };
                 (Weight::Packed(f, bytes), f)
             }
-            (Stored::Bf16, _) => (halves(offer, slice, c.rows)?, BF16_FORM),
+            (Stored::Bf16, _) => (halves(offer, slice, c.rows, shape)?, BF16_FORM),
             _ => (floats(offer, slice, c.rows, shape)?, F32_FORM),
         };
         take(weight, form);
@@ -118,18 +118,21 @@ pub fn each(
     Ok(())
 }
 
-/// A bf16 slice's bytes, or its `rows`, kept packed.
+/// A bf16 slice, or its `rows`, as stored.
 fn halves(
     offer: &dyn Offer,
     slice: &checkpoint::Slice,
     rows: Option<(usize, usize)>,
+    shape: Option<Vec<usize>>,
 ) -> Result<Weight, checkpoint::Error> {
-    let mut v = offer.bf16(&slice.name)?;
+    let mut t = offer.bf16(&slice.name)?;
     if let Some((first, count)) = rows {
         let stride = 2 * slice.elements() / slice.shape[0];
-        v = v[first * stride..(first + count) * stride].to_vec();
+        let bytes = &t.bytes()[first * stride..(first + count) * stride];
+        t = Tensor::from_bytes(vec![bytes.len() / 2], DType::Bf16, bytes);
     }
-    Ok(Weight::Packed(BF16_FORM, v))
+    let shape = shape.unwrap_or_else(|| vec![t.len()]);
+    Ok(Weight::Floats(t.into_shape(shape)))
 }
 
 /// A slice's floats, or its `rows`, in the graph's shape.

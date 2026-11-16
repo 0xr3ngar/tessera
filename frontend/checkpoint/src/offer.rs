@@ -2,6 +2,7 @@
 
 use crate::Error;
 use engine::storage::Form;
+use engine::{DType, Tensor};
 
 /// How a slice's elements lie in the file.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -64,10 +65,15 @@ pub trait Offer {
     fn floats(&self, name: &str) -> Result<Vec<f32>, Error>;
     /// Slice `name` as its form's bytes. Floats have none.
     fn packed(&self, name: &str) -> Result<Vec<u8>, Error>;
-    /// A bf16 slice's bytes, as stored.
-    fn bf16(&self, name: &str) -> Result<Vec<u8>, Error> {
+    /// A bf16 slice as stored, in one row.
+    fn bf16(&self, name: &str) -> Result<Tensor, Error> {
         let narrow = |x: &f32| engine::Bf16::from(*x).0.to_le_bytes();
-        Ok(self.floats(name)?.iter().flat_map(narrow).collect())
+        let bytes: Vec<u8> = self.floats(name)?.iter().flat_map(narrow).collect();
+        Ok(Tensor::from_bytes(
+            vec![bytes.len() / 2],
+            DType::Bf16,
+            &bytes,
+        ))
     }
     /// Rows `first..first + count` of a packed slice.
     fn packed_rows(&self, name: &str, rows: (usize, usize)) -> Result<Vec<u8>, Error> {

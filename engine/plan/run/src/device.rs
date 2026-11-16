@@ -8,7 +8,7 @@ use gpukit::device::{Device, DeviceBuffer, cached_context, cached_source};
 use gpukit::launch::{KernelArgs, Launch, launch_1d, launch_grid};
 use graph::DimName;
 use lower::{Arg, Error, Extent, Launch as Call, Launching, Plan, Shape, Slot};
-use mem::Buffer;
+use mem::{Buffer, FileRange};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::time::Instant;
@@ -156,10 +156,8 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
         self.graphs.clear();
         let ctx = self.ctx;
         self.base.held.bind(plan, |zone, bytes| {
-            let buffer = DeviceBuffer::alloc(ctx, bytes.max(4))?;
             // Kernels may read what they are about to write.
-            buffer.zero()?;
-            Ok(Buffer::new(zone, buffer))
+            Ok(Buffer::new(zone, DeviceBuffer::zeroed(ctx, bytes.max(4))?))
         })?;
         self.kernels.clear();
         self.waits.clear();
@@ -174,6 +172,18 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
         }
         self.base.adopt(plan);
         Ok(())
+    }
+
+    /// A wrap replaces the buffer. Copies go through `write`.
+    fn adopt(&mut self, slot: Slot, range: &FileRange) -> Result<bool, Error> {
+        let wrap = || DeviceBuffer::wrap(self.ctx, range, slot.form.grain());
+        let Some(buffer) = self.base.held.whole(slot).then(wrap).flatten() else {
+            return Ok(false);
+        };
+        let zone = self.base.held.get(slot).zone;
+        self.base.held.adopt(slot, Buffer::new(zone, buffer));
+        self.graphs.clear();
+        Ok(true)
     }
 
     fn launching(&mut self, launching: Launching) {
