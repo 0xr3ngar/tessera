@@ -26,9 +26,9 @@ use std::process::{Command, ExitCode};
 use windows::{Window, cut};
 
 const USAGE: &str = "usage: tessera-simcheck fetch <model_dir>
-       tessera-simcheck check <model_dir> [cache_file [json_file [base_ref]]]
-       tessera-simcheck far <model_dir> [cache_file]
-       tessera-simcheck place <model_dir> <cache_file> [paths_file]
+       tessera-simcheck check <model_dir> [cache_dir [json_file [base_ref]]]
+       tessera-simcheck far <model_dir> [cache_dir]
+       tessera-simcheck place <model_dir> <cache_dir> [paths_file]
 
 `check` writes its findings to <json_file> when given.
 It also fails on allow.toml pairs that allow nothing.
@@ -212,8 +212,8 @@ fn new_leans(
 /// Non-test windows, their embeddings, and the crates.
 type Tree = (Vec<Window>, Vec<Vec<f32>>, Vec<String>);
 
-/// Embeds the tree. `keep_all` keeps cache entries of other trees.
-fn tree(model: &Path, cache_file: Option<&Path>, keep_all: bool) -> Result<Tree> {
+/// Embeds the tree.
+fn tree(model: &Path, cache_file: Option<&Path>) -> Result<Tree> {
     let s: Settings = toml::from_str(include_str!("../../../lint.toml"))?;
     let root = PathBuf::from(git(Path::new("."), &["rev-parse", "--show-toplevel"])?.trim());
     let wins = all_windows(&root, &s)?;
@@ -223,10 +223,7 @@ fn tree(model: &Path, cache_file: Option<&Path>, keep_all: bool) -> Result<Tree>
     };
     let embs = embed(model, &wins, &mut cache)?;
     if let Some(f) = cache_file {
-        let mut keys: Vec<u64> = wins.iter().map(|w| key(&w.text)).collect();
-        if keep_all {
-            keys.extend(cache.keys());
-        }
+        let keys: Vec<u64> = wins.iter().map(|w| key(&w.text)).collect();
         cache.save(f, &keys)?;
     }
     let keep: Vec<usize> = (0..wins.len())
@@ -239,7 +236,7 @@ fn tree(model: &Path, cache_file: Option<&Path>, keep_all: bool) -> Result<Tree>
 
 /// Prints each file's lean, or only those in `only`.
 fn place(model: &Path, cache_file: &Path, only: Option<&Path>) -> Result<bool> {
-    let (wins, embs, crates) = tree(model, Some(cache_file), true)?;
+    let (wins, embs, crates) = tree(model, Some(cache_file))?;
     let only: Option<Vec<String>> = match only {
         Some(f) => Some(
             std::fs::read_to_string(f)?
@@ -266,7 +263,7 @@ fn place(model: &Path, cache_file: &Path, only: Option<&Path>) -> Result<bool> {
 
 /// Prints crate pairs whose code leans toward each other.
 fn far(model: &Path, cache_file: Option<&Path>) -> Result<bool> {
-    let (wins, embs, crates) = tree(model, cache_file, false)?;
+    let (wins, embs, crates) = tree(model, cache_file)?;
     let files = far::files(&wins, &embs, &crates, &vec![true; crates.len()]);
     println!("pull   windows a->b  b->a  steps  crates");
     for p in far::pairs(&wins, &embs, &crates) {

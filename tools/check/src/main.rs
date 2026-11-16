@@ -18,7 +18,7 @@ const USAGE: &str =
        tessera-check fetch
 
 `run` checks lint over the repository, and style and simcheck when their
-models are in target/check. It fails on any failure. `render` reads the
+models are in ~/.cache/tessera/check. It fails on any failure. `render` reads the
 JSON each check writes. `fetch` downloads both models.";
 
 fn root() -> Result<PathBuf, String> {
@@ -27,6 +27,14 @@ fn root() -> Result<PathBuf, String> {
         .output();
     let out = out.map_err(|e| format!("git: {e}"))?;
     Ok(PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()))
+}
+
+/// Models in the shared check folder, reports in this checkout.
+fn dirs() -> Result<Dirs, String> {
+    Ok(Dirs::new(
+        &root()?,
+        frontend_settings::read().check.as_deref(),
+    ))
 }
 
 /// Prints the reports, and writes Markdown when asked.
@@ -54,7 +62,7 @@ fn run(args: &[&str]) -> Result<bool, String> {
     let (cmd, rest) = args.split_first().ok_or(USAGE)?;
     let (rest, markdown) = split_markdown(rest);
     match (*cmd, rest) {
-        ("fetch", []) => run::fetch(&Dirs::new(&root()?)).map(|()| true),
+        ("fetch", []) => run::fetch(&dirs()?).map(|()| true),
         ("render", files) if !files.is_empty() => {
             let reports: Result<Vec<Report>, String> =
                 files.iter().map(|f| Report::read(Path::new(f))).collect();
@@ -66,7 +74,7 @@ fn run(args: &[&str]) -> Result<bool, String> {
                 [base, head] => Changes::Range(base.to_string(), head.to_string()),
                 _ => return Err(USAGE.into()),
             };
-            let dirs = Dirs::new(&root()?);
+            let dirs = dirs()?;
             std::fs::create_dir_all(&dirs.out)
                 .map_err(|e| format!("{}: {e}", dirs.out.display()))?;
             let reports = vec![
