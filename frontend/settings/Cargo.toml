@@ -7,7 +7,6 @@ publish.workspace = true
 description = "Settings read once from the environment, passed down"
 
 [dependencies]
-engine-settings = { workspace = true }
+engine = { workspace = true }
 envy = "0.4"
-lower = { workspace = true }
 serde = { version = "1", features = ["derive"] }

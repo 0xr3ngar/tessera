@@ -22,19 +22,3 @@ jit = { workspace = true }
 lower = { workspace = true }
 mem = { workspace = true }
 rayon = "1"
-
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2 = { version = "0.6", default-features = false, features = ["std"] }
-objc2-metal = { version = "0.3", default-features = false, features = [
-    "MTLDevice",
-    "MTLCommandQueue",
-    "MTLCommandBuffer",
-    "MTLCommandEncoder",
-    "MTLComputeCommandEncoder",
-    "MTLComputePipeline",
-    "MTLLibrary",
-    "MTLBuffer",
-    "MTLResource",
-    "MTLAllocation",
-    "MTLTypes",
-] }

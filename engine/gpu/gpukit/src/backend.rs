@@ -1,22 +1,13 @@
 //! Which GPU backend this build dispatches to.
 
 /// A backend that can run kernels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, derive_more::Display)]
 #[serde(rename_all = "lowercase")]
+#[display(rename_all = "lowercase")]
 pub enum Backend {
     Metal,
     Cuda,
     Rocm,
-}
-
-impl std::fmt::Display for Backend {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Backend::Metal => write!(f, "metal"),
-            Backend::Cuda => write!(f, "cuda"),
-            Backend::Rocm => write!(f, "rocm"),
-        }
-    }
 }
 
 /// The backend this build uses, if any.

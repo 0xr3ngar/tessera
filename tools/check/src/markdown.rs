@@ -39,20 +39,29 @@ fn status(r: &Report) -> String {
 }
 
 fn finding(out: &mut String, f: &Finding, links: Option<&str>) -> std::fmt::Result {
-    writeln!(out, "- {}: {}", place(&f.path, f.line, links), f.message)?;
+    // A finding about the whole run has no place.
+    match f.path.is_empty() {
+        true => writeln!(out, "- {}", f.message)?,
+        false => writeln!(out, "- {}: {}", place(&f.path, f.line, links), f.message)?,
+    }
     for s in &f.snippets {
         let at = place(&s.path, s.line, links);
-        writeln!(
-            out,
-            "\n  {at}\n\n  ````{}\n{}\n  ````",
-            language(&s.path),
-            s.text
-        )?;
+        writeln!(out, "\n  {at}")?;
+        fence(out, language(&s.path), &s.text)?;
     }
     if let Some(fix) = &f.fix {
-        writeln!(out, "\n  ````{}\n  {fix}\n  ````", language(&f.path))?;
+        fence(out, language(&f.path), fix)?;
     }
     Ok(())
+}
+
+/// A code block indented to sit in a list item.
+fn fence(out: &mut String, lang: &str, text: &str) -> std::fmt::Result {
+    writeln!(out, "\n  ````{lang}")?;
+    for line in text.lines() {
+        writeln!(out, "  {line}")?;
+    }
+    writeln!(out, "  ````")
 }
 
 /// A report's findings by rule, each rule with its fix.

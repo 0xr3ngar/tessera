@@ -15,18 +15,14 @@ pub mod tokenize;
 pub use template::{Message, Template};
 
 use checkpoint::{File, Offer, Stored};
-use graph::Graph;
-use interp::Tensor;
-use lower::form::{BF16_FORM, F32_FORM, Form};
-use lower::{Pins, Weight};
-use models::Stack;
-use models::decoder::{self, Config, Moe, Scales, Swiglu};
+use engine::decoder::{self, Config, Moe, Scales, Swiglu};
+use engine::form::{BF16_FORM, F32_FORM, Form};
+use engine::{Graph, Norm, Pins, Stack, Tensor, Weight};
 use names::Rule;
 use serde::Deserialize;
 use std::error::Error;
 use std::path::Path;
 use tokenize::hf::Hf;
-use trace::Norm;
 
 /// What the graph needs from a Hugging Face `config.json`.
 #[derive(Deserialize)]
@@ -103,7 +99,7 @@ pub fn each(
     let claims = names::resolve(graph, &slices, rules)?;
     for (c, w) in claims.iter().zip(&graph.weights) {
         let slice = slices.iter().find(|s| s.name == c.name).expect("resolved");
-        let axis = |e: &graph::DimExpr| e.value(&graph.dims, &|_| None).map(|n| n as usize);
+        let axis = |e: &engine::DimExpr| e.value(&graph.dims, &|_| None).map(|n| n as usize);
         let shape: Option<Vec<usize>> = w.ty.shape.0.iter().map(axis).collect();
         let (weight, form) = match (slice.stored, c.rows) {
             (Stored::Form(f), Some(rows)) => {

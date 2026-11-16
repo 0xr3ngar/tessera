@@ -10,7 +10,7 @@ pub enum Changes {
     Range(String, String),
 }
 
-/// Where models, caches and reports live, under `target/check`.
+/// Shared models and embeddings, and this checkout's reports.
 pub struct Dirs {
     pub root: PathBuf,
     pub spacy: PathBuf,
@@ -20,14 +20,16 @@ pub struct Dirs {
 }
 
 impl Dirs {
-    pub fn new(root: &Path) -> Self {
-        let base = root.join("target/check");
+    /// Models under `shared`, or this checkout's `target/check`.
+    pub fn new(root: &Path, shared: Option<&Path>) -> Self {
+        let own = root.join("target/check");
+        let base = shared.map_or(own.clone(), Path::to_path_buf);
         Self {
             root: root.to_path_buf(),
             spacy: base.join("spacy"),
             eg2: base.join("eg2-text"),
-            cache: base.join("simcheck.bin"),
-            out: base.join("reports"),
+            cache: base.join("simcheck"),
+            out: own.join("reports"),
         }
     }
 
@@ -125,8 +127,11 @@ pub fn simcheck(dirs: &Dirs, changes: &Changes) -> Result<Report, String> {
     cargo(dirs, "simcheck", &args, &json)
 }
 
-/// Downloads both models into `target/check`.
+/// Downloads both models into the shared check folder.
 pub fn fetch(dirs: &Dirs) -> Result<(), String> {
+    for dir in [&dirs.spacy, &dirs.eg2] {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
     let (spacy, eg2) = (dirs.spacy.to_string_lossy(), dirs.eg2.to_string_lossy());
     let style = [
         "run",

@@ -177,19 +177,15 @@ dependencies = [
  "checkpoint",
  "engine",
  "fancy-regex",
- "graph",
- "interp",
- "lower",
  "minijinja",
  "minijinja-contrib",
- "models",
  "rmp-serde",
  "rmpv",
  "serde",
  "serde_json",
  "testkit",
+ "thiserror",
  "tokenizers",
- "trace",
 ]
 
 [[package]]
@@ -251,11 +247,11 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 name = "checkpoint"
 version = "0.1.0"
 dependencies = [
- "codegen",
- "graph",
+ "engine",
  "serde",
  "serde_json",
  "testkit",
+ "thiserror",
  "ureq",
 ]
 
@@ -282,6 +278,15 @@ dependencies = [
  "ryu",
  "serde",
  "static_assertions",
+]
+
+[[package]]
+name = "convert_case"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
+dependencies = [
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -584,6 +589,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive_more"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d751e9e49156b02b44f9c1815bcb94b984cdcc4396ecc32521c739452808b134"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "799a97264921d8623a957f6c3b9011f3b5492f557bbb7a5a19b7fa6d06ba8dcb"
+dependencies = [
+ "convert_case",
+ "proc-macro2",
+ "quote",
+ "rustc_version",
+ "syn 2.0.119",
+ "unicode-xid",
+]
+
+[[package]]
 name = "displaydoc"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -610,7 +638,10 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 name = "engine"
 version = "0.1.0"
 dependencies = [
+ "codegen",
  "cpu",
+ "engine-comm",
+ "engine-settings",
  "graph",
  "interp",
  "kernels",
@@ -629,6 +660,7 @@ version = "0.1.0"
 dependencies = [
  "gpukit",
  "testkit",
+ "thiserror",
 ]
 
 [[package]]
@@ -667,7 +699,6 @@ dependencies = [
  "checkpoint",
  "engine",
  "frontend-settings",
- "lower",
  "serde",
  "serde_json",
 ]
@@ -733,7 +764,7 @@ dependencies = [
 name = "frontend-comm"
 version = "0.1.0"
 dependencies = [
- "engine-comm",
+ "engine",
  "frontend-settings",
  "graph",
  "interp",
@@ -751,9 +782,8 @@ dependencies = [
 name = "frontend-settings"
 version = "0.1.0"
 dependencies = [
- "engine-settings",
+ "engine",
  "envy",
- "lower",
  "serde",
 ]
 
@@ -822,6 +852,7 @@ dependencies = [
 name = "gpukit"
 version = "0.1.0"
 dependencies = [
+ "derive_more",
  "include_dir",
  "mem",
  "objc2",
@@ -829,14 +860,17 @@ dependencies = [
  "objc2-metal",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
 name = "graph"
 version = "0.1.0"
 dependencies = [
+ "derive_more",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -1084,6 +1118,7 @@ version = "0.1.0"
 dependencies = [
  "graph",
  "mem",
+ "thiserror",
  "trace",
 ]
 
@@ -1226,6 +1261,7 @@ name = "lower"
 version = "0.1.0"
 dependencies = [
  "codegen",
+ "derive_more",
  "engine-comm",
  "engine-settings",
  "gpukit",
@@ -1239,6 +1275,7 @@ dependencies = [
  "serde_json",
  "sim",
  "testkit",
+ "thiserror",
  "trace",
 ]
 
@@ -1284,6 +1321,7 @@ name = "mem"
 version = "0.1.0"
 dependencies = [
  "graph",
+ "thiserror",
 ]
 
 [[package]]
@@ -1712,8 +1750,6 @@ dependencies = [
  "jit",
  "lower",
  "mem",
- "objc2",
- "objc2-metal",
  "rayon",
 ]
 
@@ -1722,6 +1758,15 @@ name = "rustc-hash"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
+
+[[package]]
+name = "rustc_version"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
+dependencies = [
+ "semver",
+]
 
 [[package]]
 name = "rustls"
@@ -1792,6 +1837,12 @@ dependencies = [
  "wide",
  "xxhash-rust",
 ]
+
+[[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "serde"
@@ -1876,7 +1927,6 @@ dependencies = [
  "bundle",
  "engine",
  "frontend-settings",
- "lower",
  "serde",
  "tasks",
  "tokio",
@@ -2015,9 +2065,6 @@ version = "0.1.0"
 dependencies = [
  "bundle",
  "engine",
- "interp",
- "lower",
- "models",
  "serde_json",
  "testkit",
 ]
@@ -2027,6 +2074,7 @@ name = "tessera-check"
 version = "0.1.0"
 dependencies = [
  "findings",
+ "frontend-settings",
 ]
 
 [[package]]
@@ -2289,6 +2337,12 @@ name = "unicode-segmentation"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
+
+[[package]]
+name = "unicode-xid"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
 name = "unicode_categories"

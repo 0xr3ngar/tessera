@@ -2,32 +2,17 @@
 
 use crate::node::Graph;
 use serde::Deserialize;
-use std::fmt;
 
 /// Bumped whenever the JSON form changes meaning.
 pub const VERSION: u32 = 4;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum FormatError {
-    Json(serde_json::Error),
+    #[error("graph JSON: {0}")]
+    Json(#[source] serde_json::Error),
+    #[error("graph format version {found}, this build reads {VERSION}")]
     Version { found: u32 },
 }
-
-impl fmt::Display for FormatError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FormatError::Json(e) => write!(f, "graph JSON: {e}"),
-            FormatError::Version { found } => {
-                write!(
-                    f,
-                    "graph format version {found}, this build reads {VERSION}"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for FormatError {}
 
 #[derive(Deserialize)]
 struct Header {

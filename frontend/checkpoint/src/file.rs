@@ -1,7 +1,7 @@
 //! One safetensors file: a JSON header, then tensor bytes.
 
 use crate::offer::{Offer, Slice, Stored};
-use graph::{Bf16, F16};
+use engine::{Bf16, F16};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -9,36 +9,21 @@ use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    Io(io::Error),
+    #[error("checkpoint: {0}")]
+    Io(#[from] io::Error),
     /// A failed range request.
+    #[error("checkpoint over http: {0}")]
     Net(String),
     /// The file breaks the format's rules.
+    #[error("checkpoint format: {0}")]
     Format(String),
+    #[error("no tensor named {0}")]
     Missing(String),
     /// An element type this reader cannot widen to f32.
+    #[error("unsupported element type: {0}")]
     DType(String),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Io(e) => write!(f, "checkpoint: {e}"),
-            Error::Net(m) => write!(f, "checkpoint over http: {m}"),
-            Error::Format(m) => write!(f, "checkpoint format: {m}"),
-            Error::Missing(name) => write!(f, "no tensor named {name}"),
-            Error::DType(m) => write!(f, "unsupported element type: {m}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Error::Io(e)
-    }
 }
 
 fn format(e: impl fmt::Display) -> Error {

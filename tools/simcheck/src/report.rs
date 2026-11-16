@@ -34,7 +34,7 @@ pub fn report(
     (hits, stale, leans): (&[Hit], Stale, &[Lean]),
     wins: &[Window],
     root: &Path,
-    (window, min): (usize, f32),
+    ((window, min), coverage): ((usize, f32), Option<(usize, usize)>),
 ) -> Result<Report> {
     let mut r = Report::new("simcheck", "Near-copies of code");
     let rules = [
@@ -61,6 +61,22 @@ pub fn report(
         ),
     ];
     r.rules = rules.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+    if let Some((done, all)) = coverage {
+        let fix = "Later builds embed the rest of the windows.";
+        r.rules
+            .insert("coverage".into(), rule("Partial coverage", fix));
+        r.findings.push(Finding {
+            rule: "coverage".into(),
+            level: Level::Note,
+            path: String::new(),
+            line: 0,
+            message: format!(
+                "{done} of {all} windows embedded. Pairs with the rest were not compared."
+            ),
+            snippets: Vec::new(),
+            fix: None,
+        });
+    }
     for h in hits {
         let (a, b) = (&wins[h.a], &wins[h.b]);
         r.findings.push(Finding {

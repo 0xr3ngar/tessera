@@ -372,7 +372,7 @@ impl Gguf {
                 .as_chunks::<2>()
                 .0
                 .iter()
-                .map(|b| f32::from(graph::F16(u16::from_le_bytes(*b))))
+                .map(|b| f32::from(engine::F16(u16::from_le_bytes(*b))))
                 .collect(),
         })
     }
@@ -384,8 +384,8 @@ impl Offer for Gguf {
         let stored = |ty: GgufType| match ty {
             GgufType::F32 => Stored::F32,
             GgufType::F16 => Stored::F16,
-            GgufType::Q8_0 => Stored::Form(&codegen::block::Q8_0),
-            GgufType::Q4_0 => Stored::Form(&codegen::block::Q4_0),
+            GgufType::Q8_0 => Stored::Form(&engine::block::Q8_0),
+            GgufType::Q4_0 => Stored::Form(&engine::block::Q4_0),
         };
         (self.entries.iter())
             .map(|(name, e)| Slice {

@@ -1,6 +1,6 @@
 //! Settings read once from the environment, passed down.
 
-use engine_settings::{Backend, Pick, Settings};
+use engine::{Backend, Pick, Settings};
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -10,6 +10,7 @@ struct Env {
     backend: Option<String>,
     lanes: Option<usize>,
     costs: Option<PathBuf>,
+    check: Option<PathBuf>,
     names: Option<PathBuf>,
     emulate: Option<Backend>,
     verbs: Option<String>,
@@ -24,15 +25,16 @@ pub fn read() -> Settings {
     let backend = match env.backend.as_deref() {
         Some("host") => Pick::Host,
         Some("cpu") => Pick::Cpu,
-        _ => lower::gpu().map_or(Pick::Host, Pick::Gpu),
+        _ => engine::gpu().map_or(Pick::Host, Pick::Gpu),
     };
-    let costs = env
-        .costs
-        .or_else(|| Some(std::env::home_dir()?.join(".cache/tessera/costs")));
+    let cache = |dir: &str| Some(std::env::home_dir()?.join(".cache/tessera").join(dir));
+    let costs = env.costs.or_else(|| cache("costs"));
+    let check = env.check.or_else(|| cache("check"));
     Settings {
         backend,
         host_lanes: env.lanes.unwrap_or(32),
         costs,
+        check,
         names: env.names,
         emulate: env.emulate,
         verbs: env.verbs,

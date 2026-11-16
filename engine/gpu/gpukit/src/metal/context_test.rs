@@ -1,5 +1,4 @@
-use super::{CacheConfig, Context};
-use std::path::PathBuf;
+use super::Context;
 
 const SRC: &str = "\
 #include <metal_stdlib>
@@ -10,23 +9,10 @@ kernel void pc_k2(device float* o [[buffer(0)]], uint i [[thread_position_in_gri
 kernel void pc_k3(device float* o [[buffer(0)]], uint i [[thread_position_in_grid]]) { o[i] = 3.0f; }
 ";
 
-fn test_config() -> CacheConfig {
-    CacheConfig {
-        enabled: true,
-        dir: Some(PathBuf::from(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../target/scratch"
-        ))),
-        namespace: "gpukit-test",
-        key: 0x67706b74,
-        verbose: false,
-    }
-}
-
-/// An unlocked `MTLBinaryArchive` crashes under concurrent compiles.
+/// Concurrent compiles share one set of pipelines.
 #[test]
 fn compile_race_free() {
-    if Context::new(test_config()).is_err() {
+    if Context::new().is_err() {
         eprintln!("skip: no Metal device");
         return;
     }
@@ -34,7 +20,7 @@ fn compile_race_free() {
     let handles: Vec<_> = (0..8)
         .map(|_| {
             std::thread::spawn(move || {
-                let ctx = Context::new(test_config()).expect("device");
+                let ctx = Context::new().expect("device");
                 for _ in 0..4 {
                     for e in entries {
                         ctx.compile_kernel(SRC, e).expect("pipeline compile");
@@ -44,6 +30,6 @@ fn compile_race_free() {
         })
         .collect();
     for h in handles {
-        h.join().expect("worker panicked — pipeline cache race?");
+        h.join().expect("worker panicked: a pipeline race?");
     }
 }

@@ -4,7 +4,6 @@ use crate::dims::{Dim, DimExpr, DimName, Poly, Shape};
 use crate::node::{Act, Graph, Mask, Op, Select, Stage, View};
 use crate::select;
 use crate::types::{DType, Placement, TensorType};
-use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
@@ -19,19 +18,12 @@ pub enum ErrorKind {
     Region,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{kind:?} error: {message}")]
 pub struct TypeError {
     pub kind: ErrorKind,
     pub message: String,
 }
-
-impl fmt::Display for TypeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?} error: {}", self.kind, self.message)
-    }
-}
-
-impl std::error::Error for TypeError {}
 
 pub(crate) fn need(
     ok: bool,
