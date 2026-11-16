@@ -1,10 +1,10 @@
 //! Whole-sequence attention, a thread per query and head.
 
-use crate::{GUESS, source};
+use crate::{GUESS, small, source};
 use codegen::kept;
 use codegen::prelude::*;
 use graph::Mask;
-use lower::{Arg, Attn, Draft, Kernel, Launch, Shape, Step, T, Tree, ZoneKind, sites};
+use lower::{Arg, Attn, Draft, Kernel, Launch, Step, T, Tree, ZoneKind, sites};
 
 /// Scores, softmax and weighted values in one pass per query.
 #[kernel]
@@ -101,15 +101,6 @@ impl Attend {
             before,
             after,
         )
-    }
-}
-
-/// Small groups: workers split a launch by group.
-fn small(jobs: usize) -> Shape {
-    Shape::Grid {
-        across: jobs.div_ceil(8),
-        down: 1,
-        threads: 8,
     }
 }
 
