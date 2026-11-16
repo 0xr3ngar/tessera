@@ -24,6 +24,8 @@ pub struct Val(pub u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Home {
     Weight(u32),
+    /// Part of a weight: codes, `suh` or `svh`.
+    Part(u32, u8),
     Input(u32),
     /// Kept rows. `room` elements hold the longest context.
     Kept {

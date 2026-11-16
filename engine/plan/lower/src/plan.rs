@@ -99,6 +99,8 @@ pub struct Loaded {
     pub slot: Slot,
     /// Set when each rank loads its own slice.
     pub share: Option<Share>,
+    /// Which part of a split file this slot holds.
+    pub part: Option<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -106,7 +106,8 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     // Weight views belong to the rules that read them.
     let ours = |t: &T| {
         let n = tree.node(*t);
-        n.form.name() == F32_FORM.name() && !matches!(n.term, Term::Leaf(Home::Weight(_)))
+        n.form.name() == F32_FORM.name()
+            && !matches!(n.term, Term::Leaf(Home::Weight(_) | Home::Part(..)))
     };
     if !node.args.iter().all(ours) {
         return None;

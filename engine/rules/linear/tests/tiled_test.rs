@@ -9,9 +9,10 @@ use interp::{Tensor, run};
 
 mod common;
 use common::{linear, noise, terms};
+use graph::F16;
 use linear::{SCHEDULES, Schedule};
-use lower::form::LOADS;
-use lower::{Device, Dialect, Pins, Settings, Source, lower};
+use lower::form::{LOADS, named};
+use lower::{Device, Dialect, Pins, Settings, Source, Weight, lower};
 use run::open;
 use run::testing::{emulations, host, runs};
 use testkit::{Noise, cosine_f32, max_abs_diff};
@@ -108,14 +109,21 @@ fn codes_match_decode() {
     let g = linear(256, 256);
     let mut draws = Noise(3);
     let (inp, out) = (256, 256);
-    for k in [2, 3, 4] {
-        let form = trellis::form_for(k).unwrap();
+    // Rotated files add f16 `suh` and `svh` after the codes.
+    for (k, turned) in [(2, false), (3, false), (4, false), (2, true), (4, true)] {
+        let codes = trellis::form_for(k).unwrap();
         let entries: Vec<u8> = (0..out * inp * k as usize / 8)
             .map(|_| (draws.draw() * 256.0) as u8)
             .collect();
-        let bytes = trellis::packed(inp, out, 1, &entries);
-        let decoded: Vec<f32> = (0..out * inp).map(|i| form.unpack(&bytes, i)).collect();
-        let weights = [Tensor::f32(vec![out, inp], decoded)];
+        let mut bytes = trellis::packed(inp, out, 1, &entries);
+        let mut form = codes;
+        if turned {
+            let scale =
+                (0..inp + out).flat_map(|i| F16::from(1.0 + (i % 7) as f32 / 8.0).0.to_le_bytes());
+            bytes.extend(scale);
+            form = named(&format!("{}_rot", codes.name())).unwrap();
+        }
+        let weights = [Tensor::f32(vec![out, inp], form.unpack_all(&bytes))];
         // Few rows take the lane kernel, many the tiled one.
         for (settings, rows) in runs().iter().flat_map(|s| [3usize, 40].map(|r| (s, r))) {
             let x = noise(vec![rows, inp], &mut draws);
@@ -123,15 +131,15 @@ fn codes_match_decode() {
             let device = Device::guess(settings).pinned(Pins::all(form));
             let plan = lower(&g, 0, &[(Rows, rows as u64)], &device).unwrap();
             let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
-            assert!(
-                names.iter().all(|n| n.contains(form.name())),
-                "{names:?} read the codes"
-            );
+            let reads = |n: &&str| n.contains(codes.name());
+            assert!(names.iter().any(reads), "{names:?} read the codes");
             let mut runner = open(plan, settings).unwrap();
-            runner.load_packed(0, &bytes).unwrap();
+            runner
+                .load_weight(0, &Weight::Packed(form, bytes.clone()))
+                .unwrap();
             let got = runner.run(&[x.view()]).unwrap().remove(0);
             let cos = cosine_f32(got.floats().unwrap(), want[0].floats().unwrap());
-            assert!(cos > 0.99999, "K{k}, {rows} rows: cos {cos}");
+            assert!(cos > 0.99999, "{}, {rows} rows: cos {cos}", form.name());
         }
     }
 }

@@ -48,13 +48,19 @@ pub fn assign(s: &Selected, order: &[usize]) -> Plan {
     };
     for (v, value) in s.values.iter().enumerate() {
         match value.home {
-            Home::Weight(weight) => {
+            Home::Weight(_) | Home::Part(..) => {
+                let (weight, part) = match value.home {
+                    Home::Part(w, p) => (w, Some(p)),
+                    Home::Weight(w) => (w, None),
+                    _ => unreachable!("matched above"),
+                };
                 let slot = b.alloc(Val(v as u32));
                 let share = value.share;
                 b.plan.weights.push(Loaded {
                     weight,
                     slot,
                     share,
+                    part,
                 });
             }
             Home::Kept { index, room } => {
