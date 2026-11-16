@@ -1,0 +1,35 @@
+name: macOS
+
+# The Metal backend. Pull requests run clippy and the platform table.
+# The merge queue and the daily run add the workspace tests. The daily
+# run also keeps main's build cache current for pull requests.
+on:
+  workflow_call:
+    inputs:
+      light:
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUSTFLAGS: -D warnings
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: macos
+      - run: cargo clippy --workspace --all-targets
+      - if: ${{ !inputs.light }}
+        run: cargo test --workspace --no-fail-fast
+      - run: cargo test -p linear --test platforms_test -- --nocapture

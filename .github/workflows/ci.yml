@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -22,12 +23,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - if: github.event_name == 'pull_request'
-        run: >-
-          tools/scripts/check-coauthors.sh
-          ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
-      - if: github.event_name == 'push'
-        run: tools/scripts/check-coauthors.sh ${{ github.event.before }}..${{ github.sha }}
+      - env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+        run: tools/scripts/check-coauthors.sh "$BASE..$HEAD"
 
   changes:
     # Whether anything changed outside Markdown, lint code and lint.toml.
@@ -42,8 +41,8 @@ jobs:
       # A push with no earlier commit to compare builds everything.
       - id: paths
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
         run: |
           build=true
           if git cat-file -e "$BASE^{commit}" 2>/dev/null; then
@@ -117,25 +116,18 @@ jobs:
       - run: cargo clippy --workspace --all-targets --features "${{ matrix.features }}"
 
   macos:
-    # The Metal backend.
+    # Pushes to main skip it, as the merge queue tested the same tree.
     needs: changes
-    if: needs.changes.outputs.build == 'true'
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.99.1
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: macos
-      - run: cargo clippy --workspace --all-targets
-      - run: cargo test --workspace --no-fail-fast
-      - run: cargo test -p linear --test platforms_test -- --nocapture
+    if: needs.changes.outputs.build == 'true' && github.event_name != 'push'
+    uses: ./.github/workflows/macos.yml
+    with:
+      light: ${{ github.event_name == 'pull_request' }}
 
   similarity:
     # Near-copies of code (tools/simcheck), compared by embeddings,
-    # and allow.toml pairs that allow nothing.
+    # and allow.toml pairs that allow nothing. The pull request ran it,
+    # so the merge queue skips it.
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     env:
       SIMCHECK: cargo run -q --release --manifest-path tools/simcheck/Cargo.toml --
