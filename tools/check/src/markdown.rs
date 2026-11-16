@@ -39,7 +39,11 @@ fn status(r: &Report) -> String {
 }
 
 fn finding(out: &mut String, f: &Finding, links: Option<&str>) -> std::fmt::Result {
-    writeln!(out, "- {}: {}", place(&f.path, f.line, links), f.message)?;
+    // A finding about the whole run has no place.
+    match f.path.is_empty() {
+        true => writeln!(out, "- {}", f.message)?,
+        false => writeln!(out, "- {}: {}", place(&f.path, f.line, links), f.message)?,
+    }
     for s in &f.snippets {
         let at = place(&s.path, s.line, links);
         writeln!(
