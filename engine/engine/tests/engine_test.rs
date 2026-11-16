@@ -3,7 +3,8 @@
 use engine::{Batch, Engine, Event, Fair, Reason, Request, Row};
 use graph::Graph;
 use interp::{Store, Tensor, run_kept};
-use lower::{Recipe, Weight, kept, rules};
+use lower::testing::runs;
+use lower::{Recipe, Settings, Weight, kept, rules};
 use models::decoder::{Config, Swiglu, stepper};
 use testkit::{Noise, weights};
 use trace::Norm;
@@ -43,21 +44,20 @@ fn reference(g: &Graph, weights: &[Tensor], prompt: &[u32], n: usize) -> Vec<u32
 }
 
 /// A toy engine with `slots` lanes, its graph and weights.
-fn open(seed: u64, slots: u64) -> (Graph, Vec<Tensor>, Engine) {
-    open_on(seed, slots, Recipe::default())
+fn open(seed: u64, slots: u64, settings: &Settings) -> (Graph, Vec<Tensor>, Engine) {
+    open_on(seed, slots, Recipe::default(), settings)
 }
 
-fn open_on(seed: u64, slots: u64, recipe: Recipe) -> (Graph, Vec<Tensor>, Engine) {
+fn open_on(
+    seed: u64,
+    slots: u64,
+    recipe: Recipe,
+    settings: &Settings,
+) -> (Graph, Vec<Tensor>, Engine) {
     let c = Config::toy(slots, 16);
     let g = stepper::<Norm, Swiglu>(&c);
     let weights = weights(&g, &mut Noise(seed));
-    let mut engine = Engine::open(
-        stepper::<Norm, Swiglu>(&c),
-        16,
-        &recipe,
-        &frontend_settings::read(),
-    )
-    .unwrap();
+    let mut engine = Engine::open(stepper::<Norm, Swiglu>(&c), 16, &recipe, settings).unwrap();
     let stored: Vec<Weight> = weights.iter().cloned().map(Weight::Floats).collect();
     engine.load(&stored).unwrap();
     (g, weights, engine)
@@ -88,7 +88,14 @@ fn row(slot: u32, token: u32, position: u32) -> Row {
 
 #[test]
 fn engine_matches_interpreter() {
-    let (g, weights, mut engine) = open(11, 1);
+    for settings in runs() {
+        answers_match(&settings);
+    }
+}
+
+/// One answer, then a stopped and an overlong one.
+fn answers_match(settings: &Settings) {
+    let (g, weights, mut engine) = open(11, 1, settings);
     let prompt = [3u32, 9, 4];
     let want = reference(&g, &weights, &prompt, 6);
     let request = Request {
@@ -138,8 +145,12 @@ fn rows_mix_slots() {
             ..Recipe::default()
         });
     }
-    for recipe in recipes {
-        let (g, weights, mut engine) = open_on(13, 4, recipe.clone());
+    let runs = runs();
+    let pairs = runs
+        .iter()
+        .flat_map(|s| recipes.iter().map(move |r| (s, r)));
+    for (settings, recipe) in pairs {
+        let (g, weights, mut engine) = open_on(13, 4, recipe.clone(), settings);
         // Two prompts at once, decodes side by side, then alone.
         let launches = [
             vec![row(2, 5, 0), row(2, 7, 1), row(0, 9, 0)],
@@ -159,8 +170,8 @@ fn rows_mix_slots() {
 }
 
 /// Several answers through one batch, each against its own reference.
-fn batched(seed: u64, slots: u64, budget: usize, cancel_after: Option<usize>) {
-    let (g, weights, mut engine) = open(seed, slots);
+fn batched(seed: u64, slots: u64, budget: usize, cancel_after: Option<usize>, s: &Settings) {
+    let (g, weights, mut engine) = open(seed, slots, s);
     let prompts: [&[u32]; 5] = [
         &[3, 9, 4],
         &[1, 2, 3, 4, 5, 6],
@@ -213,10 +224,12 @@ fn batched(seed: u64, slots: u64, budget: usize, cancel_after: Option<usize>) {
 
 #[test]
 fn batch_matches_single() {
-    // More answers than slots, with whole prompts in one step.
-    batched(17, 3, 64, None);
-    // Prompts in chunks of two rows, shared across answers.
-    batched(19, 2, 2, None);
-    // Cancelled answers free their slots for the rest.
-    batched(23, 2, 64, Some(2));
+    for s in runs() {
+        // More answers than slots, with whole prompts in one step.
+        batched(17, 3, 64, None, &s);
+        // Prompts in chunks of two rows, shared across answers.
+        batched(19, 2, 2, None, &s);
+        // Cancelled answers free their slots for the rest.
+        batched(23, 2, 64, Some(2), &s);
+    }
 }

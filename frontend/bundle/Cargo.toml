@@ -19,5 +19,4 @@ rmpv = "1"
 tokenizers = { version = "0.22", default-features = false, features = ["unstable_wasm"] }
 
 [dev-dependencies]
-frontend-settings = { workspace = true }
 testkit = { workspace = true }

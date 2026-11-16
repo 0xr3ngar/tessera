@@ -2,10 +2,10 @@
 
 use kernels as _;
 
-use frontend_settings::read as settings;
 use graph::DimName::{Context, HeadDim, Heads, KvHeads, Rows, Segments, Seqs};
 use graph::{DType, Dim, Graph, Size, TensorType};
 use interp::{Store, Tensor, run, run_kept};
+use lower::testing::runs;
 use lower::{Device, lower};
 use run::{Run, open};
 use testkit::{Noise, max_abs_diff};
@@ -59,7 +59,7 @@ fn flash_matches_cpu() {
     let shapes = [(2u64, 16u64), (4, 64), (2, 128)];
     for (mask, (heads, width)) in masks.into_iter().flat_map(|m| shapes.map(|s| (m, s))) {
         let g = attention(mask, heads, width);
-        for (seqs, rows, keys) in cases {
+        for (settings, (seqs, rows, keys)) in runs().iter().flat_map(|s| cases.map(|c| (s, c))) {
             let (h, w) = (heads as usize, width as usize);
             let q = noise(vec![seqs, rows, h, w], &mut draws);
             let k = noise(vec![seqs, keys, h, w], &mut draws);
@@ -71,12 +71,12 @@ fn flash_matches_cpu() {
                 (Rows, rows as u64),
                 (Context, keys as u64),
             ];
-            let device = Device::guess(&settings()).favoring("flash");
+            let device = Device::guess(settings).favoring("flash");
             let plan = lower(&g, 0, &sizes, &device).unwrap();
             let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
             let label = format!("{mask:?} {seqs}x{rows}x{keys} at {width}");
             assert_eq!(names, ["map", "flash"], "{label}");
-            let mut runner = open(plan, &settings()).unwrap();
+            let mut runner = open(plan, settings).unwrap();
             let views: Vec<_> = inputs.iter().map(|t| t.view()).collect();
             let got = runner.run(&views).unwrap().remove(0);
             let off = max_abs_diff(got.floats().unwrap(), want[0].floats().unwrap());
@@ -136,7 +136,8 @@ fn ragged_rows_match_cpu() {
     ];
     for (heads, kv_heads, width) in [(2u64, 2u64, 16u64), (4, 2, 64)] {
         let g = ragged(heads, kv_heads, width);
-        for favored in ["flash", "attend"] {
+        let favors = ["flash", "attend"];
+        for (settings, favored) in runs().iter().flat_map(|s| favors.map(|f| (s, f))) {
             let (mut store, mut runner): (Store, Option<Box<dyn Run>>) = (Store::default(), None);
             for runs in launches {
                 let (slots, positions) = rows(runs);
@@ -161,7 +162,7 @@ fn ragged_rows_match_cpu() {
                     (Context, furthest),
                     (Segments, runs.len() as u64),
                 ];
-                let device = Device::guess(&settings()).favoring(favored);
+                let device = Device::guess(settings).favoring(favored);
                 let plan = lower(&g, 0, &sizes, &device).unwrap();
                 let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
                 let kernel = format!("{favored}_rows");
@@ -171,7 +172,7 @@ fn ragged_rows_match_cpu() {
                         r.replan(&plan).unwrap();
                         r
                     }
-                    None => runner.insert(open(plan, &settings()).unwrap()),
+                    None => runner.insert(open(plan, settings).unwrap()),
                 };
                 let views: Vec<_> = inputs.iter().map(|t| t.view()).collect();
                 let got = r.run(&views).unwrap().remove(0);

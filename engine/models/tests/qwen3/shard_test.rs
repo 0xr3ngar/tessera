@@ -1,10 +1,10 @@
 //! The toy decoder over two ranks matches one.
 
 use crate::common::pair;
-use frontend_settings::read as settings;
 use graph::{Graph, Placement, shard};
 use interp::{Tensor, run, run_ranks};
-use lower::{Device, Pick, Plan, View, lower};
+use lower::testing::{host, runs};
+use lower::{Device, Plan, View, lower};
 use models::decoder::{Config, Swiglu, program};
 use run::Loopback;
 use testkit::{Noise, fill, max_abs_diff};
@@ -49,10 +49,7 @@ fn two_ranks() {
 #[test]
 fn two_rank_plan() {
     let (g, sharded, weights, inputs) = toy();
-    let host = lower::Settings {
-        backend: Pick::Host,
-        ..settings()
-    };
+    let host = host();
     let device = Device::guess(&host).zoned(pair()).ranked(vec![0, 1]);
     let plans = [0, 1].map(|r| lower(&sharded, 0, &SIZES, &device.clone().as_rank(r)).unwrap());
     let plan = &plans[0];
@@ -70,8 +67,8 @@ fn two_rank_plan() {
         .sum();
     assert_eq!(held(&whole) - held(plan), split / 2);
     assert!(device.cost(plan).seconds.is_finite());
-    // On the host, then on any GPU the settings pick.
-    for settings in [host, settings()] {
+    // On the host, then on any ready GPU.
+    for settings in runs() {
         let mut ranks = Loopback::open(&plans, &settings).unwrap();
         for (at, w) in weights.iter().enumerate() {
             ranks.load(at as u32, w.view()).unwrap();

@@ -12,3 +12,6 @@ fancy-regex = "0.14"
 frontend-settings = { workspace = true }
 tasks = { workspace = true }
 ureq = "2"
+
+[dev-dependencies]
+testkit = { workspace = true }

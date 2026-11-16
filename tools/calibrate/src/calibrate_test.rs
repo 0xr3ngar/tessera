@@ -1,9 +1,13 @@
 use crate::probe::{Kind, Probe, Reading, fit, links, read, suite};
 use crate::{Grid, headroom, judge};
-use frontend_settings::read as settings;
 use lower::{Device, Settings, rules};
 use sim::Chip;
 use testkit::scratch;
+
+/// This build's GPU when ready, else the host.
+fn settings() -> Settings {
+    lower::testing::runs().pop().unwrap()
+}
 
 /// A crate's rules register once this one links it.
 #[test]

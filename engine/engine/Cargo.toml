@@ -15,6 +15,7 @@ rocm = ["run/rocm"]
 codegen = { workspace = true }
 cpu = { workspace = true }
 engine-comm = { workspace = true }
+engine-settings = { workspace = true }
 graph = { workspace = true }
 interp = { workspace = true }
 kernels = { workspace = true }
@@ -26,5 +27,4 @@ serde = { version = "1", features = ["derive"] }
 trace = { workspace = true }
 
 [dev-dependencies]
-frontend-settings = { workspace = true }
 testkit = { workspace = true }

@@ -4,12 +4,12 @@
 use kernels as _;
 
 use gpukit::platform::{backend_of, rows};
-use gpukit::testing::scratch;
 use linear::{Product, SCHEDULES, Tiled};
 use lower::sites::After;
 use lower::{Dialect, Kernel, Source};
 use std::path::Path;
 use std::process::Command;
+use testkit::scratch;
 
 /// The tiled kernel's text and entry name.
 fn tiled_text(dialect: Dialect) -> (String, String) {
