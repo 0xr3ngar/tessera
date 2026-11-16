@@ -18,14 +18,12 @@ rocm = ["run/rocm"]
 [dependencies]
 bundle = { workspace = true }
 checkpoint = { workspace = true }
-cpu = { workspace = true }
 engine-comm = { workspace = true }
 frontend-comm = { workspace = true }
 frontend-settings = { workspace = true }
 graph = { workspace = true }
 interp = { workspace = true }
-kernels = { workspace = true }
-linear = { workspace = true }
+rules = { workspace = true }
 lower = { workspace = true }
 models = { workspace = true }
 run = { workspace = true }

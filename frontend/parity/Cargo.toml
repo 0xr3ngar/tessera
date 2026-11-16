@@ -15,11 +15,9 @@ rocm = ["run/rocm"]
 serde_json = "1"
 bundle = { workspace = true }
 checkpoint = { workspace = true }
-cpu = { workspace = true }
 graph = { workspace = true }
 interp = { workspace = true }
-kernels = { workspace = true }
-linear = { workspace = true }
+rules = { workspace = true }
 lower = { workspace = true }
 run = { workspace = true }
 testkit = { workspace = true }

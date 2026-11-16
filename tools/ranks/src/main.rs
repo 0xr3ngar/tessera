@@ -1,9 +1,7 @@
 //! One rank of Qwen3-0.6B, sharded over TCP, against the fixture.
 
 // Linking these registers their lowering rules.
-use cpu as _;
-use kernels as _;
-use linear as _;
+use rules as _;
 
 use engine_comm::{Fabric, Transport, Verbs};
 use frontend_comm::{ports, shm, sockets};

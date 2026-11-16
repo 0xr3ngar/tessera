@@ -51,6 +51,7 @@ tessera is not alpha or beta. It's an experiment right now and no numbers are av
 <tr><td>&emsp;&emsp;<a href="engine/rules/cpu">cpu</a></td><td>CPU kernels for matmuls and attention: short bodies over a dot primitive</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/rules/kernels">kernels</a></td><td>Kernels and the lowering rules that propose them</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/rules/linear">linear</a></td><td>Generated matmul kernels, registered as lowering rules</td></tr>
+<tr><td>&emsp;&emsp;<a href="engine/rules/rules">rules</a></td><td>Links every lowering rule crate</td></tr>
 <tr><td>&emsp;<a href="engine/settings">engine-settings</a></td><td>Knobs the front end sets once and the engine reads</td></tr>
 <tr><td colspan="2"><a href="frontend"><b>frontend/</b></a></td></tr>
 <tr><td>&emsp;<a href="frontend/bundle">bundle</a></td><td>A Hugging Face model directory as graph, weights, tokenizer and template</td></tr>

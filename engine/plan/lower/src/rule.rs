@@ -242,7 +242,7 @@ pub fn linked(rules: &[&Rule]) -> Result<(), Error> {
     if rules.iter().any(|r| r.module.split("::").next() != ours) {
         return Ok(());
     }
-    let hint = "add `use kernels as _; use linear as _;`";
+    let hint = "add `use rules as _;`";
     Err(Error::Unsupported(format!(
         "any node: no rule crate is linked; {hint}"
     )))

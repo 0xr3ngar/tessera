@@ -639,16 +639,14 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 name = "engine"
 version = "0.1.0"
 dependencies = [
- "cpu",
  "engine-comm",
  "engine-settings",
  "graph",
  "interp",
- "kernels",
- "linear",
  "lower",
  "mem",
  "models",
+ "rules",
  "run",
  "serde",
  "testkit",
@@ -1491,13 +1489,11 @@ version = "0.1.0"
 dependencies = [
  "bundle",
  "checkpoint",
- "cpu",
  "graph",
  "interp",
- "kernels",
- "linear",
  "lower",
  "models",
+ "rules",
  "run",
  "serde_json",
  "testkit",
@@ -1605,16 +1601,14 @@ version = "0.1.0"
 dependencies = [
  "bundle",
  "checkpoint",
- "cpu",
  "engine-comm",
  "frontend-comm",
  "frontend-settings",
  "graph",
  "interp",
- "kernels",
- "linear",
  "lower",
  "models",
+ "rules",
  "run",
  "sim",
  "testkit",
@@ -1756,6 +1750,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9da7f59328b09405b181fee1018925fad50f157afb43c0c0f5c522c256dd5907"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "rules"
+version = "0.1.0"
+dependencies = [
+ "cpu",
+ "kernels",
+ "linear",
 ]
 
 [[package]]

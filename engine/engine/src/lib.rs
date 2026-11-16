@@ -1,9 +1,7 @@
 //! Graphs on runners: decode loops and single launches.
 
 // Linking the crates registers their rules.
-use cpu as _;
-use kernels as _;
-use linear as _;
+use rules as _;
 
 use graph::DimName::{Context, Rows, Segments, Seqs};
 use lower::{Cache, Device};
