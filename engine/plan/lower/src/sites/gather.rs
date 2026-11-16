@@ -1,5 +1,5 @@
 use super::Pattern;
-use crate::form::Form;
+use crate::form::Load;
 use crate::tree::{T, Term, Tree};
 use graph::{Op, Select};
 
@@ -11,7 +11,7 @@ pub struct Gather {
     pub rows: usize,
     pub width: usize,
     pub table_rows: usize,
-    pub form: &'static dyn Form,
+    pub form: &'static dyn Load,
 }
 
 impl Pattern for Gather {

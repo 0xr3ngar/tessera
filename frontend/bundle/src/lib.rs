@@ -16,7 +16,7 @@ pub use template::{Message, Template};
 
 use checkpoint::{File, Offer, Stored};
 use engine::decoder::{self, Config, Moe, Scales, Swiglu};
-use engine::form::{BF16_FORM, F32_FORM, Form};
+use engine::form::{BF16_FORM, F32_FORM, Load, named};
 use engine::{Graph, Norm, Pins, Stack, Tensor, Weight};
 use names::Rule;
 use serde::Deserialize;
@@ -80,7 +80,7 @@ pub fn pull(
     rules: &[&[Rule]],
 ) -> Result<(Vec<Weight>, Pins), Box<dyn Error + Send + Sync>> {
     let mut weights = Vec::with_capacity(graph.weights.len());
-    let mut forms: Vec<&'static dyn Form> = Vec::with_capacity(graph.weights.len());
+    let mut forms: Vec<&'static dyn Load> = Vec::with_capacity(graph.weights.len());
     each(graph, offer, rules, |weight, form| {
         weights.push(weight);
         forms.push(form);
@@ -93,7 +93,7 @@ pub fn each(
     graph: &Graph,
     offer: &dyn Offer,
     rules: &[&[Rule]],
-    mut take: impl FnMut(Weight, &'static dyn Form),
+    mut take: impl FnMut(Weight, &'static dyn Load),
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let slices = offer.slices();
     let claims = names::resolve(graph, &slices, rules)?;
@@ -102,10 +102,14 @@ pub fn each(
         let axis = |e: &engine::DimExpr| e.value(&graph.dims, &|_| None).map(|n| n as usize);
         let shape: Option<Vec<usize>> = w.ty.shape.0.iter().map(axis).collect();
         let (weight, form) = match (slice.stored, c.rows) {
-            (Stored::Form(f), Some(rows)) => {
-                (Weight::Packed(f, offer.packed_rows(&c.name, rows)?), f)
+            (Stored::Form(f), rows) => {
+                let f = named(f.name()).ok_or_else(|| format!("no loads for {}", f.name()))?;
+                let bytes = match rows {
+                    Some(rows) => offer.packed_rows(&c.name, rows)?,
+                    None => offer.packed(&c.name)?,
+                };
+                (Weight::Packed(f, bytes), f)
             }
-            (Stored::Form(f), None) => (Weight::Packed(f, offer.packed(&c.name)?), f),
             (Stored::Bf16, _) => (floats(offer, slice, c.rows, shape)?, BF16_FORM),
             _ => (floats(offer, slice, c.rows, shape)?, F32_FORM),
         };

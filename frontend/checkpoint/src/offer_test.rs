@@ -1,5 +1,5 @@
 use crate::Stored;
-use engine::form::named;
+use engine::storage::named;
 
 #[test]
 fn names_round_trip() {

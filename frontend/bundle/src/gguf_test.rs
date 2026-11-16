@@ -2,7 +2,7 @@ use crate::gguf::pins;
 use crate::names_test::tensor_name;
 use checkpoint::{GgufTensor, GgufType, Meta, write_gguf};
 use engine::decoder::{Config, Swiglu, stepper};
-use engine::form::{F32_FORM, Form, named};
+use engine::form::{F32_FORM, Load, named};
 use engine::{Engine, Graph, Norm, Pick, Recipe, Row, Settings, Tensor, Weight};
 
 struct Fixture {
@@ -15,7 +15,7 @@ fn strs(items: &[&str]) -> Meta {
 }
 
 impl Fixture {
-    fn new(form: &'static dyn Form) -> Self {
+    fn new(form: &'static dyn Load) -> Self {
         let mut c = Config::toy(2, 8);
         c.stack.hidden = 32;
         let g = stepper::<Norm, Swiglu>(&c);
@@ -114,7 +114,7 @@ fn engine(graph: Graph, recipe: &Recipe, weights: &[Weight]) -> Engine {
     engine
 }
 
-fn compare(form: &'static dyn Form) {
+fn compare(form: &'static dyn Load) {
     let loaded = Fixture::new(form).load().unwrap();
     assert_eq!(loaded.stop, [2]);
     assert!(loaded.template.is_some());

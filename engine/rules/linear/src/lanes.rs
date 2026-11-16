@@ -4,7 +4,8 @@ use crate::product::{Product, Variant};
 use codegen::ir::{Body, Expr};
 use codegen::prelude::*;
 use graph::Order;
-use lower::{Draft, Form as Stored, Kernel, Launch, Load, Needs, Shape, Step, T, Tree};
+use lower::form::Load as Stored;
+use lower::{Draft, Kernel, Launch, Load, Needs, Shape, Step, T, Tree};
 
 /// Elements one wide load brings a lane.
 const WIDE: u32 = 4;

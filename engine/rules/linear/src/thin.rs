@@ -4,7 +4,8 @@ use crate::product::{Product, Variant};
 use codegen::ir::{Body, Expr, Intrinsic};
 use codegen::prelude::*;
 use graph::Order;
-use lower::{Draft, Form as Stored, Kernel, Launch, Load, Shape, Step, T, Tree};
+use lower::form::Load as Stored;
+use lower::{Draft, Kernel, Launch, Load, Shape, Step, T, Tree};
 
 /// Its row limit: each thread keeps one sum per row.
 pub(crate) const THIN_ROWS: usize = 32;

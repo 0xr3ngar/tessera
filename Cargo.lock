@@ -261,6 +261,7 @@ version = "0.1.0"
 dependencies = [
  "graph",
  "kernel-macro",
+ "mem",
  "scattered-collect",
  "sim",
 ]
@@ -647,6 +648,7 @@ dependencies = [
  "kernels",
  "linear",
  "lower",
+ "mem",
  "models",
  "run",
  "serde",
@@ -1321,6 +1323,7 @@ name = "mem"
 version = "0.1.0"
 dependencies = [
  "graph",
+ "scattered-collect",
  "thiserror",
 ]
 

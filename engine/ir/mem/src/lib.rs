@@ -1,8 +1,11 @@
-//! Buffers in zones, and typed views onto them.
+//! Buffers in zones, typed views onto them, and storage forms.
 
+pub mod block;
 mod buffer;
+pub mod form;
 mod layout;
 mod tensor;
+pub mod trellis;
 mod view;
 
 pub use buffer::{Backing, Buffer, Host};

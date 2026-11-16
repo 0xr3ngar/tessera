@@ -1,6 +1,6 @@
 use crate::Dialect;
 use crate::block::{NVFP4, Q4_0, Q8_0};
-use crate::form::Form;
+use crate::form::{Form, Load};
 use crate::ir::{Body, Param};
 
 /// Each form keeps `data` within a share of its largest.
@@ -9,7 +9,7 @@ fn blocks_round_trip() {
     let data: Vec<f32> = (0..64)
         .map(|i| ((i * 37) % 23) as f32 * 0.01 - 0.1)
         .collect();
-    for (form, share) in [(&Q8_0 as &dyn Form, 0.005), (&Q4_0, 0.07), (&NVFP4, 0.17)] {
+    for (form, share) in [(&Q8_0 as &dyn Load, 0.005), (&Q4_0, 0.07), (&NVFP4, 0.17)] {
         let back = form.roundtrip(&data);
         let top = data.iter().fold(0.0f32, |m, x| m.max(x.abs()));
         for (x, y) in data.iter().zip(&back) {

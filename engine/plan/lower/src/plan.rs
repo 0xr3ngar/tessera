@@ -1,7 +1,7 @@
 //! A plan: kernel launches over buffers that stay on device.
 
 use crate::abi::{Arg, Launch};
-use crate::form::{F32_FORM, Form};
+use crate::form::{F32_FORM, Load};
 use crate::kernel::KernelRef;
 use graph::{NodeId, Order};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -12,7 +12,7 @@ pub struct Slot {
     pub buffer: u32,
     pub offset: usize,
     pub len: usize,
-    pub form: &'static dyn Form,
+    pub form: &'static dyn Load,
 }
 
 impl Slot {

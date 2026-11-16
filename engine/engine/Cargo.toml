@@ -21,6 +21,7 @@ interp = { workspace = true }
 kernels = { workspace = true }
 linear = { workspace = true }
 lower = { workspace = true }
+mem = { workspace = true }
 models = { workspace = true }
 run = { workspace = true }
 serde = { version = "1", features = ["derive"] }

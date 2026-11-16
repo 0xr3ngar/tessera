@@ -31,7 +31,7 @@ pub(crate) enum Kind {
     /// One value, the same for every thread.
     One(Ty, Value),
     Buffer {
-        form: &'static dyn codegen::Form,
+        form: &'static dyn codegen::Load,
         ptr: Value,
         len: Value,
         skip: Value,

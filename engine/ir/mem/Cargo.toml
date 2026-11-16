@@ -4,8 +4,9 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Buffers in zones, and typed views onto them"
+description = "Buffers in zones, typed views onto them, and storage forms"
 
 [dependencies]
 thiserror = "2"
 graph = { workspace = true }
+scattered-collect = "0.22"

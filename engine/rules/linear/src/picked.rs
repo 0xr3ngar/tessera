@@ -3,9 +3,10 @@
 use crate::product::{Product, Variant};
 use codegen::ir::{Body, Expr, Intrinsic, Ty};
 use codegen::prelude::*;
+use lower::form::Load as Stored;
 use lower::kernels::finish;
 use lower::sites::Picked as Pick;
-use lower::{Arg, Draft, Form as Stored, Kernel, Launch, Load, Shape, Step, T, Tree};
+use lower::{Arg, Draft, Kernel, Launch, Load, Shape, Step, T, Tree};
 
 /// Each row's product with the matrix `ids` names for it.
 #[derive(Clone, Debug, Kernel)]

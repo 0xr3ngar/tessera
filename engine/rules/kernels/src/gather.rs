@@ -1,8 +1,9 @@
 //! Rows of a table at given indices.
 
 use codegen::prelude::*;
+use lower::form::Load as Stored;
 use lower::sites;
-use lower::{Draft, Form as Stored, Kernel, T, Tree};
+use lower::{Draft, Kernel, T, Tree};
 
 /// One thread per output element, widened from the table.
 #[kernel]
