@@ -1,12 +1,11 @@
 //! Storage forms in kernel text: types, loads and decode helpers.
 
 use crate::ir::Helper;
-use std::fmt;
 use std::sync::Mutex;
 
 use mem::form::U8;
 pub use mem::form::{Bf16, F32, Form, U32};
-pub(crate) use scattered_collect::declarative::{gather, scatter};
+pub(crate) use mem::form::{gather, scatter};
 
 /// Decodes its elements in kernel text.
 pub trait Load: Form {
@@ -71,20 +70,6 @@ pub trait Load: Form {
     }
 }
 
-impl fmt::Debug for dyn Load {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
-    }
-}
-
-impl PartialEq for dyn Load {
-    fn eq(&self, other: &Self) -> bool {
-        self.name() == other.name()
-    }
-}
-
-impl Eq for dyn Load {}
-
 /// Kernel names that outlive the forms that made them.
 static NAMES: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
 
@@ -100,29 +85,16 @@ fn interned(name: String) -> &'static str {
     }
 }
 
-gather! {
-    #[gather]
-    pub static LOADS: scattered_collect::ScatteredSlice<&'static dyn Load>;
-}
+mem::registry!(Load, LOADS);
 
 /// Registers a form's loads. Pins and recipes then name it.
 macro_rules! form {
     ($form:expr) => {
-        const _: () = {
-            $crate::form::scatter! {
-                #[scatter($crate::form::LOADS)]
-                static FORM: &'static dyn $crate::form::Load = &$form;
-            }
-        };
+        mem::register!([$crate::form::LOADS] [$crate::form::Load] $form);
     };
 }
 
 pub(crate) use form;
-
-/// The registered form called `name`.
-pub fn named(name: &str) -> Option<&'static dyn Load> {
-    LOADS.iter().copied().find(|f| f.name() == name)
-}
 
 /// The form that stores `dtype` as is.
 pub fn of(dtype: graph::DType) -> &'static dyn Load {

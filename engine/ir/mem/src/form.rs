@@ -1,9 +1,9 @@
 //! Storage forms: how buffers hold elements, and how bytes decode.
 
 use graph::{Bf16 as Half, DType};
-use std::fmt;
 
-use scattered_collect::declarative::gather;
+pub use scattered_collect::ScatteredSlice;
+pub use scattered_collect::declarative::{gather, scatter};
 
 /// Packs and unpacks its elements on the host.
 pub trait Form: Sync {
@@ -73,43 +73,59 @@ pub trait Form: Sync {
     }
 }
 
-impl fmt::Debug for dyn Form {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
-    }
+/// Debug, equality, the registry `$all` and `named`, for `$form`.
+#[macro_export]
+macro_rules! registry {
+    ($form:ident, $all:ident) => {
+        impl std::fmt::Debug for dyn $form {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.name())
+            }
+        }
+
+        impl PartialEq for dyn $form {
+            fn eq(&self, other: &Self) -> bool {
+                self.name() == other.name()
+            }
+        }
+
+        impl Eq for dyn $form {}
+
+        $crate::form::gather! {
+            #[gather]
+            pub static $all: $crate::form::ScatteredSlice<&'static dyn $form>;
+        }
+
+        /// The registered form called `name`.
+        pub fn named(name: &str) -> Option<&'static dyn $form> {
+            $all.iter().copied().find(|f| f.name() == name)
+        }
+    };
 }
 
-impl PartialEq for dyn Form {
-    fn eq(&self, other: &Self) -> bool {
-        self.name() == other.name()
-    }
-}
-
-impl Eq for dyn Form {}
-
-gather! {
-    #[gather]
-    pub static FORMS: scattered_collect::ScatteredSlice<&'static dyn Form>;
-}
-
-/// Registers a form, so files name it.
-macro_rules! form {
-    ($form:expr) => {
+/// Adds `$form` to the registry `$all` of `$kind` forms.
+#[macro_export]
+macro_rules! register {
+    ([$($all:tt)*] [$($kind:tt)*] $form:expr) => {
         const _: () = {
-            scattered_collect::declarative::scatter! {
-                #[scatter($crate::form::FORMS)]
-                static FORM: &'static dyn $crate::form::Form = &$form;
+            $crate::form::scatter! {
+                #[scatter($($all)*)]
+                static FORM: &'static dyn $($kind)* = &$form;
             }
         };
     };
 }
 
-pub(crate) use form;
+crate::registry!(Form, FORMS);
 
-/// The registered form called `name`.
-pub fn named(name: &str) -> Option<&'static dyn Form> {
-    FORMS.iter().copied().find(|f| f.name() == name)
+/// Registers a form, so files name it.
+macro_rules! form {
+    ($form:expr) => {
+        $crate::register!([$crate::form::FORMS] [$crate::form::Form] $form);
+    };
 }
+
+pub(crate) use form;
 
 /// Plain f32.
 pub struct F32;
