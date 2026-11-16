@@ -8,6 +8,7 @@ use lower::{Error, Launch, Launching, Plan, Slot, Weight};
 use mem::{Tensor, View, copy};
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::OnceLock;
 
 /// What every runner keeps: a plan, its buffers and sizes.
 #[derive(Default)]
@@ -16,9 +17,17 @@ pub struct Base {
     pub(crate) held: Held,
     /// Runtime dimensions, as last bound.
     pub(crate) bound: HashMap<DimName, u32>,
+    /// Each step's launches before binding, built once.
+    launches: Vec<OnceLock<Vec<Launch>>>,
 }
 
 impl Base {
+    /// Takes `plan` as the one to run.
+    pub(crate) fn adopt(&mut self, plan: &Plan) {
+        self.plan = plan.clone();
+        self.launches = (0..plan.steps.len()).map(|_| OnceLock::new()).collect();
+    }
+
     /// Whether `plan` is new here. Plans over several zones fail.
     pub(crate) fn fresh(&self, plan: &Plan) -> Result<bool, Error> {
         if plan.id != 0 && plan.id == self.plan.id {
@@ -33,12 +42,9 @@ impl Base {
     /// Each launch of a step, its runtime sizes filled in.
     pub(crate) fn launches(&self, step: usize) -> Result<Vec<Launch>, Error> {
         let size = |name| self.bound.get(&name).copied();
-        let bound = |l: Launch| l.bound(&size).ok_or(Error::Unbound);
-        self.plan.steps[step]
-            .launches()
-            .into_iter()
-            .map(bound)
-            .collect()
+        let bound = |l: &Launch| l.clone().bound(&size).ok_or(Error::Unbound);
+        let unbound = self.launches[step].get_or_init(|| self.plan.steps[step].launches());
+        unbound.iter().map(bound).collect()
     }
 }
 

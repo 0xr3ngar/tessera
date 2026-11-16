@@ -147,7 +147,7 @@ impl Run for Runner {
             let (pipeline, _) = self.compiled.get(step, Dialect::Metal, fixed, made)?;
             self.pipelines.push(pipeline);
         }
-        self.base.plan = plan.clone();
+        self.base.adopt(plan);
         Ok(())
     }
 

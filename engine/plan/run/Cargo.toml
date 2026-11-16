@@ -21,6 +21,7 @@ graph = { workspace = true }
 jit = { workspace = true }
 lower = { workspace = true }
 mem = { workspace = true }
+rayon = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", default-features = false, features = ["std"] }

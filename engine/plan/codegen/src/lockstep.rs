@@ -4,7 +4,7 @@ use crate::block::{NVFP4, Q4_0, Q8_0};
 use crate::exec::{ArgVal, Grid};
 use crate::form::Form;
 use crate::numerics::Precision;
-use graph::{Bf16, E2M1, E4M3, F16};
+use graph::{E2M1, E4M3, F16};
 
 /// The most threads one compiled group holds.
 pub const THREADS: usize = 256;
@@ -43,7 +43,7 @@ pub fn rd_f32(bytes: &[u8], at: usize) -> f32 {
 #[inline(always)]
 pub fn rd_bf16(bytes: &[u8], at: usize) -> f32 {
     let b = &bytes[at * 2..at * 2 + 2];
-    Bf16(u16::from_le_bytes([b[0], b[1]])).into()
+    f32::from_bits(u32::from(u16::from_le_bytes([b[0], b[1]])) << 16)
 }
 
 #[inline(always)]
@@ -325,6 +325,7 @@ fn f32_row<'a>(bytes: &'a [u8], at: usize, n: usize, scratch: &'a mut Vec<f32>) 
 }
 
 /// `x` against bf16 `w`, widened as it is multiplied.
+#[cfg(not(target_arch = "aarch64"))]
 pub fn dot_bf16(x: &[f32], w: &[u8]) -> f32 {
     let mut acc = [0.0f32; 8];
     let (xs, xr) = x.as_chunks::<8>();
@@ -336,6 +337,31 @@ pub fn dot_bf16(x: &[f32], w: &[u8]) -> f32 {
         }
     }
     let mut sum = acc.iter().sum::<f32>();
+    for (i, xi) in xr.iter().enumerate() {
+        let bits = u16::from_le_bytes([wr[2 * i], wr[2 * i + 1]]);
+        sum += xi * f32::from_bits(u32::from(bits) << 16);
+    }
+    sum
+}
+
+/// `x` against bf16 `w`: NEON widens eight halves a step.
+#[cfg(target_arch = "aarch64")]
+pub fn dot_bf16(x: &[f32], w: &[u8]) -> f32 {
+    use std::arch::aarch64::*;
+    let (xs, xr) = x.as_chunks::<8>();
+    let (ws, wr) = w.as_chunks::<16>();
+    // SAFETY: aarch64 has NEON. Loads stay within the chunks.
+    let mut sum = unsafe {
+        let (mut lo, mut hi) = (vdupq_n_f32(0.0), vdupq_n_f32(0.0));
+        for (xc, wc) in xs.iter().zip(ws) {
+            let halves = vld1q_u16(wc.as_ptr().cast::<u16>());
+            let a = vreinterpretq_f32_u32(vshll_n_u16::<16>(vget_low_u16(halves)));
+            let b = vreinterpretq_f32_u32(vshll_high_n_u16::<16>(halves));
+            lo = vfmaq_f32(lo, vld1q_f32(xc.as_ptr()), a);
+            hi = vfmaq_f32(hi, vld1q_f32(xc.as_ptr().add(4)), b);
+        }
+        vaddvq_f32(vaddq_f32(lo, hi))
+    };
     for (i, xi) in xr.iter().enumerate() {
         let bits = u16::from_le_bytes([wr[2 * i], wr[2 * i + 1]]);
         sum += xi * f32::from_bits(u32::from(bits) << 16);

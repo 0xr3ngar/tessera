@@ -128,7 +128,7 @@ macro_rules! device_runner {
                         self.kernels.push(kernel);
                         self.waits.push(generated);
                     }
-                    self.base.plan = plan.clone();
+                    self.base.adopt(plan);
                     Ok(())
                 }
 

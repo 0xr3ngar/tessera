@@ -1730,6 +1730,7 @@ dependencies = [
  "mem",
  "objc2",
  "objc2-metal",
+ "rayon",
 ]
 
 [[package]]
