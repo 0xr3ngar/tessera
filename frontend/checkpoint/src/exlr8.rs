@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 
 /// Record field 0: how the matrix is stored.
 const TRELLIS: i64 = 1;
+const INT4: i64 = 2;
+const MXFP8: i64 = 3;
+const FP8_BLOCK: i64 = 4;
 const FP8_ROW: i64 = 5;
 const BF16: i64 = 6;
 const FP32: i64 = 7;
@@ -172,26 +175,95 @@ fn transpose(t: &[f32], rows: usize, cols: usize) -> Vec<f32> {
     w
 }
 
-/// A matrix stored as fp8 rows, bf16 or f32.
+/// A matrix in a format other than trellis, as `[out][in]`.
 fn plain(f: &File, name: &str, r: &Record, format: i64) -> Result<Vec<f32>, Error> {
+    let inp = r.inp;
+    let fp8 = || f.bytes(&format!("{name}.fp8"));
     match format {
         FP8_ROW => {
-            let codes = f.bytes(&format!("{name}.fp8"))?;
             let scale = f.floats(&format!("{name}.scale"))?;
-            let row = |(i, c): (usize, &u8)| e4m3(*c) * scale[i / r.inp];
-            Ok(codes.iter().enumerate().map(row).collect())
+            let row = |(i, c): (usize, &u8)| e4m3(*c) * scale[i / inp];
+            Ok(fp8()?.iter().enumerate().map(row).collect())
         }
+        // One power of two per 32 inputs.
+        MXFP8 => {
+            let exp = f.bytes(&format!("{name}.e8m0"))?;
+            let at = |i: usize| exp[i / inp * inp.div_ceil(32) + i % inp / 32];
+            let value = |(i, c): (usize, &u8)| e4m3(*c) * 2f32.powi(i32::from(at(i)) - 127);
+            Ok(fp8()?.iter().enumerate().map(value).collect())
+        }
+        // One scale per 128 by 128 block.
+        FP8_BLOCK => {
+            let scale = f.floats(&format!("{name}.scale"))?;
+            let at = |i: usize| scale[i / inp / 128 * inp.div_ceil(128) + i % inp / 128];
+            let value = |(i, c): (usize, &u8)| e4m3(*c) * at(i);
+            Ok(fp8()?.iter().enumerate().map(value).collect())
+        }
+        INT4 => int4(f, name, r),
         BF16 => f.floats(&format!("{name}.bf16")),
         FP32 => f.floats(&format!("{name}.fp32")),
         other => Err(Error::DType(format!("{name} is in exlr8 format {other}"))),
     }
 }
 
-/// An EmbeddingGemma 2 release, read by HF tensor name.
+/// Nibbles as `(n - 8) * s`, one scale per 32 inputs.
+fn int4(f: &File, name: &str, r: &Record) -> Result<Vec<f32>, Error> {
+    let (inp, outp) = (r.inp, r.out);
+    let q4 = f.bytes(&format!("{name}.q4"))?;
+    let s4 = halves(f, &format!("{name}.s4"))?;
+    let mut w = Vec::with_capacity(inp * outp);
+    for o in 0..outp {
+        for i in 0..inp {
+            // Input-side shards lie in blocks of 128 inputs.
+            let (byte, scale) = match r.side == trellis::INPUT_SIDE as i64 {
+                true => {
+                    let (g, j) = (i / 128, i % 128);
+                    ((g * outp + o) * 64 + j / 2, (g * outp + o) * 4 + j / 32)
+                }
+                false => (o * inp / 2 + i / 2, o * inp / 32 + i / 32),
+            };
+            let n = (q4[byte] >> (4 * (i % 2))) & 0xF;
+            w.push((f32::from(n) - 8.0) * s4[scale]);
+        }
+    }
+    Ok(w)
+}
+
+/// An exlr8 release, read by HF tensor name.
 pub struct Release {
     /// A directory, or a URL prefix ending in `/`.
     at: Where,
     files: RefCell<HashMap<String, File>>,
+    /// GLM's layout: `dense/` files, layer names without their prefix.
+    glm: bool,
+}
+
+/// GLM's vocabulary file, which marks its layout.
+const GLM_VOCAB: &str = "dense/exlr8-vocab";
+
+/// One file, and how its names become HF names.
+struct Shard {
+    file: String,
+    prefix: String,
+    /// Names that take no prefix.
+    bare: &'static [&'static str],
+}
+
+impl Shard {
+    fn new(file: String, prefix: String) -> Self {
+        Self {
+            file,
+            prefix,
+            bare: &[],
+        }
+    }
+
+    fn name(&self, local: &str) -> String {
+        match self.bare.iter().any(|b| local.starts_with(b)) {
+            true => local.into(),
+            false => format!("{}{local}", self.prefix),
+        }
+    }
 }
 
 enum Where {
@@ -211,14 +283,20 @@ impl Release {
     }
 
     fn new(at: Where) -> Self {
-        Self {
+        let mut release = Self {
             at,
             files: RefCell::new(HashMap::new()),
-        }
+            glm: false,
+        };
+        release.glm = release.with(GLM_VOCAB, |_| Ok(())).is_ok();
+        release
     }
 
     /// The file holding `name`, and the name inside it.
-    fn place(name: &str) -> (String, String) {
+    fn place(&self, name: &str) -> (String, String) {
+        if self.glm {
+            return glm_place(name);
+        }
         if let Some(rest) = name.strip_prefix("language_model.layers.") {
             let (layer, local) = rest.split_once('.').expect("a layer index");
             let layer: usize = layer.parse().expect("a layer index");
@@ -251,14 +329,14 @@ impl Release {
 
     /// The packed codes of `M.codes`, or `rows` as `(first, count)`.
     pub fn packed(&self, name: &str, rows: Option<(usize, usize)>) -> Result<Vec<u8>, Error> {
-        let (file, local) = Self::place(name);
+        let (file, local) = self.place(name);
         let matrix_name = local.strip_suffix(".codes").unwrap_or(&local).to_string();
         self.with(&file, |f| codes_packed(f, &matrix_name, rows))
     }
 
     /// Tensor `name` as f32. `M.codes`, `M.suh`, `M.svh`: unrotated parts.
     pub fn read(&self, name: &str) -> Result<Vec<f32>, Error> {
-        let (file, local) = Self::place(name);
+        let (file, local) = self.place(name);
         self.with(&file, |f| {
             let (matrix_name, part) = match local.rsplit_once('.') {
                 Some((m, part)) if ["weight", "codes", "suh", "svh"].contains(&part) => (m, part),
@@ -276,25 +354,49 @@ impl Release {
     }
 }
 
+/// GLM: layer files under `dense/`, and one vocabulary file.
+fn glm_place(name: &str) -> (String, String) {
+    if let Some(rest) = name.strip_prefix("model.layers.") {
+        let (layer, local) = rest.split_once('.').expect("a layer index");
+        let layer: usize = layer.parse().expect("a layer index");
+        return (format!("dense/exlr8-dense-{layer:03}"), local.into());
+    }
+    let local = name.strip_prefix("model.").unwrap_or(name);
+    (GLM_VOCAB.into(), local.into())
+}
+
 impl Release {
-    /// Every shard with the prefix its names take.
-    fn shards(&self) -> Vec<(String, String)> {
-        let mut out = vec![
-            ("exlr8-vocab".to_string(), "language_model.".to_string()),
-            ("exlr8-dense-global-000".to_string(), String::new()),
-        ];
+    /// Every shard, and how its names become HF names.
+    fn shards(&self) -> Vec<Shard> {
+        let (mut out, layers, prefix) = match self.glm {
+            true => {
+                let vocab = Shard {
+                    bare: &["lm_head"],
+                    ..Shard::new(GLM_VOCAB.into(), "model.".into())
+                };
+                (vec![vocab], "dense/exlr8-dense-", "model.layers.")
+            }
+            false => (
+                vec![
+                    Shard::new("exlr8-vocab".into(), "language_model.".into()),
+                    Shard::new("exlr8-dense-global-000".into(), String::new()),
+                ],
+                "exlr8-dense-text-",
+                "language_model.layers.",
+            ),
+        };
         for layer in 0.. {
-            let file = format!("exlr8-dense-text-{layer:03}");
+            let file = format!("{layers}{layer:03}");
             if self.with(&file, |_| Ok(())).is_err() {
                 break;
             }
-            out.push((file, format!("language_model.layers.{layer}.")));
+            out.push(Shard::new(file, format!("{prefix}{layer}.")));
         }
         out
     }
 
     /// A shard's slices: matrix parts and plain tensors.
-    fn offered(f: &File, prefix: &str) -> Vec<Slice> {
+    fn offered(f: &File, shard: &Shard) -> Vec<Slice> {
         let raw = f.slices();
         let shape = |name: &str| raw.iter().find(|s| s.name == name).map(|s| s.shape.clone());
         let mut out = Vec::new();
@@ -302,15 +404,16 @@ impl Release {
             let Some(matrix) = s.name.strip_suffix(".record") else {
                 continue;
             };
-            let name = |part: &str| format!("{prefix}{matrix}.{part}");
+            let name = |part: &str| shard.name(&format!("{matrix}.{part}"));
             let (Some(suh), Some(svh)) = (
                 shape(&format!("{matrix}.suh")),
                 shape(&format!("{matrix}.svh")),
             ) else {
-                if let Some(rows) = shape(&format!("{matrix}.fp8")) {
+                // Other formats decode to the HF weight.
+                if let Ok(r) = record(f, matrix) {
                     out.push(Slice {
                         name: name("weight"),
-                        shape: rows,
+                        shape: vec![r.out, r.inp],
                         stored: Stored::F32,
                     });
                 }
@@ -356,6 +459,7 @@ impl Release {
                 ".scale",
                 ".q4",
                 ".s4",
+                ".e8m0",
                 ".bf16",
                 ".fp32",
             ]
@@ -366,7 +470,7 @@ impl Release {
         for s in raw {
             if !part(&s.name) {
                 out.push(Slice {
-                    name: format!("{prefix}{}", s.name),
+                    name: shard.name(&s.name),
                     ..s
                 });
             }
@@ -378,8 +482,8 @@ impl Release {
 impl Offer for Release {
     fn slices(&self) -> Vec<Slice> {
         let mut out = Vec::new();
-        for (file, prefix) in self.shards() {
-            let slices = self.with(&file, |f| Ok(Self::offered(f, &prefix)));
+        for shard in self.shards() {
+            let slices = self.with(&shard.file, |f| Ok(Self::offered(f, &shard)));
             out.extend(slices.unwrap_or_default());
         }
         out

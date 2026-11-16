@@ -12,6 +12,8 @@ pub use gguf_write::{GgufTensor, write_gguf};
 pub use offer::{Offer, Slice, Stored};
 
 #[cfg(test)]
+mod exlr8_test;
+#[cfg(test)]
 mod file_test;
 #[cfg(test)]
 mod gguf_test;
