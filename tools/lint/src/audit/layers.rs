@@ -1,6 +1,6 @@
 //! Crates depend on their own layer or lower.
 
-use super::workspace::Pkg;
+use super::workspace::{Kind, Pkg};
 use crate::Violation;
 
 /// An upward dependency that stays, and why.
@@ -70,5 +70,68 @@ pub fn check(pkgs: &[Pkg], layers: &[Vec<String>], allow: &[Allow], out: &mut Ve
                 message: format!("`{}` to `{}` is no longer upward: remove it", a.from, a.to),
             });
         }
+    }
+}
+
+/// Crates in `dir` may depend on `crates` and each other.
+#[derive(serde::Deserialize)]
+pub struct Facade {
+    pub dir: String,
+    pub crates: Vec<String>,
+}
+
+/// Normal dependencies of facade crates, dev-dependencies excepted.
+pub fn facade(pkgs: &[Pkg], rule: &Facade, out: &mut Vec<Violation>) {
+    for p in pkgs.iter().filter(|p| p.dir.starts_with(&rule.dir)) {
+        for d in p.deps.iter().filter(|d| d.kind != Kind::Dev) {
+            let inside = pkgs
+                .iter()
+                .any(|q| q.name == d.name && q.dir.starts_with(&rule.dir));
+            if inside || rule.crates.contains(&d.name) {
+                continue;
+            }
+            let message = format!(
+                "`{}` {} `{}`: crates in {} may name only {} and each other",
+                p.name,
+                d.kind.verb(),
+                d.name,
+                rule.dir,
+                rule.crates.join(", ")
+            );
+            out.push(Violation {
+                path: p.manifest_path(),
+                line: p.dep_line(&d.name, d.kind),
+                rule: "facade",
+                message,
+            });
+        }
+    }
+}
+
+/// Crates whose dependencies sit `gap` or more layers below.
+pub fn placement(pkgs: &[Pkg], layers: &[Vec<String>], gap: usize, out: &mut Vec<Violation>) {
+    for p in pkgs {
+        let Some(mine) = layer_of(layers, &p.dir) else {
+            continue;
+        };
+        let normal = p.deps.iter().filter(|d| d.kind == Kind::Normal);
+        let dirs = normal.filter_map(|d| pkgs.iter().find(|q| q.name == d.name));
+        let Some(top) = dirs.filter_map(|q| layer_of(layers, &q.dir)).max() else {
+            continue;
+        };
+        if top + gap > mine {
+            continue;
+        }
+        let message = format!(
+            "`{}` sits {} layers above its highest dependency: move it lower",
+            p.name,
+            mine - top
+        );
+        out.push(Violation {
+            path: p.manifest_path(),
+            line: 1,
+            rule: "placement",
+            message,
+        });
     }
 }

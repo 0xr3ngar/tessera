@@ -51,6 +51,9 @@ pub struct Limits {
     pub layers: Vec<Vec<String>>,
     #[serde(default)]
     pub layer_allow: Vec<audit::Allow>,
+    pub facade: audit::Facade,
+    pub placement_gap: usize,
+    pub thin_edge: audit::Thin,
     pub warn_rules: Vec<String>,
     pub min_repeat_statements: usize,
     pub timing_exempt: Vec<String>,
