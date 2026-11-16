@@ -33,9 +33,9 @@ fn record(format: i64, out: usize, inp: usize, side: i64) -> Vec<u8> {
     fields.iter().flat_map(|f| f.to_le_bytes()).collect()
 }
 
-/// `n` bytes, each its index times `step`.
+/// `n` bytes below 0x7F, the E4M3 NaN.
 fn ramp(n: usize, step: usize) -> Vec<u8> {
-    (0..n).map(|i| (i * step % 251) as u8).collect()
+    (0..n).map(|i| (i * step % 120) as u8).collect()
 }
 
 fn halves(values: &[f32]) -> Vec<u8> {

@@ -245,7 +245,7 @@ const GLM_VOCAB: &str = "dense/exlr8-vocab";
 struct Shard {
     file: String,
     prefix: String,
-    /// Names that take no prefix.
+    /// Names kept as they are.
     bare: &'static [&'static str],
 }
 
