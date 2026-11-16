@@ -2,8 +2,7 @@
 
 mod server;
 
-use engine::{Batch, Engine, Fair};
-use lower::{Pins, Recipe};
+use engine::{Batch, Engine, Fair, Pins, Recipe};
 use server::{Job, Shared};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -72,7 +71,7 @@ fn engine_thread(
     let recipe = Recipe {
         pins: loaded
             .pins
-            .unwrap_or_else(|| Pins::all(lower::form::BF16_FORM)),
+            .unwrap_or_else(|| Pins::all(engine::form::BF16_FORM)),
         ..Recipe::default()
     };
     let opened = Engine::open(loaded.graph, args.context, &recipe, &settings);

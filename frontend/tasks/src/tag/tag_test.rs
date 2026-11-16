@@ -13,7 +13,7 @@ fn spacy_tags() {
         eprintln!("no spacy reference here: skipped");
         return;
     };
-    let mut tagger = Tagger::open(&dir, &lower::Settings::default()).unwrap();
+    let mut tagger = Tagger::open(&dir, &engine::Settings::default()).unwrap();
     let cases: Vec<Case> =
         serde_json::from_slice(&std::fs::read(dir.join("tags.json")).unwrap()).unwrap();
     let (mut wrong, mut tokens) = (0, 0);

@@ -1,13 +1,9 @@
 use crate::gguf::pins;
 use crate::names_test::tensor_name;
 use checkpoint::{GgufTensor, GgufType, Meta, write_gguf};
-use engine::{Engine, Row};
-use graph::Graph;
-use interp::Tensor;
-use lower::form::{F32_FORM, Form, named};
-use lower::{Pick, Recipe, Settings, Weight};
-use models::decoder::{Config, Swiglu, stepper};
-use trace::Norm;
+use engine::decoder::{Config, Swiglu, stepper};
+use engine::form::{F32_FORM, Form, named};
+use engine::{Engine, Graph, Norm, Pick, Recipe, Row, Settings, Tensor, Weight};
 
 struct Fixture {
     meta: Vec<(String, Meta)>,
@@ -54,7 +50,7 @@ impl Fixture {
             .iter()
             .enumerate()
             .map(|(index, w)| {
-                let axis = |e: &graph::DimExpr| e.poly(&g.dims).unwrap().as_const().unwrap();
+                let axis = |e: &engine::DimExpr| e.poly(&g.dims).unwrap().as_const().unwrap();
                 let dims: Vec<u64> = w.ty.shape.0.iter().rev().map(axis).collect();
                 let n = dims.iter().product::<u64>() as usize;
                 let name = tensor_name(&w.path, true).unwrap();
@@ -227,5 +223,5 @@ fn short_bytes() {
         ..Settings::default()
     };
     let mut engine = Engine::open(loaded.graph, 8, &recipe, &settings).unwrap();
-    assert!(matches!(engine.load(&weights), Err(lower::Error::Size(_))));
+    assert!(matches!(engine.load(&weights), Err(engine::Error::Size(_))));
 }

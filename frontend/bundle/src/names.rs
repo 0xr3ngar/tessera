@@ -1,7 +1,7 @@
 //! Pairs the graph's weights with the slices a checkpoint offers.
 
 use checkpoint::Slice;
-use graph::{Graph, PathSeg};
+use engine::{Graph, PathSeg};
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -193,8 +193,8 @@ fn holds(ending: Option<&str>, part: Option<&str>) -> bool {
 }
 
 /// The weight's shape, where every axis is a constant.
-fn wanted(g: &Graph, shape: &graph::Shape) -> Option<Vec<usize>> {
-    let axis = |e: &graph::DimExpr| e.value(&g.dims, &|_| None).map(|n| n as usize);
+fn wanted(g: &Graph, shape: &engine::Shape) -> Option<Vec<usize>> {
+    let axis = |e: &engine::DimExpr| e.value(&g.dims, &|_| None).map(|n| n as usize);
     shape.0.iter().map(axis).collect()
 }
 

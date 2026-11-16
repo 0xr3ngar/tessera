@@ -1,6 +1,6 @@
 //! Settings read once from the environment, passed down.
 
-use engine_settings::{Backend, Pick, Settings};
+use engine::{Backend, Pick, Settings};
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -24,7 +24,7 @@ pub fn read() -> Settings {
     let backend = match env.backend.as_deref() {
         Some("host") => Pick::Host,
         Some("cpu") => Pick::Cpu,
-        _ => lower::gpu().map_or(Pick::Host, Pick::Gpu),
+        _ => engine::gpu().map_or(Pick::Host, Pick::Gpu),
     };
     let costs = env
         .costs
