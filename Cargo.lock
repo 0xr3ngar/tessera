@@ -1263,7 +1263,6 @@ dependencies = [
  "codegen",
  "derive_more",
  "engine-settings",
- "gpukit",
  "graph",
  "interp",
  "kernel-macro",
