@@ -101,6 +101,15 @@ pub trait Form: Sync {
         elements * self.dtype().bytes()
     }
 
+    /// `x` against the elements from `at`, one at a time.
+    fn dot(&self, x: &[f32], bytes: &[u8], at: usize) -> f32 {
+        let mut sum = 0.0;
+        for (i, xi) in x.iter().enumerate() {
+            sum += xi * self.unpack(bytes, at + i);
+        }
+        sum
+    }
+
     /// Whether a float form needs widening before an f32 read.
     fn narrow(&self) -> bool {
         self.dtype().is_float() && self.dtype() != DType::F32
