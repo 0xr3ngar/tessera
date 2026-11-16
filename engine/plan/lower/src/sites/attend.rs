@@ -29,6 +29,10 @@ impl Pattern for Attend {
         if wide(v).last() != wide(q).last() {
             return None;
         }
+        // Ragged kernels read every key, not a list.
+        if a.ragged && a.picked {
+            return None;
+        }
         if a.ragged {
             let (&[queries, heads, width], &[seqs, _, kv_heads, _]) = (&wide(q)[..], &wide(k)[..])
             else {
@@ -80,7 +84,7 @@ impl Attend {
         let Term::Op(Op::Attend(a)) = &node.term else {
             return None;
         };
-        let site = Self::whole(tree, at).filter(|_| a.picked)?;
+        let site = Self::whole(tree, at).filter(|_| a.picked && !a.ragged)?;
         Some((site, node.args[3]))
     }
 
