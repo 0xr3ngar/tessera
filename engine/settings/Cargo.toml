@@ -7,4 +7,4 @@ publish.workspace = true
 description = "Knobs the front end sets once and the engine reads"
 
 [dependencies]
-gpukit = { workspace = true }
+serde = { version = "1", features = ["derive"] }

@@ -4,31 +4,31 @@
 use kernels as _;
 
 use codegen::trellis;
-use gpukit::testing::{Noise, cosine_f32, max_abs_diff};
 use graph::DimName::Rows;
 use interp::{Tensor, run};
 
 mod common;
-use common::{linear, noise, runs, terms};
-use frontend_settings::read as settings;
+use common::{linear, noise, terms};
+use gpukit::testing::{emulations, host, runs};
 use linear::{SCHEDULES, Schedule};
 use lower::form::FORMS;
-use lower::{Device, Dialect, Pins, Source, lower};
+use lower::{Device, Dialect, Pins, Settings, Source, lower};
 use run::open;
+use testkit::{Noise, cosine_f32, max_abs_diff};
 
 /// A device that can only choose schedule `at`.
-fn only(at: usize) -> Device {
+fn only(at: usize, settings: &Settings) -> Device {
     let others = SCHEDULES.iter().enumerate().filter(|(i, _)| *i != at);
     let bar = |d: Device, (_, s): (usize, &Schedule)| {
         FORMS.iter().fold(d, |d, f| d.without(f.suffixed(s.name)))
     };
-    others.fold(Device::guess(&settings()).favoring("tiled"), bar)
+    others.fold(Device::guess(settings).favoring("tiled"), bar)
 }
 
 #[test]
 fn rule_registers() {
     let g = linear(72, 50);
-    let device = Device::guess(&settings()).favoring("tiled");
+    let device = Device::guess(&host()).favoring("tiled");
     let plan = lower(&g, 0, &[(Rows, 37)], &device).unwrap();
     let Source::Made(body) = plan.steps[0].kernel.source() else {
         panic!("tiled is generated");
@@ -50,11 +50,8 @@ fn tiles_match_cpu() {
         (130, 96, 1024),
         (256, 512, 1024),
     ];
-    // The host skips the largest size and the timing.
-    let runs = runs();
-    let host = runs[0].gpu().is_none();
-    for (m, n, k) in &sizes[..sizes.len() - host as usize] {
-        let (m, n, k) = (*m, *n, *k);
+    let runs = emulations();
+    for (m, n, k) in sizes {
         let g = linear(k, n);
         let x = noise(vec![m as usize, k as usize], &mut draws);
         for form in common::forms(k as usize) {
@@ -65,7 +62,12 @@ fn tiles_match_cpu() {
             let want = run(&g, &weights, 0, std::slice::from_ref(&x)).unwrap();
             for ((at, schedule), settings) in SCHEDULES.iter().enumerate().zip(runs.iter().cycle())
             {
-                let device = only(at).pinned(Pins::all(form));
+                // The host skips the largest size and the timing.
+                let host = settings.gpu().is_none();
+                if host && (m, n, k) == sizes[sizes.len() - 1] {
+                    continue;
+                }
+                let device = only(at, settings).pinned(Pins::all(form));
                 let plan = lower(&g, 0, &[(Rows, m)], &device).unwrap();
                 let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
                 let name = form.suffixed(schedule.name);
@@ -115,18 +117,17 @@ fn codes_match_decode() {
         let decoded: Vec<f32> = (0..out * inp).map(|i| form.unpack(&bytes, i)).collect();
         let weights = [Tensor::f32(vec![out, inp], decoded)];
         // Few rows take the lane kernel, many the tiled one.
-        for rows in [3usize, 40] {
+        for (settings, rows) in runs().iter().flat_map(|s| [3usize, 40].map(|r| (s, r))) {
             let x = noise(vec![rows, inp], &mut draws);
             let want = run(&g, &weights, 0, std::slice::from_ref(&x)).unwrap();
-            let settings = settings();
-            let device = Device::guess(&settings).pinned(Pins::all(form));
+            let device = Device::guess(settings).pinned(Pins::all(form));
             let plan = lower(&g, 0, &[(Rows, rows as u64)], &device).unwrap();
             let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
             assert!(
                 names.iter().all(|n| n.contains(form.name())),
                 "{names:?} read the codes"
             );
-            let mut runner = open(plan, &settings).unwrap();
+            let mut runner = open(plan, settings).unwrap();
             runner.load_packed(0, &bytes).unwrap();
             let got = runner.run(&[x.view()]).unwrap().remove(0);
             let cos = cosine_f32(got.floats().unwrap(), want[0].floats().unwrap());

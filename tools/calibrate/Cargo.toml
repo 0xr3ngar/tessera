@@ -30,3 +30,4 @@ linear = { workspace = true }
 run = { workspace = true }
 
 [dev-dependencies]
+gpukit = { workspace = true }

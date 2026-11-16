@@ -1,6 +1,6 @@
 //! How selection picks among rules: cost, favor and limits.
 
-use frontend_settings::read as settings;
+use gpukit::testing::host;
 use graph::DimName::{self, Hidden, Rows, Seqs};
 use graph::{Act, DType, Dim, Graph, TensorType};
 use lower::kernels::Map;
@@ -103,7 +103,7 @@ fn names(plan: &Plan) -> Vec<&'static str> {
 
 /// A device where only `cheap` and `dear` apply.
 fn pair() -> Device {
-    Device::guess(&settings()).without("map").without("lanes")
+    Device::guess(&host()).without("map").without("lanes")
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn cost_picks_the_rule() {
 
 #[test]
 fn limits_bar_kernels() {
-    let device = Device::guess(&settings()).without("map");
+    let device = Device::guess(&host()).without("map");
     assert_eq!(names(&plan(&device)), ["lanes"]);
     // A 64-lane device runs none of the 32-lane kernels.
     let wide = Limits {

@@ -30,4 +30,5 @@ lower = { workspace = true }
 models = { workspace = true }
 run = { workspace = true }
 sim = { workspace = true }
+testkit = { workspace = true }
 trace = { workspace = true }

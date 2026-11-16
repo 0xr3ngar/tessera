@@ -3,6 +3,7 @@
 use super::{GOLDEN, release};
 use crate::common::{Case, interpreted, loaded, pulled, unit};
 use checkpoint::exlr8::Release;
+use gpukit::testing::runs;
 use interp::Tensor;
 use lower::{Device, Settings, lower};
 use run::Run;
@@ -62,17 +63,16 @@ fn check_device(settings: &Settings, g: &Graph, w: &[Tensor], cases: &[Case]) ->
 fn reference_checks() {
     let g = release();
     let Some(reference) = GOLDEN.reference("eg2", &g) else {
-        return eprintln!("TESSERA_EG2 is not set; skipped");
+        return eprintln!("no eg2 reference here; skipped");
     };
-    let settings = frontend_settings::read();
-    let dir = settings.reference("eg2").unwrap();
+    let dir = testkit::reference("eg2").unwrap();
     let cases = &reference.cases;
     if dir.join("exlr8").is_dir() || dir.join("exlr8.repo").is_file() {
         check_exlr8(&dir, &g, &cases[..1]);
     }
-    if settings.gpu().is_none() {
+    let Some(settings) = runs().into_iter().find(|s| s.gpu().is_some()) else {
         return eprintln!("no GPU here; skipped");
-    }
+    };
     let got = check_device(&settings, &g, &reference.weights, cases);
     for (c, got) in cases.iter().zip(&got) {
         GOLDEN.release(&format!("{} on the device", c.name), got, c);

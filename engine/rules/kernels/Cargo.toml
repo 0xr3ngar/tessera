@@ -14,7 +14,7 @@ sim = { workspace = true }
 gemm = { workspace = true }
 
 [dev-dependencies]
-frontend-settings = { workspace = true }
+gpukit = { workspace = true }
 interp = { workspace = true }
 run = { workspace = true }
 trace = { workspace = true }

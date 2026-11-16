@@ -72,36 +72,6 @@ layers = [
 
 # Dependencies that point up a layer today. Remove each when it is fixed.
 [[layer_allow]]
-from = "gemm"
-to = "frontend-settings"
-reason = "gemm's test helper asks settings for a GPU"
-
-[[layer_allow]]
-from = "lower"
-to = "frontend-settings"
-reason = "lower tests read settings"
-
-[[layer_allow]]
-from = "kernels"
-to = "frontend-settings"
-reason = "kernels tests read settings"
-
-[[layer_allow]]
-from = "linear"
-to = "frontend-settings"
-reason = "linear tests read settings"
-
-[[layer_allow]]
-from = "engine"
-to = "frontend-settings"
-reason = "engine tests read settings"
-
-[[layer_allow]]
-from = "models"
-to = "frontend-settings"
-reason = "model tests read settings"
-
-[[layer_allow]]
 from = "models"
 to = "bundle"
 reason = "model tests load bundles"

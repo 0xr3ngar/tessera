@@ -1,6 +1,6 @@
 //! Plans for small graphs, with lower's own kernels.
 
-use frontend_settings::read as settings;
+use gpukit::testing::{host, runs};
 use graph::DimName::{self, Context, Hidden, Rows, Seqs};
 use graph::{Act, DType, Dim, Graph, TensorType};
 use interp::{Tensor, run};
@@ -110,16 +110,17 @@ fn maps_match_cpu() {
         .iter()
         .map(|p| fill(&g, &p.ty, &SIZES, &mut noise).unwrap())
         .collect();
-    for form in [F32_FORM, BF16_FORM] {
+    let forms = [F32_FORM, BF16_FORM];
+    for (settings, form) in runs().iter().flat_map(|s| forms.map(|f| (s, f))) {
         // The reference sees the weights as the plan stores them.
         let kept: Vec<Tensor> = (weights.iter())
             .map(|t| Tensor::f32(t.shape.clone(), form.roundtrip(t.floats().unwrap())))
             .collect();
         let want = run(&g, &kept, 0, &inputs).unwrap();
-        let device = Device::guess(&settings()).pinned(Pins::all(form));
+        let device = Device::guess(settings).pinned(Pins::all(form));
         let plan = lower(&g, 0, &SIZES, &device).unwrap();
         assert!(names(&plan).contains(&"map"));
-        let mut runner = open(plan, &settings()).unwrap();
+        let mut runner = open(plan, settings).unwrap();
         for (at, w) in kept.iter().enumerate() {
             runner.load(at as u32, w.view()).unwrap();
         }
@@ -133,7 +134,7 @@ fn maps_match_cpu() {
 #[test]
 fn buffers_are_shared() {
     let g = ladder();
-    let plan = lower(&g, 0, &SIZES, &Device::guess(&settings())).unwrap();
+    let plan = lower(&g, 0, &SIZES, &Device::guess(&host())).unwrap();
     assert_eq!(plan.order(), graph::Order::Fixed);
     for s in &plan.steps {
         let in_place = s.reads.iter().any(|r| r.buffer == s.write.buffer);
@@ -144,7 +145,7 @@ fn buffers_are_shared() {
         plan.buffers.len() < values,
         "dead values free their buffers"
     );
-    let unsized_rows = lower(&g, 0, &[(Seqs, 2)], &Device::guess(&settings()));
+    let unsized_rows = lower(&g, 0, &[(Seqs, 2)], &Device::guess(&host()));
     assert!(matches!(unsized_rows, Err(Error::Size(_))));
 }
 
@@ -161,7 +162,7 @@ fn rule_names_differ() {
 #[test]
 fn order_saves_memory() {
     let g = ladder();
-    let picked = select(&g, 0, &SIZES, &Device::guess(&settings())).unwrap();
+    let picked = select(&g, 0, &SIZES, &Device::guess(&host())).unwrap();
     let traced: Vec<usize> = (0..picked.ops.len()).collect();
     let order = schedule(&picked);
     let mut sorted = order.clone();
@@ -194,7 +195,7 @@ fn dialects_agree() {
 /// A toy step plan: `rows` new, `all` kept afterwards.
 fn step(seqs: u64, rows: u64, all: u64) -> Result<Plan, Error> {
     let sizes = [(Seqs, seqs), (Rows, rows), (Context, all)];
-    lower(&appended(), 0, &sizes, &Device::guess(&settings()))
+    lower(&appended(), 0, &sizes, &Device::guess(&host()))
 }
 
 #[test]
@@ -267,7 +268,7 @@ fn mapped(len: usize) -> Step {
 #[test]
 fn near_samples_estimate() {
     let seconds = |d: &Device, len: usize| d.seconds(&*mapped(len).kernel, len);
-    let mut device = Device::guess(&settings());
+    let mut device = Device::guess(&host());
     let guess = seconds(&device, 256);
     device.fit([(&mapped(64), 1e-3), (&mapped(1024), 4e-3)]);
     assert_eq!(device.samples(), 2);
@@ -327,21 +328,16 @@ fn chip() -> Fit {
 fn models_fill_gaps() {
     let (step, fit) = (mapped(64), chip());
     let seconds = |d: &Device| d.seconds(&*step.kernel, 64);
-    let device = Device::guess(&settings()).fitted(fit);
+    let device = Device::guess(&host()).fitted(fit);
     let load = step.kernel.load(64).unwrap();
     let modelled = fit.pool("fitted").estimate(&load).seconds;
     assert_eq!(seconds(&device), modelled);
     assert!(
-        seconds(&Device::guess(&settings())) != modelled,
+        seconds(&Device::guess(&host())) != modelled,
         "a bare guess differs"
     );
     let bound = device.bound(&*step.kernel, 64).unwrap();
-    assert!(
-        bound <= modelled
-            && Device::guess(&settings())
-                .bound(&*step.kernel, 64)
-                .is_none()
-    );
+    assert!(bound <= modelled && Device::guess(&host()).bound(&*step.kernel, 64).is_none());
     // A sample of the kernel outranks the model.
     let mut timed = device.clone();
     timed.fit([(&step, 5e-3)]);
@@ -411,7 +407,7 @@ fn pins_match_paths() {
 fn pinned_weights_narrow() {
     let g = ladder();
     let pins = Pins::all(BF16_FORM).pin("a", F32_FORM);
-    let plan = lower(&g, 0, &SIZES, &Device::guess(&settings()).pinned(pins)).unwrap();
+    let plan = lower(&g, 0, &SIZES, &Device::guess(&host()).pinned(pins)).unwrap();
     for l in &plan.weights {
         let kept = l.weight == 0;
         assert_eq!(l.slot.form == F32_FORM, kept, "weight {}", l.weight);
@@ -422,10 +418,10 @@ fn pinned_weights_narrow() {
         &g,
         0,
         &SIZES,
-        &Device::guess(&settings()).pinned(Pins::all(BF16_FORM)),
+        &Device::guess(&host()).pinned(Pins::all(BF16_FORM)),
     );
     assert_eq!(count(&both.unwrap(), "widen"), 2);
-    let wide = lower(&g, 0, &SIZES, &Device::guess(&settings())).unwrap();
+    let wide = lower(&g, 0, &SIZES, &Device::guess(&host())).unwrap();
     assert_eq!(count(&wide, "widen"), 0);
 }
 
@@ -433,7 +429,7 @@ fn pinned_weights_narrow() {
 fn plans_are_cached() {
     let g = ladder();
     let mut cache = lower::Cache::default();
-    let device = Device::guess(&settings());
+    let device = Device::guess(&host());
     let first = cache.lower(&g, 0, &SIZES, &device).unwrap();
     let again = cache.lower(&g, 0, &SIZES, &device).unwrap();
     assert!(first == again && cache.hits == 1 && cache.len() == 1);
@@ -482,7 +478,7 @@ fn uncovered_is_named() {
     let [x] = m.entry(EntryKind::Forward, [floats([Seqs, Rows, Vocab])]);
     // No rule takes a lone center, so the act fails.
     let g = m.finish([(Role::Logits, &x.center().act(Act::Silu))]);
-    let Err(Error::Unsupported(what)) = lower(&g, 0, &SIZES, &Device::guess(&settings())) else {
+    let Err(Error::Unsupported(what)) = lower(&g, 0, &SIZES, &Device::guess(&host())) else {
         panic!("a lone center lowered");
     };
     assert!(what.starts_with("Stage(Center)"), "{what}");

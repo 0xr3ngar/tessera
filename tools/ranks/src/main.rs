@@ -163,9 +163,8 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     }
     let fixture = match &args.fixture {
         Some(dir) => dir.clone(),
-        None => settings
-            .reference(&args.model)
-            .ok_or_else(|| format!("no fixture: set TESSERA_{}", args.model.to_uppercase()))?,
+        None => testkit::reference(&args.model)
+            .ok_or_else(|| format!("no fixture: {} has no reference here", args.model))?,
     };
     let case = match fixture.join("tokens.txt").is_file() {
         true => fixture.clone(),

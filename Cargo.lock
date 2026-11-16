@@ -177,7 +177,6 @@ dependencies = [
  "checkpoint",
  "engine",
  "fancy-regex",
- "frontend-settings",
  "graph",
  "interp",
  "lower",
@@ -212,6 +211,7 @@ dependencies = [
  "codegen",
  "engine",
  "frontend-settings",
+ "gpukit",
  "graph",
  "kernels",
  "linear",
@@ -612,7 +612,7 @@ name = "engine"
 version = "0.1.0"
 dependencies = [
  "cpu",
- "frontend-settings",
+ "gpukit",
  "graph",
  "interp",
  "kernels",
@@ -636,7 +636,7 @@ dependencies = [
 name = "engine-settings"
 version = "0.1.0"
 dependencies = [
- "gpukit",
+ "serde",
 ]
 
 [[package]]
@@ -754,6 +754,7 @@ version = "0.1.0"
 dependencies = [
  "engine-settings",
  "envy",
+ "gpukit",
  "serde",
 ]
 
@@ -785,7 +786,6 @@ dependencies = [
 name = "gemm"
 version = "0.1.0"
 dependencies = [
- "frontend-settings",
  "gpukit",
  "objc2",
  "objc2-metal",
@@ -833,6 +833,7 @@ dependencies = [
 name = "gpukit"
 version = "0.1.0"
 dependencies = [
+ "engine-settings",
  "include_dir",
  "mem",
  "objc2",
@@ -840,7 +841,6 @@ dependencies = [
  "objc2-metal",
  "serde",
  "serde_json",
- "testkit",
 ]
 
 [[package]]
@@ -1150,8 +1150,8 @@ name = "kernels"
 version = "0.1.0"
 dependencies = [
  "codegen",
- "frontend-settings",
  "gemm",
+ "gpukit",
  "graph",
  "interp",
  "lower",
@@ -1178,7 +1178,6 @@ name = "linear"
 version = "0.1.0"
 dependencies = [
  "codegen",
- "frontend-settings",
  "gpukit",
  "graph",
  "interp",
@@ -1243,7 +1242,6 @@ dependencies = [
  "codegen",
  "engine-comm",
  "engine-settings",
- "frontend-settings",
  "gpukit",
  "graph",
  "interp",
@@ -1375,7 +1373,7 @@ dependencies = [
  "bundle",
  "checkpoint",
  "cpu",
- "frontend-settings",
+ "gpukit",
  "graph",
  "interp",
  "kernels",
@@ -1585,6 +1583,7 @@ dependencies = [
  "models",
  "run",
  "sim",
+ "testkit",
  "trace",
 ]
 
@@ -2031,11 +2030,11 @@ version = "0.1.0"
 dependencies = [
  "bundle",
  "engine",
- "frontend-settings",
  "interp",
  "lower",
  "models",
  "serde_json",
+ "testkit",
 ]
 
 [[package]]
@@ -2067,6 +2066,7 @@ dependencies = [
  "findings",
  "frontend-settings",
  "tasks",
+ "testkit",
  "ureq",
 ]
 

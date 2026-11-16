@@ -4,34 +4,33 @@
 use kernels as _;
 use linear as _;
 
-use gpukit::testing::{Noise, cosine_f32, max_abs_diff};
 use graph::Dim;
 use graph::DimName::{self, Rows, Seqs};
 use interp::run;
 
 mod common;
-use common::{Finish, finished, linear, noise, runs, terms};
-use frontend_settings::read as settings;
+use common::{Finish, finished, linear, noise, terms};
+use gpukit::testing::{emulations as runs, host};
 use interp::Tensor;
 use lower::Pins;
 use lower::form::named;
 use lower::{Device, Dialect, Source, lower};
 use run::open;
-use testkit::{fill, graphs, weights};
+use testkit::{Noise, cosine_f32, fill, graphs, max_abs_diff, weights};
 use trace::Act;
 
 #[test]
 fn rule_registers() {
     let g = linear(52, 7);
     let sizes = |m| [(Rows, m)];
-    let device = Device::guess(&settings()).favoring("lanes");
+    let device = Device::guess(&host()).favoring("lanes");
     let plan = lower(&g, 0, &sizes(3), &device).unwrap();
     // Past its row limit, another rule takes the site.
     let wide = lower(&g, 0, &sizes(33), &device).unwrap();
     assert!(wide.steps.iter().all(|s| s.kernel.name() != "lanes"));
     // A favored rule takes the chain that finishes its product.
     let residual = finished(48, 48, |x, product| x.add(&product));
-    let thin = Device::guess(&settings()).favoring("thin");
+    let thin = Device::guess(&host()).favoring("thin");
     let kept = lower(&residual, 0, &sizes(3), &thin).unwrap();
     let names: Vec<&str> = kept.steps.iter().map(|s| s.kernel.name()).collect();
     assert_eq!(names, ["thin"]);

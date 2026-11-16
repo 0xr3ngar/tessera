@@ -1,14 +1,29 @@
 //! Knobs the front end sets once and the engine reads.
 
-pub use gpukit::backend::Backend;
-use std::collections::BTreeMap;
 use std::path::PathBuf;
+
+/// A backend that can run kernels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Backend {
+    Metal,
+    Cuda,
+    Rocm,
+}
+
+impl std::fmt::Display for Backend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Backend::Metal => write!(f, "metal"),
+            Backend::Cuda => write!(f, "cuda"),
+            Backend::Rocm => write!(f, "rocm"),
+        }
+    }
+}
 
 /// Where plans run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pick {
-    /// This build's GPU if one is up, else the host.
-    Auto,
     /// The host running kernel trees in lockstep.
     Host,
     /// The host running native kernels.
@@ -24,8 +39,6 @@ pub struct Settings {
     pub host_lanes: usize,
     /// Where calibrate keeps cost samples. `None` stores nothing.
     pub costs: Option<PathBuf>,
-    /// Each model's reference files, by name, for the parity tests.
-    pub references: BTreeMap<String, PathBuf>,
     /// A JSON file of weight-name rules, applied last.
     pub names: Option<PathBuf>,
     /// The GPU whose tile rounding the host imitates.
@@ -35,10 +48,9 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            backend: Pick::Auto,
+            backend: Pick::Host,
             host_lanes: 32,
             costs: None,
-            references: BTreeMap::new(),
             names: None,
             emulate: None,
         }
@@ -46,17 +58,11 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// The reference files for `model`, where this host has them.
-    pub fn reference(&self, model: &str) -> Option<PathBuf> {
-        self.references.get(model).cloned()
-    }
-
     /// The GPU plans run on, or `None` for the host.
     pub fn gpu(&self) -> Option<Backend> {
         match self.backend {
-            Pick::Host | Pick::Cpu => None,
             Pick::Gpu(b) => Some(b),
-            Pick::Auto => gpukit::backend::available().filter(|b| gpukit::backend::ready(*b)),
+            Pick::Host | Pick::Cpu => None,
         }
     }
 }
