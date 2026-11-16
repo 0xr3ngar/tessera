@@ -1,4 +1,4 @@
-//! Causal attention over each query's listed keys.
+//! Attention over each query's listed keys, within its mask.
 
 use codegen::prelude::*;
 use lower::sites::Attend;
@@ -20,6 +20,8 @@ fn listed(
     kv_heads: u32,
     width: u32,
     picks: u32,
+    before: u32,
+    after: u32,
 ) {
     if gid() >= len {
         return;
@@ -29,13 +31,23 @@ fn listed(
     let row = gid() / (width * heads);
     let seq = row / queries;
     let position = keys - queries + row % queries;
+    let from = if position > before {
+        position - before
+    } else {
+        0
+    };
+    let to = if position + after < keys {
+        position + after + 1
+    } else {
+        keys
+    };
     let kv_head = head / (heads / kv_heads);
     let q_at = (gid() - d) as u64;
     let list = row as u64 * picks as u64;
     let mut peak = f32::NEG_INFINITY;
     for p in 0..picks {
         let j = ids[list + p as u64];
-        if j <= position {
+        if j >= from && j < to {
             let k_at = ((seq * keys + j) * kv_heads + kv_head) as u64 * width as u64;
             peak = max(peak, q.dot(q_at, k, k_at, width) * scale);
         }
@@ -44,7 +56,7 @@ fn listed(
     let mut sum = 0.0f32;
     for p in 0..picks {
         let j = ids[list + p as u64];
-        if j <= position {
+        if j >= from && j < to {
             let k_at = ((seq * keys + j) * kv_heads + kv_head) as u64 * width as u64;
             let e = exp(q.dot(q_at, k, k_at, width) * scale - peak);
             total += e;
@@ -82,13 +94,14 @@ impl Listed {
 
 fn listed_launches(k: &Listed, step: &Step) -> Vec<Launch> {
     let a = &k.sizes;
+    let keys = a.keys.most();
+    let (before, after) = match a.mask {
+        graph::Mask::Causal => (keys, 0),
+        graph::Mask::Bidirectional => (keys, keys),
+        graph::Mask::Within(n) => (n as usize, n as usize),
+    };
     let counts = [
-        a.queries,
-        a.keys.most(),
-        a.heads,
-        a.kv_heads,
-        a.width,
-        k.picks,
+        a.queries, keys, a.heads, a.kv_heads, a.width, k.picks, before, after,
     ];
     let mut launch = Launch::plain(step, &[k.len()], Shape::Line(k.len()));
     launch
@@ -98,10 +111,10 @@ fn listed_launches(k: &Listed, step: &Step) -> Vec<Launch> {
     vec![launch]
 }
 
-/// Causal sequences whose keys are all present.
+/// Sequences whose keys are all present.
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let (site, ids) = Attend::listed(tree, at)?;
-    if site.sizes.mask != graph::Mask::Causal || site.sizes.keys.runtime() {
+    if site.sizes.keys.runtime() {
         return None;
     }
     let picks = *tree.node(ids).shape.last()?;

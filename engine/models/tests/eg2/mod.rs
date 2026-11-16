@@ -1,5 +1,6 @@
 //! EmbeddingGemma 2.
 
+mod batched_test;
 mod golden_test;
 mod rotation_test;
 mod rows_test;

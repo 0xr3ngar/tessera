@@ -6,12 +6,13 @@ use codegen::prelude::*;
 use graph::Mask;
 use lower::{Arg, Attn, Draft, Kernel, Launch, Step, T, Tree, ZoneKind, sites};
 
-/// Scores, softmax and weighted values in one pass per query.
+/// One pass per query, over its keys or listed `ids`.
 #[kernel]
-fn cpu_attend(
+fn cpu_attend<const LISTED: bool>(
     q: Buf<F32>,
     k: Buf<F32>,
     v: Buf<F32>,
+    ids: Buf<U32>,
     mut out: BufMut<F32>,
     scale: f32,
     jobs: u32,
@@ -22,6 +23,7 @@ fn cpu_attend(
     #[build] width: u32,
     #[build] before: u32,
     #[build] after: u32,
+    #[build] picks: u32,
 ) {
     if gid() >= jobs {
         return;
@@ -41,18 +43,27 @@ fn cpu_attend(
     let reach = position + 1 + after;
     let to = if reach < keys { reach } else { keys };
     let kh = h / (heads / kv_heads);
+    let list = (s * queries + t) as u64 * picks as u64;
+    let count = if LISTED { picks } else { to - from };
     // The first key's zero `keep` clears the output row.
     let mut most = -1.0e30f32;
     let mut total = 0.0f32;
-    for j in from..to {
-        let ko = ((s * keys + j) * kv_heads + kh) as u64 * width as u64;
-        let score = q.dot(qo, k, ko, width) * scale;
-        let top = max(most, score);
-        let keep = exp(most - top);
-        let p = exp(score - top);
-        total = total * keep + p;
-        out.mix(qo, keep, p, v, ko, width);
-        most = top;
+    for i in 0..count {
+        let j = if LISTED {
+            ids[list + i as u64]
+        } else {
+            from + i
+        };
+        if j >= from && j < to {
+            let ko = ((s * keys + j) * kv_heads + kh) as u64 * width as u64;
+            let score = q.dot(qo, k, ko, width) * scale;
+            let top = max(most, score);
+            let keep = exp(most - top);
+            let p = exp(score - top);
+            total = total * keep + p;
+            out.mix(qo, keep, p, v, ko, width);
+            most = top;
+        }
     }
     out.mix(qo, 1.0 / total, 0.0, v, 0, width);
 }
@@ -72,6 +83,8 @@ fn cpu_attend(
 pub struct Attend {
     pub scale: f32,
     pub sizes: Attn,
+    /// Keys listed per query, or zero for all.
+    pub picks: usize,
 }
 
 impl Attend {
@@ -92,15 +105,13 @@ impl Attend {
     fn body(&self) -> codegen::ir::Body {
         let a = &self.sizes;
         let (before, after) = self.window();
-        cpu_attend_ir(
-            a.queries as u32,
-            a.keys.most() as u32,
-            a.heads as u32,
-            a.kv_heads as u32,
-            a.width as u32,
-            before,
-            after,
-        )
+        let sizes = (a.queries as u32, a.keys.most() as u32, a.heads as u32);
+        let (queries, keys, heads) = sizes;
+        let (kv, width, picks) = (a.kv_heads as u32, a.width as u32, self.picks as u32);
+        match self.picks {
+            0 => cpu_attend_ir::<false>(queries, keys, heads, kv, width, before, after, 0),
+            _ => cpu_attend_ir::<true>(queries, keys, heads, kv, width, before, after, picks),
+        }
     }
 }
 
@@ -196,8 +207,30 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let kernel = Attend {
         scale: site.scale,
         sizes: site.sizes,
+        picks: 0,
     };
-    Some(vec![Draft::new(kernel, [site.q, site.k, site.v], out)])
+    // Only the listed kernel reads its fourth buffer.
+    Some(vec![Draft::new(
+        kernel,
+        [site.q, site.k, site.v, site.k],
+        out,
+    )])
+}
+
+/// Whole sequences, each query reading its listed keys.
+fn listed(tree: &Tree, at: T) -> Option<Vec<Draft>> {
+    let (site, ids) = sites::Attend::listed(tree, at)?;
+    if site.sizes.keys.runtime() {
+        return None;
+    }
+    let out = site.sizes.seqs * site.out();
+    let kernel = Attend {
+        scale: site.scale,
+        sizes: site.sizes,
+        picks: *tree.node(ids).shape.last()?,
+    };
+    Some(vec![Draft::new(kernel, [site.q, site.k, site.v, ids], out)])
 }
 
 lower::rule!("cpu_attend", propose);
+lower::rule!("cpu_listed", listed);
