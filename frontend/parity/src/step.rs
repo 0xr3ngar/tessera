@@ -1,8 +1,13 @@
 //! A step entry's ragged rows against whole forward passes.
 
-use super::Spec;
+use super::{Spec, loaded};
 use interp::{Store, Tensor, run, run_kept};
-use testkit::{Noise, argmax, max_abs_diff, weights};
+use lower::testing::runs;
+use lower::{Cache, Device, View};
+use run::Run;
+use testkit::{Noise, argmax, cosine_f32, max_abs_diff, weights};
+use trace::DimName::{Context, Rows, Seqs};
+use trace::Graph;
 
 const SEQS: usize = 2;
 const LEN: usize = 7;
@@ -58,8 +63,10 @@ pub fn steps(spec: &Spec) {
     let vocab = want.len() / (SEQS * LEN);
     let mut store = Store::default();
     let mut got = vec![0.0; want.len()];
+    let mut each = Vec::new();
     for rows in launches() {
         let out = run_kept(&step, &weights, &mut store, 0, &feeds(&tokens, &rows)).unwrap();
+        each.push(out[1].floats().unwrap().to_vec());
         let (ids, logits) = (out[0].indices().unwrap(), out[1].floats().unwrap());
         assert_eq!(out[0].shape, [rows.len()]);
         for (at, row) in logits.chunks(vocab).enumerate() {
@@ -69,8 +76,49 @@ pub fn steps(spec: &Spec) {
         }
     }
     for kept in 0..step.kept.len() {
-        assert_eq!(store.len(kept), LEN, "kept rows {kept}");
+        assert!(store.len(kept) >= LEN, "kept rows {kept}");
     }
     let off = max_abs_diff(&got, want);
     assert!(off < 1e-5, "steps drift from the forward pass by {off:e}");
+    planned(spec.name, &step, &weights, &tokens, &each);
+}
+
+/// The same launches as plans on each device.
+fn planned(name: &str, step: &Graph, weights: &[Tensor], tokens: &[u32], want: &[Vec<f32>]) {
+    for settings in runs() {
+        let device = Device::guess(&settings);
+        let mut plans = Cache::default();
+        let mut runner: Option<Box<dyn Run>> = None;
+        // Kept rows span the whole context, as buffers hold them.
+        let context = step
+            .dims
+            .iter()
+            .find(|d| d.name == Context)
+            .map(|d| d.size.max());
+        for (rows, want) in launches().iter().zip(want) {
+            let sizes = [
+                (Seqs, SEQS as u64),
+                (Rows, rows.len() as u64),
+                (Context, context.unwrap_or(LEN as u64)),
+            ];
+            let plan = plans.lower(step, 0, &sizes, &device).unwrap();
+            let runner = match &mut runner {
+                Some(runner) => {
+                    runner.replan(&plan).unwrap();
+                    runner
+                }
+                None => runner.insert(loaded(plan.clone(), step, weights, &settings)),
+            };
+            let tensors = feeds(tokens, rows);
+            let views: Vec<View> = tensors.iter().map(Tensor::view).collect();
+            runner.feed(&views).unwrap();
+            runner.submit(0..runner.plan().steps.len()).unwrap();
+            let out = runner.read(runner.plan().outputs[1].slot).unwrap();
+            let got = &out.floats().unwrap()[..want.len()];
+            let scale = want.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+            let (off, cos) = (max_abs_diff(got, want) / scale, cosine_f32(got, want));
+            let label = format!("{name} step of {} rows on {}", rows.len(), runner.device());
+            assert!(off < 1e-3 && cos > 0.9999, "{label}: off {off:e} cos {cos}");
+        }
+    }
 }

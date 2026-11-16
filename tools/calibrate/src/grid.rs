@@ -5,7 +5,7 @@ use graph::DimName::{self, *};
 use lower::{Device, Error, Settings, Step, Tensor, View, lower};
 use run::{Run, open};
 use testkit::Noise;
-use testkit::graphs::{attention, indexed, linear, rotation, routed, rows, table};
+use testkit::graphs::{attention, indexed, indexed_rows, linear, rotation, routed, rows, table};
 use trace::{Dim, Graph, TensorType};
 
 /// A timed plan holds at most this many elements.
@@ -137,6 +137,7 @@ impl Grid {
             cases.extend(outs.map(|n| by_rows(linear(&one, k, *n))));
         }
         cases.push(by_rows(rotation(&one)));
+        cases.push(by_rows(indexed_rows(&one, [2, 16, 2])));
         cases.extend(
             self.widths
                 .iter()
