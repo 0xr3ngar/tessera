@@ -1265,18 +1265,14 @@ dependencies = [
  "engine-settings",
  "gpukit",
  "graph",
- "interp",
  "kernel-macro",
  "mem",
  "platform",
- "run",
  "scattered-collect",
  "serde",
  "serde_json",
  "sim",
- "testkit",
  "thiserror",
- "trace",
 ]
 
 [[package]]
@@ -1779,10 +1775,15 @@ dependencies = [
  "engine-settings",
  "gpukit",
  "graph",
+ "interp",
  "jit",
  "lower",
  "mem",
  "rayon",
+ "serde_json",
+ "sim",
+ "testkit",
+ "trace",
 ]
 
 [[package]]

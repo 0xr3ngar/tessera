@@ -22,8 +22,3 @@ engine-settings = { workspace = true }
 gpukit = { workspace = true }
 mem = { workspace = true }
 
-[dev-dependencies]
-interp = { workspace = true }
-run = { workspace = true }
-trace = { workspace = true }
-testkit = { workspace = true }

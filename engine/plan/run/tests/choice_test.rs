@@ -113,7 +113,7 @@ fn rules_compete() {
 }
 
 #[test]
-fn cost_picks_the_rule() {
+fn cost_picks_rule() {
     assert_eq!(names(&plan(&pair())), ["cheap"]);
     // Samples outrank the guesses.
     let (slow, quick) = (plan(&pair()), plan(&pair().favoring("dear")));
