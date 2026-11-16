@@ -14,6 +14,7 @@ use super::driver::{
     CU_STREAM_NON_BLOCKING, CUcontext, CUdevice, Driver, LaunchAttribute, LaunchConfig,
 };
 use crate::api::{self, Api, Call, Handle, Kind};
+use crate::backend::Backend;
 use crate::device::Caches;
 use crate::platform::{self, Asked, Platform};
 use crate::{Error, Limits};
@@ -184,8 +185,14 @@ impl Driver {
 impl Api for Driver {
     type Own = Own;
 
+    const BACKEND: Backend = Backend::Cuda;
+
     fn error(msg: String) -> Error {
         Error::Cuda(msg)
+    }
+
+    fn describe(ctx: &Context) -> Platform {
+        ctx.platform()
     }
 
     fn open() -> Result<Context, Error> {

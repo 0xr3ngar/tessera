@@ -19,4 +19,6 @@ pub enum Error {
     /// Malformed input data (a shape/size mismatch in a payload).
     #[error("format error: {0}")]
     Format(&'static str),
+    /// A Metal device, buffer or dispatch failure.
+    Metal(String),
 }
