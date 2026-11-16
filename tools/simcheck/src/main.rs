@@ -21,16 +21,19 @@ mod windows_test;
 use anyhow::{Context, Result, bail};
 use cache::{Cache, key};
 use pairs::{Allow, near};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use windows::{Window, cut};
 
 const USAGE: &str = "usage: tessera-simcheck fetch <model_dir>
-       tessera-simcheck check <model_dir> [cache_dir [json_file [base_ref]]]
+       tessera-simcheck check <model_dir> [cache_dir [json_file [base_ref]]] [--budget <n>] [--warm]
        tessera-simcheck far <model_dir> [cache_dir]
        tessera-simcheck place <model_dir> <cache_dir> [paths_file]
 
-`check` writes its findings to <json_file> when given.
+`check` writes its findings to <json_file> when given. It embeds every
+uncached window of files changed since <base_ref>, then at most <n> other
+uncached windows, and compares only embedded windows. `--warm` never fails.
 It also fails on allow.toml pairs that allow nothing.
 With <base_ref>, it also reports new files nearer another crate.
 `far` lists crates whose code leans toward each other.
@@ -78,13 +81,32 @@ fn all_windows(root: &Path, s: &Settings) -> Result<Vec<Window>> {
     Ok(out)
 }
 
-/// Embeds uncached windows, then returns every embedding in order.
-fn embed(model: &Path, wins: &[Window], cache: &mut Cache) -> Result<Vec<Vec<f32>>> {
-    let missing: Vec<&str> = wins
-        .iter()
-        .map(|w| w.text.as_str())
-        .filter(|t| cache.get(key(t)).is_none())
-        .collect();
+/// Embeds `changed` files, then `budget` other windows.
+fn embed(
+    model: &Path,
+    wins: &[Window],
+    cache: &mut Cache,
+    changed: &HashSet<String>,
+    budget: Option<usize>,
+) -> Result<Vec<Option<Vec<f32>>>> {
+    let mut required = Vec::new();
+    let mut optional = Vec::new();
+    for w in wins {
+        let k = key(&w.text);
+        if cache.get(k).is_some() {
+            continue;
+        }
+        match changed.contains(&w.path) {
+            true => required.push((k, w.text.as_str())),
+            false => optional.push((k, w.text.as_str())),
+        }
+    }
+    // Each run starts where the last run stopped.
+    optional.sort_unstable();
+    optional.dedup();
+    optional.truncate(budget.unwrap_or(usize::MAX));
+    let mut missing: Vec<&str> = required.iter().chain(&optional).map(|(_, t)| *t).collect();
+    missing.dedup();
     eprintln!("{} windows, {} to embed", wins.len(), missing.len());
     if !missing.is_empty() {
         let m = eg2cpu::Model::load(model).context("loading the model; run `fetch` first")?;
@@ -101,16 +123,34 @@ fn embed(model: &Path, wins: &[Window], cache: &mut Cache) -> Result<Vec<Vec<f32
     }
     Ok(wins
         .iter()
-        .map(|w| cache.get(key(&w.text)).expect("embedded").clone())
+        .map(|w| cache.get(key(&w.text)).cloned())
         .collect())
 }
 
-/// `base` names the ref new files are counted from.
+/// Files changed between `base` and HEAD.
+fn changed_files(root: &Path, base: Option<&str>) -> Result<HashSet<String>> {
+    let Some(base) = base else {
+        return Ok(HashSet::new());
+    };
+    let diff = git(root, &["diff", "--name-only", &format!("{base}...HEAD")])?;
+    Ok(diff.lines().map(String::from).collect())
+}
+
+/// What a `check` run embeds, and if it fails.
+#[derive(Default)]
+struct Mode {
+    /// Uncached windows to embed outside changed files. `None` embeds all.
+    budget: Option<usize>,
+    /// Never fails. Builds on main set it.
+    warm: bool,
+}
+
+/// Changed files count from the `base` ref.
 fn check(
     model: &Path,
     cache_file: Option<&Path>,
-    json: Option<&Path>,
-    base: Option<&str>,
+    (json, base): (Option<&Path>, Option<&str>),
+    mode: &Mode,
 ) -> Result<bool> {
     let s: Settings = toml::from_str(include_str!("../../../lint.toml"))?;
     let allow = Allow::parse(include_str!("../allow.toml"))?;
@@ -120,13 +160,32 @@ fn check(
         Some(f) => Cache::load(f)?,
         None => Cache::default(),
     };
-    let embs = embed(model, &wins, &mut cache)?;
+    let changed = changed_files(&root, base)?;
+    let found = embed(model, &wins, &mut cache, &changed, mode.budget)?;
     if let Some(f) = cache_file {
         let keys: Vec<u64> = wins.iter().map(|w| key(&w.text)).collect();
         cache.save(f, &keys)?;
     }
+    // Compare only the embedded windows.
+    let total = wins.len();
+    let (mut kept, mut embs) = (Vec::new(), Vec::new());
+    for (w, e) in wins.into_iter().zip(found) {
+        if let Some(e) = e {
+            kept.push(w);
+            embs.push(e);
+        }
+    }
+    let wins = kept;
+    let coverage = (wins.len() < total).then_some((wins.len(), total));
+    if let Some((done, all)) = coverage {
+        println!("coverage: {done} of {all} windows embedded");
+    }
     let (hits, used) = near(&wins, &embs, s.similar_window, s.max_similarity, &allow);
-    let stale = allow.stale(&used);
+    // Allowed pairs may hold unembedded windows.
+    let stale = match coverage {
+        None => allow.stale(&used),
+        Some(_) => Vec::new(),
+    };
     let leans = new_leans(&root, &s, (&wins, &embs), base)?;
     for l in &leans {
         println!(
@@ -146,10 +205,10 @@ fn check(
     }
     if let Some(path) = json {
         let limits = (s.similar_window, s.max_similarity);
-        let r = report::report((&hits, &stale, &leans), &wins, &root, limits)?;
+        let r = report::report((&hits, &stale, &leans), &wins, &root, (limits, coverage))?;
         r.write(path).map_err(anyhow::Error::msg)?;
     }
-    Ok(hits.is_empty() && stale.is_empty())
+    Ok(mode.warm || (hits.is_empty() && stale.is_empty()))
 }
 
 /// Crates this many directory steps apart count as far.
@@ -221,7 +280,9 @@ fn tree(model: &Path, cache_file: Option<&Path>) -> Result<Tree> {
         Some(f) => Cache::load(f)?,
         None => Cache::default(),
     };
-    let embs = embed(model, &wins, &mut cache)?;
+    // `far` and `place` need every window.
+    let found = embed(model, &wins, &mut cache, &HashSet::new(), None)?;
+    let embs: Vec<Vec<f32>> = found.into_iter().map(|e| e.expect("embedded")).collect();
     if let Some(f) = cache_file {
         let keys: Vec<u64> = wins.iter().map(|w| key(&w.text)).collect();
         cache.save(f, &keys)?;
@@ -295,25 +356,40 @@ fn far(model: &Path, cache_file: Option<&Path>) -> Result<bool> {
     Ok(true)
 }
 
+/// Parses `check` paths and its flags.
+fn check_args<'a>(args: &[&'a str]) -> Option<(Vec<&'a str>, Mode)> {
+    let (mut paths, mut mode) = (Vec::new(), Mode::default());
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match *a {
+            "--budget" => mode.budget = Some(it.next()?.parse().ok()?),
+            "--warm" => mode.warm = true,
+            p => paths.push(p),
+        }
+    }
+    (paths.len() <= 3).then_some((paths, mode))
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let run = match args[..] {
         ["fetch", dir] => fetch::fetch(Path::new(dir)).map(|()| true),
-        ["check", dir] => check(Path::new(dir), None, None, None),
-        ["check", dir, cache] => check(Path::new(dir), Some(Path::new(cache)), None, None),
-        ["check", dir, cache, json] => check(
-            Path::new(dir),
-            Some(Path::new(cache)),
-            Some(Path::new(json)),
-            None,
-        ),
-        ["check", dir, cache, json, base] => check(
-            Path::new(dir),
-            Some(Path::new(cache)),
-            Some(Path::new(json)),
-            Some(base),
-        ),
+        ["check", dir, ref rest @ ..] => match check_args(rest) {
+            Some((paths, mode)) => {
+                let path = |i: usize| paths.get(i).map(Path::new);
+                check(
+                    Path::new(dir),
+                    path(0),
+                    (path(1), paths.get(2).copied()),
+                    &mode,
+                )
+            }
+            None => {
+                eprintln!("{USAGE}");
+                return ExitCode::from(2);
+            }
+        },
         ["far", dir] => far(Path::new(dir), None),
         ["far", dir, cache] => far(Path::new(dir), Some(Path::new(cache))),
         ["place", dir, cache] => place(Path::new(dir), Path::new(cache), None),

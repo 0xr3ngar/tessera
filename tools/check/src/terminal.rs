@@ -32,7 +32,10 @@ pub fn render(reports: &[Report], color: bool) -> String {
             } else {
                 ("33", "note")
             };
-            let at = p.wrap("1", &format!("{}:{}", f.path, f.line));
+            let at = match f.path.is_empty() {
+                true => p.wrap("1", &r.tool),
+                false => p.wrap("1", &format!("{}:{}", f.path, f.line)),
+            };
             let _ = writeln!(
                 out,
                 "  {at}: {} {}: {}",
