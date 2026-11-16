@@ -10,10 +10,10 @@ use interp::run;
 
 mod common;
 use common::{Finish, finished, linear, noise, terms};
-use gpukit::testing::{emulations as runs, host};
 use interp::Tensor;
 use lower::Pins;
 use lower::form::named;
+use lower::testing::{emulations as runs, host};
 use lower::{Device, Dialect, Source, lower};
 use run::open;
 use testkit::{Noise, cosine_f32, fill, graphs, max_abs_diff, weights};

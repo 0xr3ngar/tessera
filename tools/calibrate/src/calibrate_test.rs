@@ -6,7 +6,7 @@ use testkit::scratch;
 
 /// This build's GPU when ready, else the host.
 fn settings() -> Settings {
-    gpukit::testing::runs().pop().unwrap()
+    lower::testing::runs().pop().unwrap()
 }
 
 /// A crate's rules register once this one links it.
@@ -21,10 +21,8 @@ fn grid_reaches_rules() {
     let mut device = Device::guess(&settings);
     let timed = Grid::tiny().run(&mut device, &settings).unwrap();
     assert!(device.samples() > 0 && !device.name.is_empty());
-    // The host cannot run the hand-written dense gemm.
-    let host = settings.gpu().is_none();
     // CPU rules need a CPU zone.
-    let skipped = |r: &&&lower::Rule| (host && r.name == "dense") || r.name.starts_with("cpu_");
+    let skipped = |r: &&&lower::Rule| r.name.starts_with("cpu_");
     for rule in rules().iter().filter(|r| !skipped(r)) {
         let ran = timed.iter().any(|(step, _)| step.rule == rule.name);
         assert!(ran, "the grid never ran {}", rule.name);

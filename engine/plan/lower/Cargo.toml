@@ -20,7 +20,6 @@ gpukit = { workspace = true }
 mem = { workspace = true }
 
 [dev-dependencies]
-gpukit = { workspace = true }
 interp = { workspace = true }
 run = { workspace = true }
 trace = { workspace = true }

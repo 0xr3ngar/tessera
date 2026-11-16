@@ -1,10 +1,10 @@
 //! How selection picks among rules: cost, favor and limits.
 
-use gpukit::testing::host;
 use graph::DimName::{self, Hidden, Rows, Seqs};
 use graph::{Act, DType, Dim, Graph, TensorType};
 use lower::kernels::Map;
 use lower::sites;
+use lower::testing::host;
 use lower::{Device, Draft, Kernel, Limits, Needs, Plan, Platform, T, Tree, lower, select};
 use trace::{EntryKind, Model, Port, Role};
 

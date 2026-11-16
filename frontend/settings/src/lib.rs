@@ -23,7 +23,7 @@ pub fn read() -> Settings {
     let backend = match env.backend.as_deref() {
         Some("host") => Pick::Host,
         Some("cpu") => Pick::Cpu,
-        _ => gpukit::backend::picked().map_or(Pick::Host, Pick::Gpu),
+        _ => lower::gpu().map_or(Pick::Host, Pick::Gpu),
     };
     let costs = env
         .costs

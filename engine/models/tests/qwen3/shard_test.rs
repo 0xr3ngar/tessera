@@ -1,9 +1,9 @@
 //! The toy decoder over two ranks matches one.
 
 use crate::common::pair;
-use gpukit::testing::{host, runs};
 use graph::{Graph, Placement, shard};
 use interp::{Tensor, run, run_ranks};
+use lower::testing::{host, runs};
 use lower::{Device, Plan, View, lower};
 use models::decoder::{Config, Swiglu, program};
 use run::Loopback;

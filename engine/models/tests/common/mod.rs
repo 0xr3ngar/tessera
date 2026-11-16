@@ -18,9 +18,9 @@ pub use step::steps;
 
 use bundle::names::{repo, resolve};
 use checkpoint::{Slice, Stored};
-use gpukit::testing::{host, runs};
 use interp::{Tensor, run};
 use lower::form::named;
+use lower::testing::{host, runs};
 use lower::{Device, Pick, Pins, Plan, Settings, View, lower, rules};
 use run::{Run, open};
 use testkit::{Noise, cosine_f32, fill, max_abs_diff};

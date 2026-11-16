@@ -1,9 +1,9 @@
 //! The engine's decode loop against the interpreter.
 
 use engine::{Batch, Engine, Event, Fair, Reason, Request, Row};
-use gpukit::testing::runs;
 use graph::Graph;
 use interp::{Store, Tensor, run_kept};
+use lower::testing::runs;
 use lower::{Recipe, Settings, Weight, kept, rules};
 use models::decoder::{Config, Swiglu, stepper};
 use testkit::{Noise, weights};

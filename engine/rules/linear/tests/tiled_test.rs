@@ -9,9 +9,9 @@ use interp::{Tensor, run};
 
 mod common;
 use common::{linear, noise, terms};
-use gpukit::testing::{emulations, host, runs};
 use linear::{SCHEDULES, Schedule};
 use lower::form::FORMS;
+use lower::testing::{emulations, host, runs};
 use lower::{Device, Dialect, Pins, Settings, Source, lower};
 use run::open;
 use testkit::{Noise, cosine_f32, max_abs_diff};

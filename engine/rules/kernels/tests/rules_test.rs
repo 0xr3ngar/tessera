@@ -2,11 +2,11 @@
 
 use kernels as _;
 
-use gpukit::testing::{host, runs};
 use graph::DimName::{Context, HeadDim, Heads, Rows, Seqs};
 use graph::{DType, Dim, DimName, Graph, NodeId, verify};
 use interp::{Tensor, run};
 use lower::form::{BF16_FORM, F32_FORM};
+use lower::testing::{host, runs};
 use lower::{Device, Limits, Pins, Plan, Platform, Settings, View, cut, lower, rules};
 use run::open;
 use testkit::graphs::{self, floats, ids};
@@ -94,10 +94,6 @@ fn each_rule_matches_cpu() {
         let used = rules_match(&settings);
         // A new rule needs a graph in `testkit::graphs`.
         for rule in ours() {
-            // Hand-written kernels wait for a compiler.
-            if settings.gpu().is_none() && rule.name == "dense" {
-                continue;
-            }
             let name = rule.name;
             assert!(used.contains(&name), "no graph exercises {name}");
         }
@@ -128,24 +124,10 @@ fn names(plan: &Plan) -> Vec<&'static str> {
 }
 
 #[test]
-fn cost_picks_attention() {
+fn attention_streams() {
     let g = attention();
-    let guess = Device::guess(&host());
-    // Dense attention is unproven, so a guess streams.
-    let stream = lower(&g, 0, &SIZES, &guess).unwrap();
-    let streams = count(&stream, "attend") + count(&stream, "flash");
-    assert_eq!((streams, count(&stream, "scores")), (1, 0));
-    // The host cannot run the hand-written dense gemm.
-    let Some(gpu) = runs().into_iter().find(|s| s.gpu().is_some()) else {
-        return;
-    };
-    let dense = lower(&g, 0, &SIZES, &Device::guess(&gpu).favoring("dense")).unwrap();
-    assert_eq!((count(&dense, "attend"), count(&dense, "join")), (0, 0));
-    let parts = ["scores", "causal", "values"].map(|k| count(&dense, k));
-    assert_eq!(parts, [1, 1, 1]);
-    let causal = dense.steps.iter().find(|s| s.kernel.name() == "causal");
-    let causal = causal.unwrap();
-    assert_eq!(causal.write.buffer, causal.reads[0].buffer, "in place");
+    let plan = lower(&g, 0, &SIZES, &Device::guess(&host())).unwrap();
+    assert_eq!(count(&plan, "attend") + count(&plan, "flash"), 1);
 }
 
 #[test]

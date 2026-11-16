@@ -211,7 +211,6 @@ dependencies = [
  "codegen",
  "engine",
  "frontend-settings",
- "gpukit",
  "graph",
  "kernels",
  "linear",
@@ -612,7 +611,6 @@ name = "engine"
 version = "0.1.0"
 dependencies = [
  "cpu",
- "gpukit",
  "graph",
  "interp",
  "kernels",
@@ -754,7 +752,7 @@ version = "0.1.0"
 dependencies = [
  "engine-settings",
  "envy",
- "gpukit",
+ "lower",
  "serde",
 ]
 
@@ -780,16 +778,6 @@ dependencies = [
  "futures-task",
  "pin-project-lite",
  "slab",
-]
-
-[[package]]
-name = "gemm"
-version = "0.1.0"
-dependencies = [
- "gpukit",
- "objc2",
- "objc2-metal",
- "testkit",
 ]
 
 [[package]]
@@ -833,7 +821,6 @@ dependencies = [
 name = "gpukit"
 version = "0.1.0"
 dependencies = [
- "engine-settings",
  "include_dir",
  "mem",
  "objc2",
@@ -1150,8 +1137,6 @@ name = "kernels"
 version = "0.1.0"
 dependencies = [
  "codegen",
- "gemm",
- "gpukit",
  "graph",
  "interp",
  "lower",
@@ -1373,7 +1358,6 @@ dependencies = [
  "bundle",
  "checkpoint",
  "cpu",
- "gpukit",
  "graph",
  "interp",
  "kernels",

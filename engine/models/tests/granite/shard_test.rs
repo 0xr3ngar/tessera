@@ -2,9 +2,9 @@
 
 use super::small;
 use crate::common::pair;
-use gpukit::testing::host;
 use graph::{Parts, Placement, Stage, shard};
 use interp::{Tensor, run, run_parts};
+use lower::testing::host;
 use lower::{Device, lower};
 use models::decoder::{Config, Moe, Scales, program};
 use run::Loopback;

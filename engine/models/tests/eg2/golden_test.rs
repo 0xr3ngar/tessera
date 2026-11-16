@@ -3,8 +3,8 @@
 use super::{GOLDEN, release};
 use crate::common::{Case, interpreted, loaded, pulled, unit};
 use checkpoint::exlr8::Release;
-use gpukit::testing::runs;
 use interp::Tensor;
+use lower::testing::runs;
 use lower::{Device, Settings, lower};
 use run::Run;
 use std::path::Path;

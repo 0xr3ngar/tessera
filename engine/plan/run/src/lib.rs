@@ -18,8 +18,8 @@ pub use rank::Rank;
 pub use run::{Base, Run};
 
 use codegen::Precision;
+use engine_settings::Backend;
 use engine_settings::Settings;
-use gpukit::backend::Backend;
 use lower::{Error, Plan};
 
 /// How `backend`'s tiles round.

@@ -2,10 +2,10 @@
 
 use kernels as _;
 
-use gpukit::testing::runs;
 use graph::DimName::{Context, HeadDim, Heads, KvHeads, Rows, Segments, Seqs};
 use graph::{DType, Dim, Graph, Size, TensorType};
 use interp::{Store, Tensor, run, run_kept};
+use lower::testing::runs;
 use lower::{Device, lower};
 use run::{Run, open};
 use testkit::{Noise, max_abs_diff};

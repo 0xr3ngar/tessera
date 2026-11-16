@@ -1,12 +1,12 @@
 //! Plans for small graphs, with lower's own kernels.
 
-use gpukit::testing::{host, runs};
 use graph::DimName::{self, Context, Hidden, Rows, Seqs};
 use graph::{Act, DType, Dim, Graph, TensorType};
 use interp::{Tensor, run};
 use lower::form::{BF16_FORM, F32_FORM};
 use lower::kernels::{Map, MapStage, Widen};
 use lower::sites;
+use lower::testing::{host, runs};
 use lower::{
     Arg, Buffer, Device, Dialect, Draft, Error, Fit, Kernel, KernelRef, Pins, Plan, Slot, Source,
     Step, T, Tree,

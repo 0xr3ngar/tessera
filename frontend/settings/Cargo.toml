@@ -9,5 +9,5 @@ description = "Settings read once from the environment, passed down"
 [dependencies]
 engine-settings = { workspace = true }
 envy = "0.4"
-gpukit = { workspace = true }
+lower = { workspace = true }
 serde = { version = "1", features = ["derive"] }
