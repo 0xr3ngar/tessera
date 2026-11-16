@@ -5,7 +5,7 @@ use codegen::ir::{BinOp, Body, Expr, Stmt, Ty};
 use lower::kernels::{add_operands, finish};
 use lower::sites;
 use lower::sites::{After, Picked};
-use lower::{Arg, Form as Stored, Launch, Read, Shape, Source, Step, T, Tree};
+use lower::{Form as Stored, Launch, Read, Shape, Source, Step, T, Tree};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -93,10 +93,7 @@ impl Product {
 
     /// One launch: the reads, the output, then `counts`.
     pub(crate) fn launch(&self, step: &Step, counts: &[usize], shape: Shape) -> Vec<Launch> {
-        let mut args: Vec<Arg> = (0..step.reads.len()).map(|i| step.read(i)).collect();
-        args.push(step.out());
-        args.extend(counts.iter().copied().map(Arg::count));
-        vec![Launch { args, shape }]
+        vec![Launch::plain(step, counts, shape)]
     }
 
     pub(crate) fn outputs(&self) -> usize {

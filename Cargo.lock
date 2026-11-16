@@ -289,11 +289,9 @@ dependencies = [
 name = "cpu"
 version = "0.1.0"
 dependencies = [
+ "codegen",
  "graph",
- "interp",
  "lower",
- "testkit",
- "trace",
 ]
 
 [[package]]

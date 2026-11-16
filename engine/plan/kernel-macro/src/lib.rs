@@ -102,7 +102,14 @@ pub fn helper(attr: TokenStream, item: TokenStream) -> TokenStream {
 fn expand(f: &ItemFn, tree: Res) -> TokenStream {
     match tree {
         Ok(tree) => quote! {
-            #[allow(dead_code, unused_mut, unused_variables, unused_parens, clippy::all)]
+            #[allow(
+                dead_code,
+                unused_assignments,
+                unused_mut,
+                unused_variables,
+                unused_parens,
+                clippy::all
+            )]
             #f
             #tree
         }

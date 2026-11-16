@@ -12,12 +12,6 @@ use std::sync::Arc;
 /// Seconds per unit of work for an unmeasured kernel.
 pub const UNPROVEN: f64 = 1e-9;
 
-/// A kernel's host code, over its step's bytes.
-pub trait Native: Send + Sync {
-    /// Reads in the step's order, then the write.
-    fn run(&self, reads: &[&[u8]], write: &mut [u8]) -> Result<(), String>;
-}
-
 /// One kernel with its sizes. Any crate may add one.
 pub trait Kernel: fmt::Debug + Send + Sync {
     /// Names its cost curve, so it must be unique.
@@ -65,10 +59,6 @@ pub trait Kernel: fmt::Debug + Send + Sync {
     /// What it asks of a thread group. Zero asks nothing.
     fn needs(&self) -> Needs {
         Needs::default()
-    }
-    /// Its host code, when the host runs it directly.
-    fn native(&self) -> Option<&dyn Native> {
-        None
     }
 }
 

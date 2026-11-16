@@ -58,3 +58,18 @@ fn block_headers_render() {
     );
     assert!(metal.contains("device const u8 *w"));
 }
+
+#[test]
+fn odd_length_dots() {
+    let a: Vec<f32> = (0..19).map(|i| i as f32 * 0.5).collect();
+    let b: Vec<f32> = (0..19).map(|i| (i % 3) as f32).collect();
+    let want: f32 = a.iter().zip(&b).map(|(x, y)| x * y).sum();
+    assert_eq!(crate::lockstep::dot(&a, &b), want);
+    let halves = crate::form::BF16_FORM.pack(&b);
+    assert_eq!(crate::lockstep::dot_bf16(&a, &halves), want);
+    let bytes: Vec<u8> = a.iter().flat_map(|x| x.to_le_bytes()).collect();
+    assert_eq!(
+        crate::lockstep::dot_form(crate::form::BF16_FORM, &bytes, 0, &halves, 0, 19),
+        want
+    );
+}

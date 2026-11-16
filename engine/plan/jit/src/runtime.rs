@@ -79,6 +79,38 @@ readers! {
     rd_nvfp4 = rd_nvfp4: f32, |n| 4 + n.div_ceil(16) * 9;
 }
 
+macro_rules! dots {
+    ($($name:ident = $form:expr, $bytes:expr;)*) => {$(
+        #[allow(clippy::too_many_arguments, reason = "two rows and a length")]
+        pub unsafe extern "C" fn $name(
+            a: *const u8,
+            a_len: usize,
+            a_at: usize,
+            b: *const u8,
+            b_len: usize,
+            b_at: usize,
+            n: usize,
+        ) -> f32 {
+            let bytes: fn(usize) -> usize = $bytes;
+            let (Some(a), Some(b)) = (
+                unsafe { within(a, a_len, (a_at + n) * 4) },
+                unsafe { within(b, b_len, bytes(b_at + n)) },
+            ) else {
+                return 0.0;
+            };
+            lockstep::dot_form($form, a, a_at, b, b_at, n)
+        }
+    )*};
+}
+
+dots! {
+    dot_f32 = codegen::form::F32_FORM, |n| n * 4;
+    dot_bf16 = codegen::form::BF16_FORM, |n| n * 2;
+    dot_q8_0 = &codegen::block::Q8_0, |n| n.div_ceil(32) * 34;
+    dot_q4_0 = &codegen::block::Q4_0, |n| n.div_ceil(32) * 18;
+    dot_nvfp4 = &codegen::block::NVFP4, |n| 4 + n.div_ceil(16) * 9;
+}
+
 pub unsafe extern "C" fn st_f32(p: *mut u8, len: usize, at: usize, v: f32) {
     if unsafe { within(p, len, at * 4 + 4) }.is_some() {
         // SAFETY: checked above.

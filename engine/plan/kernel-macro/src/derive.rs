@@ -17,7 +17,7 @@ const VALUES: [&str; 14] = [
 ];
 
 /// Keys that stand alone.
-const FLAGS: [&str; 4] = ["shared", "overwrites", "unproven", "native"];
+const FLAGS: [&str; 3] = ["shared", "overwrites", "unproven"];
 
 /// `key`, `key = expr` or `key(args)`. A kernel may take `::<..>`.
 struct Entry {
@@ -253,10 +253,6 @@ pub fn derive(input: DeriveInput) -> Result<Tokens, Error> {
     };
     let shared = flag("shared", quote!(shared));
     let overwrite = flag("overwrites", quote!(overwrites));
-    let native = match line.flag("native") {
-        true => quote!(fn native(&self) -> Option<&dyn #krate::Native> { Some(self) }),
-        false => quote!(),
-    };
     let work = line
         .expr("work")
         .map(|e| quote!(fn work(&self, len: usize) -> f64 { let _ = len; (#e) as f64 }));
@@ -300,7 +296,6 @@ pub fn derive(input: DeriveInput) -> Result<Tokens, Error> {
             #runs_on
             #shared
             #overwrite
-            #native
         }
     })
 }
