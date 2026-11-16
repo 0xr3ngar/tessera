@@ -1,5 +1,6 @@
 //! Replays a plan on the host, each tree in lockstep.
 
+use crate::Error;
 use crate::run::{Base, Run, line};
 use codegen::Precision;
 use codegen::exec::{self, ArgVal, Grid};
@@ -7,7 +8,7 @@ use codegen::ir::{Body, Param, Ty};
 use codegen::lockstep::THREADS;
 use gpukit::{Limits, Platform};
 use jit::{Buf, Ctx, Entry};
-use lower::{Arg, Error, Extent, Launch, Plan, Shape, Source};
+use lower::{Arg, Extent, Launch, Plan, Shape, Source};
 use mem::{Buffer, Host};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -44,7 +45,7 @@ impl Runner {
     fn launch(&mut self, step: usize, launch: &Launch) -> Result<(), Error> {
         let Some(body) = &self.bodies[step] else {
             let what = self.base.plan.steps[step].kernel.name();
-            return Err(Error::Unsupported(format!("{what} is hand-written")));
+            return Err(lower::Error::Unsupported(format!("{what} is hand-written")).into());
         };
         // Every buffer once, however many arguments point into it.
         let mut buffers: Vec<u32> = Vec::new();
@@ -75,7 +76,7 @@ impl Runner {
                 }
                 (other, param) => {
                     let what = format!("{other:?} as {param:?} on the host");
-                    return Err(Error::Unsupported(what));
+                    return Err(lower::Error::Unsupported(what).into());
                 }
             });
         }
@@ -298,7 +299,7 @@ fn compiled(
         }),
     }
     match jit::failure() {
-        Some(why) => Err(Error::Unsupported(why.into())),
+        Some(why) => Err(lower::Error::Unsupported(why.into()).into()),
         None => Ok(()),
     }
 }

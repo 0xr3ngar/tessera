@@ -1,8 +1,9 @@
 //! A forward graph with its weights, launched as a whole.
 
+use crate::Error;
 use graph::{DimExpr, DimName, Graph, Size};
 use interp::Tensor;
-use lower::{Cache, Device, Error, Recipe, Settings, Weight};
+use lower::{Cache, Device, Recipe, Settings, Weight};
 use run::{Run, open};
 
 /// Plans on a runner, lowered once per launch sizes.
@@ -44,9 +45,7 @@ fn sizes_of(
         }
     }
     if sizes.len() != bounded.len() {
-        return Err(Error::Size(
-            "an input axis for every bounded dimension".into(),
-        ));
+        return Err(lower::Error::Size("an input axis for every bounded dimension".into()).into());
     }
     Ok(sizes)
 }
@@ -64,10 +63,10 @@ fn floats(g: &Graph, at: usize, w: &Weight) -> Tensor {
     }
 }
 
-fn interpreted(e: interp::Error) -> Error {
+fn interpreted(e: interp::Error) -> lower::Error {
     match e {
-        interp::Error::Unsupported(m) => Error::Unsupported(m),
-        interp::Error::Mismatch(m) => Error::Size(m),
+        interp::Error::Unsupported(m) => lower::Error::Unsupported(m),
+        interp::Error::Mismatch(m) => lower::Error::Size(m),
     }
 }
 
@@ -82,11 +81,13 @@ impl Model {
         let least: Vec<(DimName, u64)> = bounded.iter().map(|d| (*d, 1)).collect();
         let mut plans = Cache::default();
         let executor = match plans.lower(&graph, 0, &least, &device) {
-            Err(Error::Unsupported(_)) => Executor::Interpreted(Vec::new()),
+            Err(lower::Error::Unsupported(_)) => Executor::Interpreted(Vec::new()),
             planned => {
                 let mut runner = open(planned?, settings)?;
                 runner.launching(recipe.launch);
-                let device = Device::stored(runner.platform(), settings)?.with(recipe);
+                let device = Device::stored(runner.platform(), settings)
+                    .map_err(lower::Error::from)?
+                    .with(recipe);
                 Executor::Planned(Box::new(Planned {
                     runner,
                     device,
@@ -133,7 +134,7 @@ impl Model {
         let sizes = sizes_of(g, &self.bounded, inputs)?;
         match &mut self.executor {
             Executor::Interpreted(weights) => {
-                interp::run(g, weights, 0, inputs).map_err(interpreted)
+                interp::run(g, weights, 0, inputs).map_err(|e| interpreted(e).into())
             }
             Executor::Planned(p) => {
                 let plan = p.plans.lower(g, 0, &sizes, &p.device)?;

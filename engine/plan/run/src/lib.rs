@@ -15,11 +15,24 @@ pub use loopback::Loopback;
 pub use rank::Rank;
 pub use run::{Base, Run};
 
+/// A failure while loading or running a plan.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Lower(#[from] lower::Error),
+    #[error("gpu: {0}")]
+    Gpu(#[from] gpukit::Error),
+    #[error("memory: {0}")]
+    Memory(#[from] mem::Error),
+    #[error("comm: {0}")]
+    Comm(#[from] engine_comm::Error),
+}
+
 use codegen::Precision;
 use engine_comm::Pinning;
 use engine_settings::Backend;
 use engine_settings::Settings;
-use lower::{Error, Plan};
+use lower::Plan;
 use std::sync::Arc;
 
 /// How `backend`'s tiles round.

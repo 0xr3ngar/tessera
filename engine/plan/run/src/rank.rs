@@ -1,11 +1,12 @@
 //! One process's rank of a plan, over a transport.
 
+use crate::Error;
 use crate::Run;
 use crate::open;
 use engine_comm::reduce::{CUDA, ENTRY};
 use engine_comm::{Reduce, Transport, summed};
 use engine_settings::Settings;
-use lower::{Arg, Error, Plan, Shape, Step, Weight};
+use lower::{Arg, Plan, Shape, Step, Weight};
 use mem::{Tensor, View};
 
 /// One rank: its runner and its way to the others.
@@ -28,7 +29,7 @@ impl<T: Transport> Rank<T> {
                 transport.rank(),
                 transport.ranks()
             );
-            return Err(Error::Unsupported(what));
+            return Err(lower::Error::Unsupported(what).into());
         }
         let runner = open(plan, settings)?;
         let mut transport = transport;
@@ -53,7 +54,7 @@ impl<T: Transport> Rank<T> {
         let r = self.reduce.as_mut().expect("a device");
         let n = step.write.len;
         if 16 + 4 * n > r.capacity {
-            return Err(Error::Size(format!("a sum of {n} floats")));
+            return Err(lower::Error::Size(format!("a sum of {n} floats")).into());
         }
         let seq = r.round();
         let args = [

@@ -1,6 +1,7 @@
 //! Buffers a runner keeps across plans.
 
-use lower::{Error, Plan, Slot};
+use crate::Error;
+use lower::{Plan, Slot};
 use mem::{Buffer, View, ViewMut};
 use std::collections::HashMap;
 

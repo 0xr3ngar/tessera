@@ -1264,7 +1264,6 @@ version = "0.1.0"
 dependencies = [
  "codegen",
  "derive_more",
- "engine-comm",
  "engine-settings",
  "gpukit",
  "graph",
@@ -1771,6 +1770,7 @@ dependencies = [
  "lower",
  "mem",
  "rayon",
+ "thiserror",
 ]
 
 [[package]]

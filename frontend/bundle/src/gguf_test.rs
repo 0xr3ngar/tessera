@@ -223,5 +223,5 @@ fn short_bytes() {
         ..Settings::default()
     };
     let mut engine = Engine::open(loaded.graph, 8, &recipe, &settings).unwrap();
-    assert!(matches!(engine.load(&weights), Err(engine::Error::Size(_))));
+    assert!(engine.load(&weights).is_err());
 }

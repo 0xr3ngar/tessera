@@ -23,10 +23,11 @@ pub use engine_comm as comm;
 pub use engine_settings::Backend;
 pub use graph::{Bf16, DimExpr, E4M3, F16, Graph, PathSeg, Shape};
 pub use interp::{Tensor, bind};
-pub use lower::{Error, Pick, Pins, Recipe, Settings, Weight, form, gpu};
+pub use lower::{Pick, Pins, Recipe, Settings, Weight, form, gpu};
 pub use mem::form as storage;
 pub use mem::{block, trellis};
 pub use models::{Stack, decoder, eg2, mla, tagger};
+pub use run::Error;
 pub use trace::{Linear, Norm};
 
 /// Tokens to continue, and when to stop.
@@ -125,7 +126,9 @@ impl Engine {
         let plan = plans.lower(&graph, 0, &sizes, &device)?;
         let mut runner = open(plan, settings)?;
         runner.launching(recipe.launch);
-        let device = Device::stored(runner.platform(), settings)?.with(recipe);
+        let device = Device::stored(runner.platform(), settings)
+            .map_err(lower::Error::from)?
+            .with(recipe);
         Ok(Self {
             graph,
             runner,
@@ -161,13 +164,13 @@ impl Engine {
     /// One launch of `rows`: the likeliest token after each.
     pub fn step(&mut self, rows: &[Row]) -> Result<Vec<u32>, Error> {
         if rows.is_empty() {
-            return Err(Error::Size("the rows".into()));
+            return Err(lower::Error::Size("the rows".into()).into());
         }
         if rows
             .iter()
             .any(|r| r.slot as usize >= self.slots || r.position as usize >= self.context)
         {
-            return Err(Error::Size("a row's slot or position".into()));
+            return Err(lower::Error::Size("a row's slot or position".into()).into());
         }
         let (sizes, feeds) = launch_of(rows, self.slots);
         let (plan, bound) =

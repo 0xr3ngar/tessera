@@ -3,10 +3,10 @@
 use codegen::prelude::*;
 use lower::form::U32_FORM;
 use lower::{
-    Arg, Cluster, DType, Error, Kernel, KernelRef, Launch, Link, Plan, Settings, Shape, Slot,
-    Source, Step, Tensor, Zone, ZoneKind,
+    Arg, Cluster, DType, Kernel, KernelRef, Launch, Link, Plan, Settings, Shape, Slot, Source,
+    Step, Tensor, Zone, ZoneKind,
 };
-use run::{Run, open};
+use run::{Error, Run, open};
 use sim::{Fit, Tag};
 use std::time::Instant;
 

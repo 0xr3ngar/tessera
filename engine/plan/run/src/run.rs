@@ -1,11 +1,12 @@
 //! What every backend's plan runner does.
 
+use crate::Error;
 use crate::held::Held;
 use codegen::Precision;
 use gpukit::{Limits, Platform};
 use graph::DimName;
 use lower::form::Load;
-use lower::{Arg, Error, Launch, Launching, Plan, Shape, Share, Slot, Weight};
+use lower::{Arg, Launch, Launching, Plan, Shape, Share, Slot, Weight};
 use mem::{Tensor, View, copy};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -35,7 +36,7 @@ impl Base {
             return Ok(false);
         }
         if plan.zoned() {
-            return Err(Error::Unsupported("a plan over several zones".into()));
+            return Err(lower::Error::Unsupported("a plan over several zones".into()).into());
         }
         Ok(true)
     }
@@ -43,7 +44,11 @@ impl Base {
     /// Each launch of a step, its runtime sizes filled in.
     pub(crate) fn launches(&self, step: usize) -> Result<Vec<Launch>, Error> {
         let size = |name| self.bound.get(&name).copied();
-        let bound = |l: &Launch| l.clone().bound(&size).ok_or(Error::Unbound);
+        let bound = |l: &Launch| {
+            l.clone()
+                .bound(&size)
+                .ok_or(Error::from(lower::Error::Unbound))
+        };
         let unbound = self.launches[step].get_or_init(|| self.plan.steps[step].launches());
         unbound.iter().map(bound).collect()
     }
@@ -88,7 +93,7 @@ pub trait Run {
         _args: &[Arg],
         _shape: Shape,
     ) -> Result<(), Error> {
-        Err(Error::Unsupported("a fixed kernel on this runner".into()))
+        Err(lower::Error::Unsupported("a fixed kernel on this runner".into()).into())
     }
     /// How to launch from now on, where the device can.
     fn launching(&mut self, _: Launching) {}
@@ -139,7 +144,9 @@ pub trait Run {
         let bytes = part.as_deref().unwrap_or(bytes);
         for slot in slots {
             if form.bytes(slot.len) != bytes.len() {
-                return Err(Error::Size(format!("weight {weight} as {}", form.name())));
+                return Err(
+                    lower::Error::Size(format!("weight {weight} as {}", form.name())).into(),
+                );
             }
             if slot.form.name() == form.name() {
                 self.held_mut().upload(slot, bytes)?;
@@ -159,10 +166,9 @@ pub trait Run {
             .collect();
         for slot in slots {
             if slot.form.bytes(slot.len) != bytes.len() {
-                return Err(Error::Size(format!(
-                    "weight {weight} as {}",
-                    slot.form.name()
-                )));
+                return Err(
+                    lower::Error::Size(format!("weight {weight} as {}", slot.form.name())).into(),
+                );
             }
             self.held_mut().upload(slot, bytes)?;
         }
@@ -203,7 +209,7 @@ pub trait Run {
             .collect();
         for slot in slots {
             if slot.len != data.len() {
-                return Err(Error::Size(format!("weight {weight}")));
+                return Err(lower::Error::Size(format!("weight {weight}")).into());
             }
             self.write(slot, data.clone())?;
         }
@@ -213,11 +219,11 @@ pub trait Run {
     fn feed(&mut self, inputs: &[View]) -> Result<(), Error> {
         let slots = self.plan().inputs.clone();
         if inputs.len() != slots.len() {
-            return Err(Error::Size("the input list".into()));
+            return Err(lower::Error::Size("the input list".into()).into());
         }
         for (at, (slot, input)) in slots.into_iter().zip(inputs).enumerate() {
             if input.len() != slot.len || input.dtype() != slot.form.dtype() {
-                return Err(Error::Size(format!("input {at}")));
+                return Err(lower::Error::Size(format!("input {at}")).into());
             }
             self.write(slot, input.clone())?;
         }
@@ -267,7 +273,7 @@ fn unpacked<R: Run + ?Sized>(
                 form.name(),
                 share.axis
             );
-            return Err(Error::Unsupported(what));
+            return Err(lower::Error::Unsupported(what).into());
         }
         r.write(slot, part.clone())?;
     }

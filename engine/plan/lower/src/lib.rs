@@ -82,8 +82,6 @@ pub enum Error {
     /// A dimension has no size for this launch.
     #[error("{0} has no size in this launch")]
     Size(String),
-    #[error("gpu: {0}")]
-    Gpu(#[from] gpukit::Error),
     /// A view did not fit its buffer or its use.
     #[error("memory: {0}")]
     Memory(#[from] mem::Error),
@@ -93,7 +91,4 @@ pub enum Error {
     /// A stored device file could not be read.
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
-    /// The ranks lost touch.
-    #[error("comm: {0}")]
-    Comm(#[from] engine_comm::Error),
 }

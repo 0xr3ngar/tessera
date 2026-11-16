@@ -131,7 +131,10 @@ fn cheap_links_place_work() {
     }
     let cost = device.cost(&plan);
     assert!(cost.seconds.is_finite() && cost.seconds > 0.0);
-    assert!(matches!(open(plan, &host()), Err(Error::Unsupported(_))));
+    assert!(matches!(
+        open(plan, &host()),
+        Err(run::Error::Lower(Error::Unsupported(_)))
+    ));
 }
 
 #[test]

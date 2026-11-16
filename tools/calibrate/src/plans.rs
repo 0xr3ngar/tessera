@@ -5,9 +5,10 @@ use engine::{Engine, Request};
 use graph::DimName::{self, Context, Rows, Segments, Seqs};
 use graph::Graph;
 use lower::form::BF16_FORM;
-use lower::{Device, Error, Pins, Plan, Recipe, Settings, Tensor, View, Weight, lower, select};
+use lower::{Device, Pins, Plan, Recipe, Settings, Tensor, View, Weight, lower, select};
 use models::decoder::Swiglu;
 use models::{decoder, eg2};
+use run::Error;
 use run::{Run, open};
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -94,7 +95,7 @@ impl<'a> Bench<'a> {
         for (at, w) in weights(&s.graph, noise).iter().enumerate() {
             runner.load(at as u32, w.view())?;
         }
-        let device = Device::stored(runner.platform(), settings)?;
+        let device = Device::stored(runner.platform(), settings).map_err(lower::Error::from)?;
         let device = device.pinned(s.pins.clone());
         Ok(Self {
             s,
@@ -109,7 +110,7 @@ impl<'a> Bench<'a> {
         let g = &self.s.graph;
         let ports = g.entries[0].inputs.iter();
         let fed = ports.map(|p| fill(g, &p.ty, at, noise));
-        fed.map(|t| t.ok_or_else(|| Error::Size("an input".into())))
+        fed.map(|t| t.ok_or_else(|| Error::from(lower::Error::Size("an input".into()))))
             .collect()
     }
 
@@ -154,7 +155,7 @@ impl<'a> Bench<'a> {
         let (learned, all) = (self.learned, self.device.samples());
         println!("  timed {learned} launches; {all} samples known");
         if learned > 0 {
-            self.device.save(&file)?;
+            self.device.save(&file).map_err(lower::Error::from)?;
             println!("  stored in {}", file.display());
         }
         Ok(())
