@@ -1,7 +1,7 @@
 //! The HIP runtime behind the shared context.
 
 use std::cell::Cell;
-use std::ffi::{CStr, c_char, c_int};
+use std::ffi::c_int;
 use std::sync::OnceLock;
 
 use super::hip::{self, Runtime};
@@ -30,28 +30,11 @@ impl Context {
     pub fn new(config: ContextConfig) -> Result<Self, Error> {
         let runtime = hip::runtime()?;
         runtime.check(unsafe { (runtime.hip_init)(0) }, "hipInit")?;
-
-        let mut count: c_int = 0;
-        runtime.check(
-            unsafe { (runtime.hip_get_device_count)(&mut count) },
-            "hipGetDeviceCount",
-        )?;
-        if config.device_ordinal >= count as usize {
-            return Err(Error::Rocm(format!(
-                "device ordinal {} out of range ({count} visible HIP devices)",
-                config.device_ordinal
-            )));
-        }
-        let device = config.device_ordinal as c_int;
-
-        let mut name_buf = [0 as c_char; 256];
-        runtime.check(
-            unsafe { (runtime.hip_device_get_name)(name_buf.as_mut_ptr(), 256, device) },
-            "hipDeviceGetName",
-        )?;
-        let mut name = unsafe { CStr::from_ptr(name_buf.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
+        let (count, ordinal) = (runtime.hip_get_device_count, config.device_ordinal);
+        runtime.visible(count, "hipGetDeviceCount", ordinal, "HIP")?;
+        let device = ordinal as c_int;
+        let get_name = runtime.hip_device_get_name;
+        let mut name = runtime.device_name(get_name, "hipDeviceGetName", device)?;
         // APU GPU agents often report an empty marketing name.
         if name.is_empty() {
             name = format!("HIP device {device}");
@@ -68,13 +51,10 @@ impl Context {
 
     /// One `hipDeviceGetAttribute`.
     fn attr(&self, which: c_int) -> Result<i32, Error> {
-        let mut v: c_int = 0;
-        let r = self.runtime();
-        r.check(
-            unsafe { (r.hip_device_get_attribute)(&mut v, which, self.device()) },
-            "hipDeviceGetAttribute",
-        )?;
-        Ok(v)
+        let (r, device) = (self.runtime(), self.device());
+        r.int("hipDeviceGetAttribute", |v| unsafe {
+            (r.hip_device_get_attribute)(v, which, device)
+        })
     }
 
     /// The device as asked, with its row. Zero when unasked.

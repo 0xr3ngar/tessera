@@ -2,7 +2,7 @@
 
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::ffi::{CStr, CString, c_int, c_void};
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::LocalKey;
 
@@ -29,6 +29,31 @@ pub type LaunchFn = unsafe extern "C" fn(
     *mut Handle,
     *mut Handle,
 ) -> c_int;
+
+/// Other entry point types CUDA and HIP share.
+pub(crate) mod entry {
+    use super::Handle;
+    use std::ffi::{c_char, c_int, c_void};
+
+    pub(crate) type Init = unsafe extern "C" fn(u32) -> c_int;
+    /// Writes one int, such as a count or version.
+    pub(crate) type Int = unsafe extern "C" fn(*mut c_int) -> c_int;
+    pub(crate) type Name = unsafe extern "C" fn(*mut c_char, c_int, c_int) -> c_int;
+    pub(crate) type Attribute = unsafe extern "C" fn(*mut c_int, c_int, c_int) -> c_int;
+    pub(crate) type Load = unsafe extern "C" fn(*mut Handle, *const c_void) -> c_int;
+    pub(crate) type Function = unsafe extern "C" fn(*mut Handle, Handle, *const c_char) -> c_int;
+    /// Unloads, destroys or synchronizes one handle.
+    pub(crate) type OnHandle = unsafe extern "C" fn(Handle) -> c_int;
+    pub(crate) type Alloc = unsafe extern "C" fn(*mut u64, usize) -> c_int;
+    pub(crate) type Free = unsafe extern "C" fn(u64) -> c_int;
+    pub(crate) type HostAlloc = unsafe extern "C" fn(*mut *mut c_void, usize, u32) -> c_int;
+    pub(crate) type HostMap = unsafe extern "C" fn(*mut u64, *mut c_void, u32) -> c_int;
+    pub(crate) type HostFree = unsafe extern "C" fn(*mut c_void) -> c_int;
+    pub(crate) type Stream = unsafe extern "C" fn(*mut Handle, u32) -> c_int;
+    pub(crate) type Capture = unsafe extern "C" fn(Handle, c_int) -> c_int;
+    pub(crate) type EndCapture = unsafe extern "C" fn(Handle, *mut Handle) -> c_int;
+    pub(crate) type Replay = unsafe extern "C" fn(Handle, Handle) -> c_int;
+}
 
 /// What a handle to free is.
 pub enum Kind {
@@ -126,6 +151,32 @@ pub trait Api: Sync + Sized + 'static {
         let mut handle = std::ptr::null_mut();
         let code = f(&mut handle);
         self.check(code, what).map(|_| handle)
+    }
+
+    /// Calls `f` with an int to fill, then checks it.
+    fn int(&self, what: &str, f: impl FnOnce(&mut c_int) -> c_int) -> Result<c_int, Error> {
+        let mut value = 0;
+        let code = f(&mut value);
+        self.check(code, what).map(|_| value)
+    }
+
+    /// Fails unless `ordinal` is below the count `f` reports.
+    fn visible(&self, f: entry::Int, what: &str, ordinal: usize, kind: &str) -> Result<(), Error> {
+        let count = self.int(what, |c| unsafe { f(c) })?;
+        if ordinal < count as usize {
+            return Ok(());
+        }
+        Err(Self::error(format!(
+            "device ordinal {ordinal} out of range ({count} visible {kind} devices)"
+        )))
+    }
+
+    /// The name `f` reports for `device`.
+    fn device_name(&self, f: entry::Name, what: &str, device: c_int) -> Result<String, Error> {
+        let mut buf = [0 as c_char; 256];
+        self.check(unsafe { f(buf.as_mut_ptr(), 256, device) }, what)?;
+        let name = unsafe { CStr::from_ptr(buf.as_ptr()) };
+        Ok(name.to_string_lossy().into_owned())
     }
 }
 

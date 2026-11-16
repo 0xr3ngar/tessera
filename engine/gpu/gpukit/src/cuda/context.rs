@@ -1,7 +1,7 @@
 //! The CUDA driver behind the shared context.
 
 use std::cell::Cell;
-use std::ffi::{CStr, c_char, c_int};
+use std::ffi::c_int;
 
 use super::driver::{
     self, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
@@ -10,7 +10,7 @@ use super::driver::{
     CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK, CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE,
     CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, CU_DEVICE_ATTRIBUTE_WARP_SIZE,
     CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION, CU_STREAM_CAPTURE_MODE_RELAXED,
-    CU_STREAM_NON_BLOCKING, CUcontext, CUdevice, Driver, LaunchAttribute, LaunchConfig,
+    CU_STREAM_NON_BLOCKING, CUcontext, Driver, LaunchAttribute, LaunchConfig,
 };
 use crate::api::{self, Api, Call, Handle};
 use crate::backend::Backend;
@@ -33,84 +33,48 @@ pub struct Own {
     platform: Platform,
 }
 
-/// The driver's version, `13.0` for 13000.
-fn driver_version(driver: &Driver) -> Result<String, Error> {
-    let mut v: c_int = 0;
-    driver.check(
-        unsafe { (driver.cu_driver_get_version)(&mut v) },
-        "cuDriverGetVersion",
-    )?;
-    Ok(format!("{}.{}", v / 1000, (v % 1000) / 10))
-}
-
-fn device_attr(driver: &Driver, device: CUdevice, attr: c_int) -> Result<i32, Error> {
-    let mut value: c_int = 0;
-    driver.check(
-        unsafe { (driver.cu_device_get_attribute)(&mut value, attr, device) },
-        "cuDeviceGetAttribute",
-    )?;
-    Ok(value)
-}
-
 impl Context {
     /// Initialize the driver and open a context on one device.
     pub fn new(config: ContextConfig) -> Result<Self, Error> {
         let driver = driver::driver()?;
         driver.check(unsafe { (driver.cu_init)(0) }, "cuInit")?;
-
-        let mut count: c_int = 0;
-        driver.check(
-            unsafe { (driver.cu_device_get_count)(&mut count) },
-            "cuDeviceGetCount",
-        )?;
-        if config.device_ordinal >= count as usize {
-            return Err(Error::Cuda(format!(
-                "device ordinal {} out of range ({count} visible CUDA devices)",
-                config.device_ordinal
-            )));
-        }
-
-        let mut device: CUdevice = 0;
-        driver.check(
-            unsafe { (driver.cu_device_get)(&mut device, config.device_ordinal as c_int) },
-            "cuDeviceGet",
-        )?;
+        let (count, ordinal) = (driver.cu_device_get_count, config.device_ordinal);
+        driver.visible(count, "cuDeviceGetCount", ordinal, "CUDA")?;
+        let device = driver.int("cuDeviceGet", |d| unsafe {
+            (driver.cu_device_get)(d, ordinal as c_int)
+        })?;
 
         let mut raw: CUcontext = std::ptr::null_mut();
         driver.check(
             unsafe { (driver.cu_ctx_create)(&mut raw, 0, device) },
             "cuCtxCreate",
         )?;
+        let get_name = driver.cu_device_get_name;
+        let name = driver.device_name(get_name, "cuDeviceGetName", device)?;
 
-        let mut name_buf = [0 as c_char; 256];
-        driver.check(
-            unsafe { (driver.cu_device_get_name)(name_buf.as_mut_ptr(), 256, device) },
-            "cuDeviceGetName",
-        )?;
-        let name = unsafe { CStr::from_ptr(name_buf.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
-
-        let major = device_attr(driver, device, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR)?;
-        let minor = device_attr(driver, device, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR)?;
+        let attr = |a| {
+            driver.int("cuDeviceGetAttribute", |v| unsafe {
+                (driver.cu_device_get_attribute)(v, a, device)
+            })
+        };
+        let major = attr(CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR)?;
+        let minor = attr(CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR)?;
         let limits = Limits {
-            lanes: device_attr(driver, device, CU_DEVICE_ATTRIBUTE_WARP_SIZE)? as usize,
-            group_bytes: device_attr(
-                driver,
-                device,
-                CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK,
-            )? as usize,
-            group_threads: device_attr(driver, device, CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK)?
-                as usize,
+            lanes: attr(CU_DEVICE_ATTRIBUTE_WARP_SIZE)? as usize,
+            group_bytes: attr(CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK)? as usize,
+            group_threads: attr(CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK)? as usize,
             compiler: true,
             pdl: false,
         };
-        let attr = |a| device_attr(driver, device, a);
+        let version = driver.int("cuDriverGetVersion", |v| unsafe {
+            (driver.cu_driver_get_version)(v)
+        });
         let platform = Platform::new(Asked {
             backend: "cuda",
             arch: format!("sm_{major}{minor}"),
             name: name.clone(),
-            driver: driver_version(driver)?,
+            // 13000 is `13.0`.
+            driver: version.map(|v| format!("{}.{}", v / 1000, (v % 1000) / 10))?,
             limits,
             units: attr(CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)? as usize,
             bandwidth: platform::bandwidth(
