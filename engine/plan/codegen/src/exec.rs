@@ -1,6 +1,6 @@
 //! Runs a body on the host, each group in lockstep.
 
-use crate::form::Form;
+use crate::form::Load;
 use crate::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt, Ty};
 use crate::kept::Layout;
 use crate::lockstep::products;
@@ -15,7 +15,7 @@ pub enum ArgVal {
     Buf {
         at: usize,
         skip: usize,
-        form: &'static dyn Form,
+        form: &'static dyn Load,
     },
     U32(u32),
     F32(f32),
@@ -91,7 +91,7 @@ impl Val {
 struct Arg {
     buffer: usize,
     skip: usize,
-    form: &'static dyn Form,
+    form: &'static dyn Load,
 }
 
 /// One group's state while it runs.

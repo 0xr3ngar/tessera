@@ -1,7 +1,7 @@
 //! Writes the chosen covers as ops over values.
 
 use crate::Error;
-use crate::form::{self, Form};
+use crate::form::{self, Load};
 use crate::kernel::{Kernel, KernelRef};
 use crate::kernels::{Move, Scatter, Widen};
 use crate::rule::Draft;
@@ -29,7 +29,7 @@ impl Emit {
         len: usize,
         home: Home,
         zone: u32,
-        form: &'static dyn Form,
+        form: &'static dyn Load,
     ) -> Val {
         self.out.values.push(Value {
             len,
@@ -99,7 +99,7 @@ impl Emit {
         reads: Vec<Val>,
         covers: &[NodeId],
         zone: u32,
-        form: &'static dyn Form,
+        form: &'static dyn Load,
     ) -> Val {
         let mut taken = Vec::with_capacity(reads.len());
         for (i, v) in reads.into_iter().enumerate() {

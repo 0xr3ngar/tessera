@@ -7,7 +7,13 @@ use lower::{Draft, Kernel, Read, T, Tree};
 
 /// One thread per position, head and pair, rotating in place.
 #[kernel]
-fn rope(mut x: BufMut<F32>, freqs: Buf<F32>, positions: u32, heads: u32, width: u32) {
+fn rope<const ADJACENT: bool>(
+    mut x: BufMut<F32>,
+    freqs: Buf<F32>,
+    positions: u32,
+    heads: u32,
+    width: u32,
+) {
     let pairs = width / 2;
     if gid() >= positions * heads * pairs {
         return;
@@ -18,10 +24,13 @@ fn rope(mut x: BufMut<F32>, freqs: Buf<F32>, positions: u32, heads: u32, width: 
     let at = ((s * heads + h) * width) as u64;
     let c = freqs[(s * width + 2 * pair) as u64];
     let sn = freqs[(s * width + 2 * pair + 1) as u64];
-    let x0 = x[at + pair as u64];
-    let x1 = x[at + (pairs + pair) as u64];
-    x[at + pair as u64] = x0 * c - x1 * sn;
-    x[at + (pairs + pair) as u64] = x0 * sn + x1 * c;
+    // Pairs lie side by side, or one in each half.
+    let a = if ADJACENT { 2 * pair } else { pair };
+    let b = if ADJACENT { a + 1 } else { pairs + pair };
+    let x0 = x[at + a as u64];
+    let x1 = x[at + b as u64];
+    x[at + a as u64] = x0 * c - x1 * sn;
+    x[at + b as u64] = x0 * sn + x1 * c;
 }
 
 /// One thread per position and pair: its cosine and sine.
@@ -48,13 +57,23 @@ pub(crate) struct Angles {
     pub theta: f32,
 }
 
-/// Rotates halves in place, by the second input's angles.
+/// Rotates pairs in place, by the second input's angles.
 #[derive(Clone, Copy, Debug, Kernel)]
-#[launch(rope, threads = self.positions * self.heads * self.width / 2, overwrites)]
+#[launch(
+    rope,
+    variant = self.adjacent,
+    name = match self.adjacent {
+        true => "rope_adjacent",
+        false => "rope",
+    },
+    threads = self.positions * self.heads * self.width / 2,
+    overwrites,
+)]
 pub struct Rope {
     pub positions: usize,
     pub heads: usize,
     pub width: usize,
+    pub adjacent: bool,
 }
 
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
@@ -68,9 +87,6 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     else {
         return None;
     };
-    if pairs != Pairs::Halves {
-        return None;
-    }
     let angles = Angles {
         count: positions,
         width,
@@ -80,6 +96,7 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
         positions,
         heads: len / (positions * width),
         width,
+        adjacent: pairs == Pairs::Adjacent,
     };
     Some(vec![
         Draft::new(angles, [at], positions * width),

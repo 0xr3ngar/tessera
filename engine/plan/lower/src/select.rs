@@ -8,7 +8,7 @@ use emit::Emit;
 
 use crate::Error;
 use crate::cost::Device;
-use crate::form::{self, Form};
+use crate::form::{self, Load};
 use crate::kernel::KernelRef;
 use crate::plan::Share;
 use crate::rule::{Read, linked, rules};
@@ -40,7 +40,7 @@ pub struct Value {
     pub home: Home,
     /// The zone it lies in.
     pub zone: u32,
-    pub form: &'static dyn Form,
+    pub form: &'static dyn Load,
     /// A split weight's part on this rank.
     pub share: Option<Share>,
 }

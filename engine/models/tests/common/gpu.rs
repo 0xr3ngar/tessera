@@ -2,7 +2,8 @@
 
 use super::{Spec, Tolerance, interpreted, loaded, runs};
 use interp::Tensor;
-use lower::{Cache, Device, Form, Pins, Settings, View, lower};
+use lower::form::Load;
+use lower::{Cache, Device, Pins, Settings, View, lower};
 use run::Run;
 use std::sync::MutexGuard;
 use testkit::{argmax, max_abs_diff};
@@ -18,7 +19,7 @@ struct Fixture {
     /// How closely `want` must be matched.
     tolerance: &'static Tolerance,
     /// The form plans keep the checkpoint in.
-    form: &'static dyn Form,
+    form: &'static dyn Load,
     /// The reference's turn, held until the runner closes.
     _turn: MutexGuard<'static, ()>,
 }

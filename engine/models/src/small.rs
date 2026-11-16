@@ -1,6 +1,7 @@
 //! Small configurations: two layers, wide enough for every block form.
 
 use crate::decoder::{Config, Scales};
+use crate::mla::{self, Index};
 use crate::shared::Stack;
 use crate::{eg2, nanogpt, tagger};
 
@@ -83,5 +84,38 @@ pub fn nanogpt() -> nanogpt::Config {
     nanogpt::Config {
         stack: Stack::sized([8, 8, 2, 2, 4, 32], 4, 8),
         eps: 1e-5,
+    }
+}
+
+/// One dense layer, two routed. The middle reuses picked keys.
+pub fn glm53() -> mla::Config {
+    let index = Index {
+        heads: 2,
+        dim: 32,
+        keep: 4,
+        every: 2,
+    };
+    mla::Config {
+        index: Some(index),
+        ..deepseek()
+    }
+}
+
+/// Three layers of low-rank attention. Weight rows hold whole blocks.
+pub fn deepseek() -> mla::Config {
+    mla::Config {
+        stack: Stack::sized([64, 64, 3, 2, 32, 32], 4, 16),
+        dense_layers: 1,
+        nope: 16,
+        rope: 16,
+        rope_theta: 1e4,
+        q_latent: 32,
+        latent: 32,
+        dense_ffn: 64,
+        experts: 32,
+        top_k: 2,
+        route_scale: 2.5,
+        index: None,
+        eps: 1e-6,
     }
 }

@@ -69,6 +69,32 @@ impl Pattern for Attend {
         if a.picked {
             return None;
         }
+        Self::whole(tree, at)
+    }
+}
+
+impl Attend {
+    /// Attention over listed keys, and the node that lists them.
+    pub fn listed(tree: &Tree, at: T) -> Option<(Self, T)> {
+        let node = tree.node(at);
+        let Term::Op(Op::Attend(a)) = &node.term else {
+            return None;
+        };
+        let site = Self::whole(tree, at).filter(|_| a.picked)?;
+        Some((site, node.args[3]))
+    }
+
+    /// Whole sequences, keys and queries ending together.
+    fn whole(tree: &Tree, at: T) -> Option<Self> {
+        let node = tree.node(at);
+        let Term::Op(Op::Attend(a)) = &node.term else {
+            return None;
+        };
+        let wide = |t: T| &tree.node(t).shape;
+        let (q, k, v) = (node.args[0], node.args[1], node.args[2]);
+        if wide(v).last() != wide(q).last() {
+            return None;
+        }
         let (&[seqs, queries, heads, width], &[_, _, kv_heads, _]) = (&wide(q)[..], &wide(k)[..])
         else {
             return None;
@@ -99,9 +125,7 @@ impl Pattern for Attend {
             rows: None,
         })
     }
-}
 
-impl Attend {
     /// Elements the output holds.
     pub fn out(&self) -> usize {
         self.sizes.queries * self.sizes.heads * self.sizes.width

@@ -19,12 +19,13 @@ pub use model::Model;
 pub use schedule::{Batch, Fair, Policy, Seq, Sink};
 
 // The front end reaches the engine crates only through these.
-pub use codegen::{block, trellis};
 pub use engine_comm as comm;
 pub use engine_settings::Backend;
 pub use graph::{Bf16, DimExpr, E4M3, F16, Graph, PathSeg, Shape};
 pub use interp::{Tensor, bind};
 pub use lower::{Error, Pick, Pins, Recipe, Settings, Weight, form, gpu};
+pub use mem::form as storage;
+pub use mem::{block, trellis};
 pub use models::{Stack, decoder, eg2, tagger};
 pub use trace::{Linear, Norm};
 

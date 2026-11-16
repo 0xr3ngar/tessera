@@ -5,7 +5,7 @@ use graph::DimName::{self, *};
 use lower::{Device, Error, Settings, Step, Tensor, View, lower};
 use run::{Run, open};
 use testkit::Noise;
-use testkit::graphs::{attention, linear, rotation, routed, rows, table};
+use testkit::graphs::{attention, indexed, linear, rotation, routed, rows, table};
 use trace::{Dim, Graph, TensorType};
 
 /// A timed plan holds at most this many elements.
@@ -151,6 +151,11 @@ impl Grid {
                 |[queries, keys]: &[u64; 2]| vec![(Seqs, 1), (Rows, *queries), (Context, *keys)];
             let sizes = self.spans.iter().map(span).collect();
             let g = attention(&three, heads);
+            cases.push(Case { g, sizes });
+            // Picked keys: queries and keys alike, two kept.
+            let span = |[_, keys]: &[u64; 2]| vec![(Seqs, 1), (Context, *keys)];
+            let sizes = self.spans.iter().map(span).collect();
+            let g = indexed(&three, [heads[0], heads[2], 2]);
             cases.push(Case { g, sizes });
         }
         cases

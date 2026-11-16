@@ -1,5 +1,5 @@
 use super::{Chain, Pattern};
-use crate::form::Form;
+use crate::form::Load;
 use crate::kernels::MapStage;
 use crate::rule::Read;
 use crate::tree::{T, Term, Tree};
@@ -30,7 +30,7 @@ pub struct Matmul {
     pub m: usize,
     pub n: usize,
     pub k: usize,
-    pub form: &'static dyn Form,
+    pub form: &'static dyn Load,
     pub picked: Option<Picked>,
 }
 

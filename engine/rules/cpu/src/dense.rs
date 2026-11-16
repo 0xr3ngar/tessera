@@ -3,9 +3,10 @@
 use crate::{GUESS, source};
 use codegen::ir::{Body, Expr, Intrinsic, Ty};
 use codegen::prelude::*;
+use lower::form::Load as Stored;
 use lower::kernels::finish;
 use lower::sites::{After, Picked as Pick};
-use lower::{Draft, Form as Stored, Kernel, Launch, Shape, Step, T, Tree, ZoneKind, sites};
+use lower::{Draft, Kernel, Launch, Shape, Step, T, Tree, ZoneKind, sites};
 
 /// One thread per output: its row dotted with its column.
 #[kernel]

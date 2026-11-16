@@ -261,6 +261,7 @@ version = "0.1.0"
 dependencies = [
  "graph",
  "kernel-macro",
+ "mem",
  "scattered-collect",
  "sim",
 ]
@@ -638,7 +639,6 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 name = "engine"
 version = "0.1.0"
 dependencies = [
- "codegen",
  "cpu",
  "engine-comm",
  "engine-settings",
@@ -647,6 +647,7 @@ dependencies = [
  "kernels",
  "linear",
  "lower",
+ "mem",
  "models",
  "run",
  "serde",
@@ -1322,6 +1323,7 @@ name = "mem"
 version = "0.1.0"
 dependencies = [
  "graph",
+ "scattered-collect",
  "thiserror",
 ]
 

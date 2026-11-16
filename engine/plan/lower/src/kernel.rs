@@ -1,7 +1,6 @@
 //! The kernel trait: what a plan step launches.
 
 use crate::abi::{Launch, Source};
-use crate::form::Form;
 use crate::plan::Step;
 use gpukit::Platform;
 use graph::Order;
@@ -52,7 +51,7 @@ pub trait Kernel: fmt::Debug + Send + Sync {
         ZoneKind::Gpu
     }
     /// Whether it reads input `input` stored as `form`.
-    fn accepts(&self, input: usize, form: &dyn Form) -> bool {
+    fn accepts(&self, input: usize, form: &dyn crate::form::Load) -> bool {
         let _ = input;
         !form.narrow()
     }

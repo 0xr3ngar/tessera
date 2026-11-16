@@ -61,7 +61,7 @@ fn wider(a: Ty, b: Ty) -> Ty {
     }
 }
 
-fn element(form: &dyn codegen::Form) -> Ty {
+fn element(form: &dyn codegen::Load) -> Ty {
     match form.dtype().is_float() {
         true => Ty::F32,
         false => Ty::U32,
@@ -69,7 +69,7 @@ fn element(form: &dyn codegen::Form) -> Ty {
 }
 
 /// The reader for one element of a form.
-fn reader(form: &dyn codegen::Form) -> Res<&'static str> {
+fn reader(form: &dyn codegen::Load) -> Res<&'static str> {
     Ok(match form.name() {
         "f32" => "rd_f32",
         "bf16" => "rd_bf16",

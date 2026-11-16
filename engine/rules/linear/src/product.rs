@@ -2,10 +2,11 @@
 
 use codegen::hash;
 use codegen::ir::{BinOp, Body, Expr, Stmt, Ty};
+use lower::form::Load as Stored;
 use lower::kernels::{add_operands, finish};
 use lower::sites;
 use lower::sites::{After, Picked};
-use lower::{Form as Stored, Launch, Read, Shape, Source, Step, T, Tree};
+use lower::{Launch, Read, Shape, Source, Step, T, Tree};
 use std::cell::RefCell;
 use std::collections::HashMap;
 

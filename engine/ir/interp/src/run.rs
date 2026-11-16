@@ -3,8 +3,8 @@
 use crate::cpu;
 use crate::tensor::Error;
 use graph::{
-    DType, DimExpr, DimName, Graph, NodeId, Numerics, Op, Parts, PathSeg, Placement, Select, Shape,
-    Size, Stage, View,
+    DType, DimExpr, DimName, Graph, Mask, NodeId, Numerics, Op, Parts, PathSeg, Placement, Select,
+    Shape, Size, Stage, View,
 };
 use mem::Tensor;
 use std::borrow::Cow;
@@ -425,12 +425,11 @@ impl Context<'_> {
             Op::Input { .. } => Err(Error::Unsupported("another entry's input".into())),
             Op::Weight(i) => weight(&self.weights[*i as usize]),
             Op::Matmul => cpu::matmul(num, args[0], args[1]),
-            Op::Attend(a) if a.picked => lacks("attention over picked keys"),
             Op::Attend(a) if a.ragged => {
                 cpu::attend_rows(num, a, [args[0], args[1], args[2]], [args[3], args[4]])
             }
-            Op::Attend(a) => cpu::attend(num, a, [args[0], args[1], args[2]]),
-            Op::Mask(_) => lacks("masks"),
+            Op::Attend(a) => cpu::attend(num, a, [args[0], args[1], args[2]], args.get(3).copied()),
+            Op::Mask(mask) => masked(*mask, args[0]),
             Op::Row(row) => self.stages(num, &row.0, args),
             Op::Select(Select::Gather) => cpu::gather(args[0], args[1], self.first),
             Op::Select(Select::Take) => cpu::take(args[0], args[1]),
@@ -463,7 +462,8 @@ impl Context<'_> {
                 Ok(slice(x, *axis as usize, start, len))
             }
             View::Permute(order) => Ok(permute(x, order)),
-            View::Expand { .. } | View::Concat => lacks(&format!("{v:?}")),
+            View::Expand { axis, to } => Ok(expand(x, *axis as usize, self.sizes.expr(to)?)),
+            View::Concat => lacks("concat with one argument"),
         }
     }
 }
@@ -501,6 +501,33 @@ fn slice(x: &Tensor, a: usize, start: usize, len: usize) -> Tensor {
     let mut shape = x.shape.clone();
     shape[a] = len;
     x.pick(shape, at)
+}
+
+/// Size-one axis `a` repeated `to` times.
+fn expand(x: &Tensor, a: usize, to: usize) -> Tensor {
+    let inner: usize = x.shape[a + 1..].iter().product();
+    let outer: usize = x.shape[..a].iter().product();
+    let at = (0..outer).flat_map(move |o| (0..to).flat_map(move |_| o * inner..(o + 1) * inner));
+    let mut shape = x.shape.clone();
+    shape[a] = to;
+    x.pick(shape, at)
+}
+
+/// Scores over `[.., queries, keys]` a query cannot see become -inf.
+fn masked(mask: Mask, x: &Tensor) -> Result<Tensor, Error> {
+    let rank = x.shape.len();
+    let (queries, keys) = (x.shape[rank - 2], x.shape[rank - 1]);
+    let past = keys.saturating_sub(queries);
+    let mut out = x.floats()?.to_vec();
+    for (r, row) in out.chunks_mut(keys).enumerate() {
+        let (from, to) = cpu::seen(mask, past + r % queries, keys);
+        for (j, v) in row.iter_mut().enumerate() {
+            if !(from..to).contains(&j) {
+                *v = f32::NEG_INFINITY;
+            }
+        }
+    }
+    Ok(Tensor::f32(x.shape.clone(), out))
 }
 
 /// Each row of `a`, then the row of `b`.

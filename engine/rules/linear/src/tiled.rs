@@ -5,8 +5,9 @@ use codegen::form::F32_FORM;
 use codegen::ir::{BinOp, Body, Expr, Stmt};
 use codegen::prelude::*;
 use graph::Order;
+use lower::form::Load as Stored;
 use lower::kernels::finish;
-use lower::{Draft, Form as Stored, Kernel, Launch, Load, Needs, Shape, Step, T, Tree};
+use lower::{Draft, Kernel, Launch, Load, Needs, Shape, Step, T, Tree};
 
 /// How a block of the output is computed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

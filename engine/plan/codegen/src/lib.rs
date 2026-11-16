@@ -16,7 +16,7 @@ mod tile;
 pub mod trellis;
 
 pub use dialect::{Dialect, Text, float, hash};
-pub use form::Form;
+pub use form::Load;
 pub use kept::Layout as Kept;
 pub use kernel_macro::{helper, kernel};
 pub use numerics::{Precision, Terms, terms};

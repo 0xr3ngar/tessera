@@ -299,15 +299,11 @@ fn moe(m: &Model, c: &Config, w: &Moe, h: &Tensor) -> Tensor {
     let scores = h.matmul(&w.router).act(Act::Sigmoid);
     let ids = scores.add_vector(&w.router_bias).top_k(TopK);
     let gates = scores.take(&ids).unit_sum().scale(c.route_scale);
-    // One copy of each row per picked expert.
-    let slots = h
-        .reshape(rows([DimExpr::Const(1), Hidden.into()]))
-        .expand(2, TopK);
+    // One output row per pick, each on its own expert.
     let on = |set: &Linears, x: &Tensor| x.matmul_rows(&m.pick(set, &ids));
-    let inner = on(&w.gate, &slots).act(Act::Silu).mul(&on(&w.up, &slots));
-    let outs = on(&w.down, &inner).permute(&[0, 1, 3, 2]);
-    let gates = gates.reshape(rows([DimExpr::Const(1), TopK.into()]));
-    let routed = outs.matmul_rows(&gates).reshape([Seqs, Context, Hidden]);
+    let inner = on(&w.gate, h).act(Act::Silu).mul(&on(&w.up, h));
+    let picks = h.ty().rank() as u32 - 1;
+    let routed = on(&w.down, &inner).mix(picks, &gates);
     let s = &w.shared;
     routed.add(&swiglu(h, [&s.gate, &s.up, &s.down]))
 }
