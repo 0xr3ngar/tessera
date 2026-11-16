@@ -28,7 +28,8 @@ and tokens.
 <tr><td>&emsp;<a href="plan/run">run</a></td><td>Runs lowered plans on the host, Metal, CUDA or ROCm</td></tr>
 <tr><td>&emsp;<a href="plan/sim">sim</a></td><td>Analytic models of GPUs: what a launch should cost</td></tr>
 <tr><td colspan="2"><a href="rules"><b>rules/</b></a></td></tr>
-<tr><td>&emsp;<a href="rules/cpu">cpu</a></td><td>CPU kernels for matmuls and attention: short bodies over a dot primitive</td></tr>
+<tr><td>&emsp;<a href="rules/attention">attention</a></td><td>Attention kernels for the CPU and the GPU, registered as lowering rules</td></tr>
+<tr><td>&emsp;<a href="rules/cpu">cpu</a></td><td>CPU kernels for matmuls: short bodies over a dot primitive</td></tr>
 <tr><td>&emsp;<a href="rules/kernels">kernels</a></td><td>Kernels and the lowering rules that propose them</td></tr>
 <tr><td>&emsp;<a href="rules/linear">linear</a></td><td>Generated matmul kernels, registered as lowering rules</td></tr>
 <tr><td>&emsp;<a href="rules/rules">rules</a></td><td>Links every lowering rule crate</td></tr>

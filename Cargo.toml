@@ -45,6 +45,7 @@ kernel-macro = { path = "engine/plan/kernel-macro" }
 kernels = { path = "engine/rules/kernels" }
 cpu = { path = "engine/rules/cpu" }
 linear = { path = "engine/rules/linear" }
+attention = { path = "engine/rules/attention" }
 rules = { path = "engine/rules/rules" }
 lower = { path = "engine/plan/lower" }
 mem = { path = "engine/ir/mem" }

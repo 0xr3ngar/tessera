@@ -13,6 +13,7 @@ lower = { workspace = true }
 sim = { workspace = true }
 
 [dev-dependencies]
+attention = { workspace = true }
 interp = { workspace = true }
 run = { workspace = true }
 trace = { workspace = true }

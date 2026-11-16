@@ -5,6 +5,7 @@ pub mod plans;
 pub mod probe;
 
 // Linking the crates registers their rules.
+use attention as _;
 use kernels as _;
 use linear as _;
 

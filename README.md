@@ -50,7 +50,8 @@ tessera is not alpha or beta. It's an experiment right now and no numbers are av
 <tr><td>&emsp;&emsp;<a href="engine/plan/run">run</a></td><td>Runs lowered plans on the host, Metal, CUDA or ROCm</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/plan/sim">sim</a></td><td>Analytic models of GPUs: what a launch should cost</td></tr>
 <tr><td colspan="2">&emsp;<a href="engine/rules"><b>rules/</b></a></td></tr>
-<tr><td>&emsp;&emsp;<a href="engine/rules/cpu">cpu</a></td><td>CPU kernels for matmuls and attention: short bodies over a dot primitive</td></tr>
+<tr><td>&emsp;&emsp;<a href="engine/rules/attention">attention</a></td><td>Attention kernels for the CPU and the GPU, registered as lowering rules</td></tr>
+<tr><td>&emsp;&emsp;<a href="engine/rules/cpu">cpu</a></td><td>CPU kernels for matmuls: short bodies over a dot primitive</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/rules/kernels">kernels</a></td><td>Kernels and the lowering rules that propose them</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/rules/linear">linear</a></td><td>Generated matmul kernels, registered as lowering rules</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/rules/rules">rules</a></td><td>Links every lowering rule crate</td></tr>
