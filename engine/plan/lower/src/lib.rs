@@ -74,61 +74,26 @@ pub(crate) fn lower_upto(
     Ok(assign(&picked, &schedule(&picked)))
 }
 
-use std::fmt;
-
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// The graph uses something no rule covers yet.
+    #[error("no rule lowers {0}")]
     Unsupported(String),
     /// A dimension has no size for this launch.
+    #[error("{0} has no size in this launch")]
     Size(String),
-    Gpu(gpukit::Error),
+    #[error("gpu: {0}")]
+    Gpu(#[from] gpukit::Error),
     /// A view did not fit its buffer or its use.
-    Memory(mem::Error),
+    #[error("memory: {0}")]
+    Memory(#[from] mem::Error),
     /// A runtime dimension was never bound.
+    #[error("a runtime dimension has no value")]
     Unbound,
     /// A stored device file could not be read.
-    Io(std::io::Error),
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
     /// The ranks lost touch.
-    Comm(engine_comm::Error),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Unsupported(what) => write!(f, "no rule lowers {what}"),
-            Error::Size(what) => write!(f, "{what} has no size in this launch"),
-            Error::Gpu(e) => write!(f, "gpu: {e}"),
-            Error::Memory(e) => write!(f, "memory: {e}"),
-            Error::Unbound => write!(f, "a runtime dimension has no value"),
-            Error::Io(e) => write!(f, "io: {e}"),
-            Error::Comm(e) => write!(f, "comm: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<gpukit::Error> for Error {
-    fn from(e: gpukit::Error) -> Self {
-        Error::Gpu(e)
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Error::Io(e)
-    }
-}
-
-impl From<engine_comm::Error> for Error {
-    fn from(e: engine_comm::Error) -> Self {
-        Error::Comm(e)
-    }
-}
-
-impl From<mem::Error> for Error {
-    fn from(e: mem::Error) -> Self {
-        Error::Memory(e)
-    }
+    #[error("comm: {0}")]
+    Comm(#[from] engine_comm::Error),
 }

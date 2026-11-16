@@ -13,24 +13,15 @@ pub use view::{View, ViewMut, copy};
 
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum Error {
     /// A view and its use disagree on type or size.
+    #[error("mismatch: {0}")]
     Mismatch(String),
     /// The backend refused a copy.
+    #[error("device: {0}")]
     Device(String),
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Mismatch(m) => write!(f, "mismatch: {m}"),
-            Error::Device(m) => write!(f, "device: {m}"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 pub(crate) fn mismatch<T>(what: impl fmt::Display) -> Result<T, Error> {
     Err(Error::Mismatch(what.to_string()))

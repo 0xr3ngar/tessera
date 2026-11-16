@@ -7,6 +7,7 @@ publish.workspace = true
 description = "A Hugging Face model directory as graph, weights, tokenizer and template"
 
 [dependencies]
+thiserror = "2"
 engine = { workspace = true }
 checkpoint = { workspace = true }
 fancy-regex = "0.14"
