@@ -1,8 +1,8 @@
 use super::rotation_test::text;
-use crate::common::slices;
 use bundle::names::{repo, resolve};
 use models::Rotated;
 use models::eg2::{Config, program};
+use parity::slices;
 
 /// Each layer takes its rows of the stacked projection.
 #[test]

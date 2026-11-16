@@ -70,13 +70,3 @@ layers = [
     ["tools/"],
 ]
 
-# Dependencies that point up a layer today. Remove each when it is fixed.
-[[layer_allow]]
-from = "models"
-to = "bundle"
-reason = "model tests load bundles"
-
-[[layer_allow]]
-from = "models"
-to = "checkpoint"
-reason = "model tests read checkpoints"

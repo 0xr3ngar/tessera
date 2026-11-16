@@ -6,24 +6,7 @@ license.workspace = true
 publish.workspace = true
 description = "Model descriptions, traced into graphs"
 
-[features]
-default = []
-cuda = ["run/cuda"]
-rocm = ["run/rocm"]
-
 [dependencies]
 graph = { workspace = true }
 trace = { workspace = true }
 
-[dev-dependencies]
-serde_json = "1"
-bundle = { workspace = true }
-kernels = { workspace = true }
-checkpoint = { workspace = true }
-cpu = { workspace = true }
-interp = { workspace = true }
-lower = { workspace = true }
-linear = { workspace = true }
-run = { workspace = true }
-sim = { workspace = true }
-testkit = { workspace = true }

@@ -1,11 +1,11 @@
 //! EmbeddingGemma 2: the exlr8 release and the device.
 
 use super::{GOLDEN, release};
-use crate::common::{Case, interpreted, loaded, pulled, unit};
 use checkpoint::exlr8::Release;
 use interp::Tensor;
 use lower::testing::runs;
 use lower::{Device, Settings, lower};
+use parity::{Case, interpreted, loaded, pulled, unit};
 use run::Run;
 use std::path::Path;
 use testkit::cosine_f32;
