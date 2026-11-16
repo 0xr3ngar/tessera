@@ -1,6 +1,6 @@
 //! DeepSeek-style decoders: low-rank attention, MoE, indexed keys.
 
-use crate::shared::{Attend, Stack, rows, step_ports, swiglu, tokens};
+use crate::shared::{Attend, Rotated, Stack, rows, step_ports, swiglu, tokens};
 use trace::DimName::*;
 use trace::{
     Act, Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Linears, Mask, Model,
@@ -193,7 +193,7 @@ pub struct Moe {
 
 /// Layer `l` uses `dense[l]`, or `moe[l - DenseLayers]`.
 #[derive(Weights)]
-pub struct Mla {
+pub struct Mla<R: Routed> {
     #[shape(Vocab, Hidden)]
     pub embed: Embed,
     #[shape(Layers)]
@@ -206,7 +206,7 @@ pub struct Mla {
     #[shape(DenseLayers)]
     pub dense: Vec<DenseMlp>,
     #[shape(MoeLayers)]
-    pub moe: Vec<Moe>,
+    pub moe: Vec<R>,
     #[shape(Hidden)]
     pub norm: Norm,
     #[shape(Hidden, Vocab)]
@@ -238,7 +238,13 @@ struct Pass<'a> {
     step: Option<(&'a Tensor, Vec<Cache>)>,
 }
 
-pub fn forward(m: &Model, c: &Config, w: &Mla, tokens: &Tensor, positions: &Tensor) -> Tensor {
+pub fn forward<R: Routed>(
+    m: &Model,
+    c: &Config,
+    w: &Mla<R>,
+    tokens: &Tensor,
+    positions: &Tensor,
+) -> Tensor {
     let pass = Pass {
         m,
         c,
@@ -249,7 +255,7 @@ pub fn forward(m: &Model, c: &Config, w: &Mla, tokens: &Tensor, positions: &Tens
 }
 
 impl Pass<'_> {
-    fn logits(&self, w: &Mla, tokens: &Tensor) -> Tensor {
+    fn logits<R: Routed>(&self, w: &Mla<R>, tokens: &Tensor) -> Tensor {
         let (m, c) = (self.m, self.c);
         let mut x = m.embed(tokens, &w.embed);
         let mut indexers = w.indexers.iter();
@@ -282,7 +288,7 @@ impl Pass<'_> {
                     let d = &w.dense[l];
                     m.composite(Composite::Mlp, || [swiglu(&h, [&d.gate, &d.up, &d.down])])
                 }
-                Some(i) => m.composite(Composite::Moe, || [moe(m, c, &w.moe[i], &h)]),
+                Some(i) => m.composite(Composite::Moe, || [w.moe[i].apply(m, c, &h)]),
             };
             x = x.add(&mlp[0]);
         }
@@ -380,36 +386,119 @@ fn keys_values(w: &Attention, latent: &Tensor, shared: &Tensor) -> [Tensor; 2] {
     [k, per_head.slice(3, Nope, HeadDim)]
 }
 
-/// Each row's top experts, weighted, plus the shared expert.
-fn moe(m: &Model, c: &Config, w: &Moe, h: &Tensor) -> Tensor {
-    let scores = h.matmul(&w.router).act(Act::Sigmoid);
-    let ids = scores.add_vector(&w.router_bias).top_k(TopK);
+/// Routed experts and a shared one, however they are stored.
+pub trait Routed: Weights {
+    fn apply(&self, m: &Model, c: &Config, h: &Tensor) -> Tensor;
+}
+
+/// Each row's top experts, and their weights.
+fn route(c: &Config, router: &Linear, bias: &Vector, h: &Tensor) -> [Tensor; 2] {
+    let scores = h.matmul(router).act(Act::Sigmoid);
+    let ids = scores.add_vector(bias).top_k(TopK);
     let gates = scores.take(&ids).unit_sum().scale(c.route_scale);
-    // One output row per pick, each on its own expert.
-    let on = |set: &Linears, x: &Tensor| x.matmul_rows(&m.pick(set, &ids));
-    let inner = on(&w.gate, h).act(Act::Silu).mul(&on(&w.up, h));
-    let picks = h.ty().rank() as u32 - 1;
-    let routed = on(&w.down, &inner).mix(picks, &gates);
-    let s = &w.shared;
-    routed.add(&swiglu(h, [&s.gate, &s.up, &s.down]))
+    [ids, gates]
+}
+
+impl Routed for Moe {
+    /// Each row's top experts, weighted, plus the shared expert.
+    fn apply(&self, m: &Model, c: &Config, h: &Tensor) -> Tensor {
+        let [ids, gates] = route(c, &self.router, &self.router_bias, h);
+        // One output row per pick, each on its own expert.
+        let on = |set: &Linears, x: &Tensor| x.matmul_rows(&m.pick(set, &ids));
+        let inner = on(&self.gate, h).act(Act::Silu).mul(&on(&self.up, h));
+        let picks = h.ty().rank() as u32 - 1;
+        let routed = on(&self.down, &inner).mix(picks, &gates);
+        let s = &self.shared;
+        routed.add(&swiglu(h, [&s.gate, &s.up, &s.down]))
+    }
+}
+
+/// Experts as codes between 128-channel rotations.
+#[derive(Weights)]
+pub struct RotatedMoe {
+    #[shape(Hidden, Experts)]
+    pub router: Linear,
+    #[shape(Experts)]
+    pub router_bias: Vector,
+    /// Signs on the stream into the experts, and out.
+    #[shape(Hidden)]
+    pub signs_in: Vector,
+    #[shape(Hidden)]
+    pub signs_out: Vector,
+    #[shape(Experts, Hidden, Ffn)]
+    pub gate: Linears,
+    #[shape(Experts, Hidden)]
+    pub gate_su: Embed,
+    #[shape(Experts, Ffn)]
+    pub gate_sv: Embed,
+    #[shape(Experts, Hidden, Ffn)]
+    pub up: Linears,
+    #[shape(Experts, Hidden)]
+    pub up_su: Embed,
+    #[shape(Experts, Ffn)]
+    pub up_sv: Embed,
+    #[shape(Experts, Ffn, Hidden)]
+    pub down: Linears,
+    #[shape(Experts, Ffn)]
+    pub down_su: Embed,
+    #[shape(Experts, Hidden)]
+    pub down_sv: Embed,
+    pub shared: RotatedShared,
+}
+
+/// The expert every row uses, its rotations folded per matrix.
+#[derive(Weights)]
+pub struct RotatedShared {
+    #[shape(Hidden, Ffn)]
+    pub gate: Rotated,
+    #[shape(Hidden, Ffn)]
+    pub up: Rotated,
+    #[shape(Ffn, Hidden)]
+    pub down: Rotated,
+}
+
+impl Routed for RotatedMoe {
+    fn apply(&self, m: &Model, c: &Config, h: &Tensor) -> Tensor {
+        let [ids, gates] = route(c, &self.router, &self.router_bias, h);
+        let picks = h.ty().rank() as u32 - 1;
+        // One copy of each signed row per picked expert.
+        let lead: Vec<DimExpr> = h.ty().shape.0[..picks as usize].to_vec();
+        let one = lead.into_iter().chain([DimExpr::Const(1), Hidden.into()]);
+        let slots = h
+            .mul_vector(&self.signs_in)
+            .reshape(one.collect::<Vec<_>>());
+        let slots = slots.expand(picks, TopK);
+        let on = |x: &Tensor, codes: &Linears, [su, sv]: [&Embed; 2]| {
+            let turned = x.mul(&m.embed(&ids, su)).hadamard(128);
+            let product = turned.matmul_rows(&m.pick(codes, &ids));
+            product.hadamard(128).mul(&m.embed(&ids, sv))
+        };
+        let gate = on(&slots, &self.gate, [&self.gate_su, &self.gate_sv]);
+        let up = on(&slots, &self.up, [&self.up_su, &self.up_sv]);
+        let inner = gate.act(Act::Silu).mul(&up);
+        let out = on(&inner, &self.down, [&self.down_su, &self.down_sv]);
+        let routed = out.mul_vector(&self.signs_out).mix(picks, &gates);
+        let s = &self.shared;
+        routed.add(&swiglu(h, [&s.gate, &s.up, &s.down]))
+    }
 }
 
 /// One forward entry: tokens and positions in, logits out.
-pub fn program(c: &Config) -> Graph {
+pub fn program<R: Routed>(c: &Config) -> Graph {
     let m = Model::new(c.dims());
-    let w: Mla = trace::declare(&m);
+    let w: Mla<R> = trace::declare(&m);
     let [tokens, positions] = tokens(&m);
     let logits = forward(&m, c, &w, &tokens, &positions);
     m.finish([(Role::Logits, &logits)])
 }
 
 /// One step entry: rows in, each row's likeliest token out.
-pub fn stepper(c: &Config) -> Graph {
+pub fn stepper<R: Routed>(c: &Config) -> Graph {
     let mut dims = c.dims();
     let size = Size::Bounded(c.stack.max_context);
     dims.push(Dim { name: Rows, size });
     let m = Model::new(dims);
-    let w: Mla = trace::declare(&m);
+    let w: Mla<R> = trace::declare(&m);
     let [tokens, positions, slots] = step_ports(&m);
     let kept = |width: DimName| m.kept(TensorType::new(rows([width.into()]), DType::F32));
     let cache = |l| Cache {

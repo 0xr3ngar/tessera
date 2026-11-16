@@ -1,21 +1,21 @@
 //! DeepSeek-V3.
 
-use models::mla::{Config, program, stepper};
+use models::mla::{Config, Moe as Experts, program, stepper};
 use parity::{Spec, Stepper, suite};
 use trace::Composite::{Attention, Mlp, Moe};
 use trace::Graph;
 
 fn small() -> Graph {
-    program(&models::small::deepseek())
+    program::<Experts>(&models::small::deepseek())
 }
 
 pub fn release() -> Graph {
-    program(&Config::deepseek_v3(8, 163_840))
+    program::<Experts>(&Config::deepseek_v3(8, 163_840))
 }
 
 const STEPPER: Stepper = Stepper {
-    small: || stepper(&models::small::deepseek()),
-    release: || stepper(&Config::deepseek_v3(1, 1024)),
+    small: || stepper::<Experts>(&models::small::deepseek()),
+    release: || stepper::<Experts>(&Config::deepseek_v3(1, 1024)),
 };
 
 const SPEC: Spec = Spec {
