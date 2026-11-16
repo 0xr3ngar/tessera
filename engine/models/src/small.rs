@@ -87,11 +87,11 @@ pub fn nanogpt() -> nanogpt::Config {
     }
 }
 
-/// Three layers: one dense, two routed, and the second reuses picked keys.
+/// One dense layer, two routed. The middle reuses picked keys.
 pub fn glm53() -> mla::Config {
     let index = Index {
         heads: 2,
-        dim: 16,
+        dim: 32,
         keep: 4,
         every: 2,
     };
@@ -101,7 +101,7 @@ pub fn glm53() -> mla::Config {
     }
 }
 
-/// Three layers of low-rank attention, four experts, two per row.
+/// Three layers of low-rank attention. Weight rows hold whole blocks.
 pub fn deepseek() -> mla::Config {
     mla::Config {
         stack: Stack::sized([64, 64, 3, 2, 32, 32], 4, 16),
@@ -112,7 +112,7 @@ pub fn deepseek() -> mla::Config {
         q_latent: 32,
         latent: 32,
         dense_ffn: 64,
-        experts: 4,
+        experts: 32,
         top_k: 2,
         route_scale: 2.5,
         index: None,

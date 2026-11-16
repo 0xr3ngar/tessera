@@ -152,3 +152,27 @@ pub fn table(bounded: &[Dim], vocab: u64, width: u64) -> Graph {
     let [tokens] = m.entry(EntryKind::Forward, [tokens]);
     m.finish([(Role::Logits, &m.embed(&tokens, &w.embed))])
 }
+
+/// Scores pick each query's best keys for attention.
+pub fn indexed(bounded: &[Dim], [heads, width, keep]: [u64; 3]) -> Graph {
+    let fixed = [(Heads, heads), (HeadDim, width), (IndexKeep, keep)];
+    let m = model(bounded, &fixed);
+    let heads = || floats([Seqs, Context, Heads, HeadDim]);
+    let rows = floats([Seqs, Context, HeadDim]);
+    let [q, v, x] = m.entry(EntryKind::Forward, [heads(), heads(), rows]);
+    // One key row per position, shared by every head.
+    let one = vec![
+        Seqs.into(),
+        Context.into(),
+        DimExpr::Const(1),
+        HeadDim.into(),
+    ];
+    let shared = x.reshape(one).expand(2, Heads);
+    let half = width / 2;
+    let k = shared.slice(3, 0u64, half).concat(&v.slice(3, half, half));
+    let scores = x.matmul_rows(&x);
+    let scores = scores.add(&scores.permute(&[0, 2, 1]));
+    let ids = scores.mask(Mask::Causal).top_k(IndexKeep);
+    let out = m.attend(Mask::Causal, 0.25, [&q, &k, &v], Some(&ids));
+    m.finish([(Role::Logits, &out)])
+}
