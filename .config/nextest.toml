@@ -1,0 +1,17 @@
+# Each test runs in its own process, so golden.rs's turn lock holds
+# nothing. Tests that load a real checkpoint run one at a time.
+[test-groups]
+checkpoint = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary(models) & test(/::(golden|gpu|native|reference_checks)$/)'
+test-group = 'checkpoint'
+
+[profile.ci]
+fail-fast = false
+slow-timeout = { period = "30s" }
+failure-output = "immediate-final"
+
+[profile.ci.junit]
+path = "junit.xml"
+store-success-output = true

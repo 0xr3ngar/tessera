@@ -91,8 +91,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: linux
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.152
       - run: cargo clippy --workspace --all-targets --all-features
-      - run: cargo test --workspace --all-features --no-fail-fast
+      # Profiles and test groups live in .config/nextest.toml.
+      - run: cargo nextest run --workspace --all-features --profile ci
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-linux
+          path: target/nextest/ci/junit.xml
 
   features:
     # Builds with no GPU backend and with each one alone, so
