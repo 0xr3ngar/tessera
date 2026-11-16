@@ -1,5 +1,7 @@
 //! `tessera-eval --model <path> [--recipe <json>] [--m 1,4]`: JSON out.
 
+mod embed;
+
 use checkpoint::exlr8::Release;
 use checkpoint::{File, Gguf, Offer};
 use engine::{Engine, Pins, Recipe, Row};
@@ -13,7 +15,8 @@ use std::time::Instant;
 type Failure = Box<dyn std::error::Error + Send + Sync>;
 
 const USAGE: &str = "usage: tessera-eval --model <path> [--recipe <json>] [--m <list>] [--new <n>] \
-[--prompt <text>] [--reference <dir>] [--context <rows>] [--slices <json>]";
+[--prompt <text>] [--reference <dir>] [--context <rows>] [--slices <json>] \
+[--embed <texts.json> [--vectors <file>]]";
 
 /// A checkpoint's slices, as a manifest for the model tests.
 fn manifest(model: &Path) -> Result<String, Failure> {
@@ -47,6 +50,10 @@ struct Args {
     context: usize,
     /// Write the file's slices as JSON, then stop.
     slices: Option<PathBuf>,
+    /// Embed these texts with an exlr8 release, then stop.
+    embed: Option<PathBuf>,
+    /// Where the embeddings go, as little-endian f32.
+    vectors: Option<PathBuf>,
 }
 
 fn args() -> Option<Args> {
@@ -59,6 +66,8 @@ fn args() -> Option<Args> {
         reference: None,
         context: 4096,
         slices: None,
+        embed: None,
+        vectors: None,
     };
     let mut given = std::env::args().skip(1);
     while let Some(flag) = given.next() {
@@ -78,6 +87,8 @@ fn args() -> Option<Args> {
             "--reference" => args.reference = Some(value.into()),
             "--context" => args.context = value.parse().ok()?,
             "--slices" => args.slices = Some(value.into()),
+            "--embed" => args.embed = Some(value.into()),
+            "--vectors" => args.vectors = Some(value.into()),
             _ => return None,
         }
     }
@@ -239,12 +250,14 @@ fn main() -> ExitCode {
             }
         };
     }
-    match evaluate(&args) {
-        Ok(report) => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&report).expect("plain data")
-            );
+    let report = match &args.embed {
+        Some(texts) => embed::embed(&args.model, texts, args.vectors.as_deref())
+            .map(|s| serde_json::to_string_pretty(&s)),
+        None => evaluate(&args).map(|r| serde_json::to_string_pretty(&r)),
+    };
+    match report {
+        Ok(json) => {
+            println!("{}", json.expect("plain data"));
             ExitCode::SUCCESS
         }
         Err(e) => {
