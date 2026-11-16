@@ -147,7 +147,7 @@ pub trait Run {
                 return Err(Error::Size(format!("weight {weight} as {}", form.name())));
             }
             if slot.form.name() == form.name() {
-                self.held_mut().upload(slot, bytes)?;
+                self.upload(slot, bytes)?;
                 continue;
             }
             let floats = (0..slot.len).map(|i| form.unpack(bytes, i)).collect();
@@ -169,19 +169,31 @@ pub trait Run {
                     slot.form.name()
                 )));
             }
-            self.held_mut().upload(slot, bytes)?;
+            self.upload(slot, bytes)?;
         }
         Ok(())
+    }
+
+    /// A writable buffer in place of a wrap.
+    fn own(&mut self, _slot: Slot) -> Result<(), Error> {
+        Ok(())
+    }
+
+    /// `bytes` into the slot, as the form packed them.
+    fn upload(&mut self, slot: Slot, bytes: &[u8]) -> Result<(), Error> {
+        self.own(slot)?;
+        self.held_mut().upload(slot, bytes)
     }
 
     /// A plain slot copies. Any other packs through its form.
     fn write(&mut self, slot: Slot, src: View) -> Result<(), Error> {
         let plain = slot.form.block() == 1 && src.dtype() == slot.form.dtype();
         if plain {
+            self.own(slot)?;
             return Ok(copy(src, &mut self.held_mut().view_mut(slot))?);
         }
         let packed = slot.form.pack(&src.to_f32()?);
-        self.held_mut().upload(slot, &packed)
+        self.upload(slot, &packed)
     }
 
     /// The slot's values on the host, as one row.

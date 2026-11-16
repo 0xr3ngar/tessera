@@ -186,6 +186,17 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
         Ok(true)
     }
 
+    fn own(&mut self, slot: Slot) -> Result<(), Error> {
+        if !self.buffer(slot).wrapped() {
+            return Ok(());
+        }
+        let (zone, bytes) = (self.base.held.get(slot).zone, self.buffer(slot).size());
+        let fresh = DeviceBuffer::zeroed(self.ctx, bytes)?;
+        self.base.held.adopt(slot, Buffer::new(zone, fresh));
+        self.graphs.clear();
+        Ok(())
+    }
+
     fn launching(&mut self, launching: Launching) {
         self.launching = launching;
         self.graphs.clear();

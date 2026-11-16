@@ -1,6 +1,6 @@
 //! The engine's decode loop against the interpreter.
 
-use engine::{Batch, Engine, Event, Fair, Reason, Request, Row};
+use engine::{Batch, Buffer, DType, Engine, Event, Fair, FileRange, Reason, Request, Row};
 use graph::Graph;
 use interp::{Store, Tensor, run_kept};
 use lower::testing::runs;
@@ -127,6 +127,49 @@ fn answers_match(settings: &Settings) {
         events(&mut engine, &long).last(),
         Some(&Event::Done(Reason::Context))
     );
+}
+
+/// `weights` written to one file, each mapped back from it.
+fn mapped(weights: &[Tensor]) -> Vec<Weight> {
+    let mut bytes = Vec::new();
+    let mut starts = Vec::new();
+    for w in weights {
+        bytes.resize(bytes.len().next_multiple_of(16), 0);
+        starts.push(bytes.len());
+        bytes.extend_from_slice(w.bytes());
+    }
+    let path = testkit::stage("weights", &bytes);
+    let file = FileRange::new(std::fs::File::open(path).unwrap()).unwrap();
+    let mut out = Vec::new();
+    for (w, at) in weights.iter().zip(starts) {
+        let map = file.sub(at, w.bytes().len()).unwrap().map().unwrap();
+        out.push(Weight::Floats(Tensor::over(
+            w.shape.clone(),
+            DType::F32,
+            Buffer::new(0, map),
+        )));
+    }
+    out
+}
+
+/// Mapped weights answer as stored ones, then reload.
+#[test]
+fn reload_after_map() {
+    let prompt = [3u32, 9, 4];
+    let request = Request {
+        tokens: prompt.to_vec(),
+        max_tokens: 4,
+        stop: Vec::new(),
+    };
+    for settings in runs() {
+        let (g, weights, mut engine) = open(13, 1, &settings);
+        let want = reference(&g, &weights, &prompt, 4);
+        engine.load(&mapped(&weights)).unwrap();
+        assert_eq!(ids(&events(&mut engine, &request)), want);
+        let stored: Vec<Weight> = weights.iter().cloned().map(Weight::Floats).collect();
+        engine.load(&stored).unwrap();
+        assert_eq!(ids(&events(&mut engine, &request)), want);
+    }
 }
 
 #[test]
