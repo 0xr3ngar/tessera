@@ -4,7 +4,7 @@ use crate::ir::Helper;
 use std::sync::Mutex;
 
 use mem::form::U8;
-pub use mem::form::{Bf16, F32, Form, U32};
+pub use mem::form::{Bf16, F32, Form, Read, U32};
 pub(crate) use mem::form::{gather, scatter};
 
 /// Decodes its elements in kernel text.
@@ -167,4 +167,4 @@ form!(U32);
 pub const F32_FORM: &dyn Load = &F32;
 pub const BF16_FORM: &dyn Load = &Bf16;
 pub const U32_FORM: &dyn Load = &U32;
-pub(crate) const U8_FORM: &dyn Load = &U8;
+pub const U8_FORM: &dyn Load = &U8;

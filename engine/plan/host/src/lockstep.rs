@@ -1,8 +1,7 @@
 //! What compiled lockstep kernels call: reads, shuffles and tiles.
 
 use crate::exec::{ArgVal, Grid};
-use codegen::block::{NVFP4, Q4_0, Q8_0};
-use codegen::form::{Form, Load};
+use codegen::form::{Load, Read};
 use codegen::numerics::Precision;
 use graph::{E2M1, E4M3, F16};
 
@@ -55,21 +54,6 @@ pub fn rd_u32(bytes: &[u8], at: usize) -> u32 {
 #[inline(always)]
 pub fn rd_u8(bytes: &[u8], at: usize) -> u32 {
     u32::from(bytes[at])
-}
-
-#[inline(always)]
-pub fn rd_q8_0(bytes: &[u8], at: usize) -> f32 {
-    Q8_0.unpack(bytes, at)
-}
-
-#[inline(always)]
-pub fn rd_q4_0(bytes: &[u8], at: usize) -> f32 {
-    Q4_0.unpack(bytes, at)
-}
-
-#[inline(always)]
-pub fn rd_nvfp4(bytes: &[u8], at: usize) -> f32 {
-    NVFP4.unpack(bytes, at)
 }
 
 #[inline(always)]
@@ -432,7 +416,11 @@ pub fn dots_form(form: &dyn Load, out: &mut [u8], x: &[u8], w: &[u8], d: &Dots, 
     for (r, h) in held.iter_mut().enumerate().take(rows) {
         xr[r] = f32_row(x, d.x_at + r * k, k, h);
     }
-    let wide = form.name() == "f32";
+    let wide = match form.read() {
+        Read::F32 => true,
+        Read::Bf16 => false,
+        other => panic!("no tile of dots over {other:?} rows"),
+    };
     let mut kept: [Vec<f32>; BLOCK] = std::array::from_fn(|_| Vec::new());
     let mut wr: [&[f32]; BLOCK] = [&[]; BLOCK];
     if wide {
@@ -525,12 +513,12 @@ pub fn dot_bf16(x: &[f32], w: &[u8]) -> f32 {
 pub fn dot_form(form: &dyn Load, a: &[u8], a_at: usize, b: &[u8], b_at: usize, n: usize) -> f32 {
     let mut scratch = Vec::new();
     let x = f32_row(a, a_at, n, &mut scratch);
-    match form.name() {
-        "f32" => {
+    match form.read() {
+        Read::F32 => {
             let mut other = Vec::new();
             dot(x, f32_row(b, b_at, n, &mut other))
         }
-        "bf16" => dot_bf16(x, &b[b_at * 2..(b_at + n) * 2]),
-        _ => form.dot(x, b, b_at),
+        Read::Bf16 => dot_bf16(x, &b[b_at * 2..(b_at + n) * 2]),
+        Read::U32 | Read::U8 | Read::Decode => form.dot(x, b, b_at),
     }
 }

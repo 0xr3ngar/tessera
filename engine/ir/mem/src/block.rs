@@ -1,6 +1,6 @@
 //! Block forms: a scale, then codes it multiplies.
 
-use crate::form::{Form, form};
+use crate::form::{Form, Read, form};
 use graph::{DType, E2M1, E4M3, F16};
 
 /// A code: what one element stores, before its block's scale.
@@ -154,6 +154,9 @@ impl<S: Scale, C: Code, const B: usize, const HALVES: bool, const HEAD: bool> Fo
     }
     fn dtype(&self) -> DType {
         DType::F32
+    }
+    fn read(&self) -> Read {
+        Read::Decode
     }
     fn bits(&self) -> u32 {
         C::BITS
