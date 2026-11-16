@@ -29,18 +29,43 @@ jobs:
       - if: github.event_name == 'push'
         run: tools/scripts/check-coauthors.sh ${{ github.event.before }}..${{ github.sha }}
 
+  changes:
+    # Whether anything changed outside Markdown, lint code and lint.toml.
+    # The build jobs skip when nothing did.
+    runs-on: ubuntu-slim
+    outputs:
+      build: ${{ steps.paths.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # A push with no earlier commit to compare builds everything.
+      - id: paths
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          build=true
+          if git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            build=$(git diff --name-only "$BASE...$HEAD" | tools/scripts/build-needed.sh)
+          fi
+          echo "build=$build" | tee -a "$GITHUB_OUTPUT"
+
   lint:
-    # Code-shape rules (tools/lint) and formatting.
+    # Code-shape rules (tools/lint), their tests, and formatting.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
-          components: rustfmt
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: lint
       - run: cargo fmt --all --check
+      # The linux job skips when only lint changes, so lint tests run here.
+      - run: cargo clippy -p tessera-lint --all-targets
+      - run: cargo test -q -p tessera-lint
       # Unused dependencies. It does not read dev-dependencies.
       - uses: taiki-e/install-action@v2
         with:
@@ -56,6 +81,8 @@ jobs:
 
   linux:
     # CPU and CUDA host code. The CUDA driver loads at runtime.
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,6 +99,8 @@ jobs:
     # Builds with no GPU backend and with each one alone, so
     # code that only some backends use fails as dead code.
     name: features (${{ matrix.features || 'none' }})
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -89,6 +118,8 @@ jobs:
 
   macos:
     # The Metal backend.
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -246,6 +277,8 @@ jobs:
   platforms:
     # The platform table against nvcc, cuobjdump and clang's amdgcn
     # backend, with no GPU needed.
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -264,17 +297,22 @@ jobs:
       - run: cargo test -p linear --test platforms_test -- --nocapture
 
   success:
-    # The one check to require: every job above passed, and no
-    # human step is pending.
+    # The one check to require: every job above passed or was skipped
+    # by `changes`, and no human step is pending.
     if: always()
-    needs: [commits, lint, linux, features, macos, similarity, platforms, style]
-    runs-on: ubuntu-latest
+    needs: [changes, commits, lint, linux, features, macos, similarity, platforms, style]
+    runs-on: ubuntu-slim
     steps:
+      # Skips come only from `changes`, so it must pass itself.
       - env:
+          CHANGES: ${{ needs.changes.result }}
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          echo "job results: $RESULTS"
-          for r in $RESULTS; do [ "$r" = success ] || exit 1; done
+          echo "changes: $CHANGES, job results: $RESULTS"
+          [ "$CHANGES" = success ] || exit 1
+          for r in $RESULTS; do
+            case "$r" in success | skipped) ;; *) exit 1 ;; esac
+          done
       # Protected files and fork settings: see protected.yml.
       - if: github.event_name == 'pull_request'
         uses: actions/checkout@v4
