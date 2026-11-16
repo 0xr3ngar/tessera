@@ -2,7 +2,6 @@
 
 use engine_settings::{Backend, Pick, Settings};
 use serde::Deserialize;
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// The `TESSERA_` variables.
@@ -14,14 +13,6 @@ struct Env {
     names: Option<PathBuf>,
     emulate: Option<Backend>,
     verbs: Option<String>,
-    #[serde(flatten)]
-    references: BTreeMap<String, PathBuf>,
-}
-
-/// Variables without the prefix.
-#[derive(Deserialize)]
-struct Host {
-    ci: Option<String>,
 }
 
 /// The only reader of the process environment. Bad values panic.
