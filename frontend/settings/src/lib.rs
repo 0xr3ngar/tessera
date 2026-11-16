@@ -12,6 +12,15 @@ struct Env {
     costs: Option<PathBuf>,
     names: Option<PathBuf>,
     emulate: Option<Backend>,
+    verbs: Option<String>,
+    #[serde(flatten)]
+    references: BTreeMap<String, PathBuf>,
+}
+
+/// Variables without the prefix.
+#[derive(Deserialize)]
+struct Host {
+    ci: Option<String>,
 }
 
 /// The only reader of the process environment. Bad values panic.
@@ -34,6 +43,7 @@ pub fn read() -> Settings {
         costs,
         names: env.names,
         emulate: env.emulate,
+        verbs: env.verbs,
     }
 }
 

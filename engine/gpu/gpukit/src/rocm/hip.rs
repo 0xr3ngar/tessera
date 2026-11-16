@@ -18,6 +18,7 @@ pub(crate) type HipGraphNode = *mut c_void;
 pub(crate) const HIP_SUCCESS: HipError = 0;
 pub(crate) const MEMCPY_HOST_TO_DEVICE: c_int = 1;
 pub(crate) const MEMCPY_DEVICE_TO_HOST: c_int = 2;
+pub(crate) const HOST_MALLOC_MAPPED: u32 = 2;
 /// `hipDeviceAttribute_t`, as HIP 6 and 7 number it.
 pub(crate) const ATTR_INTEGRATED: c_int = 16;
 pub(crate) const ATTR_COMPUTE_CAPABILITY_MAJOR: c_int = 23;
@@ -41,6 +42,10 @@ type HipModuleGetFunction =
     unsafe extern "C" fn(*mut HipFunction, HipModule, *const c_char) -> HipError;
 type HipMalloc = unsafe extern "C" fn(*mut HipDeviceptr, usize) -> HipError;
 type HipFree = unsafe extern "C" fn(HipDeviceptr) -> HipError;
+type HipHostMalloc = unsafe extern "C" fn(*mut *mut c_void, usize, u32) -> HipError;
+type HipHostGetDevicePointer =
+    unsafe extern "C" fn(*mut HipDeviceptr, *mut c_void, u32) -> HipError;
+type HipHostFree = unsafe extern "C" fn(*mut c_void) -> HipError;
 type HipMemcpy = unsafe extern "C" fn(*mut c_void, *const c_void, usize, c_int) -> HipError;
 type HipMemset = unsafe extern "C" fn(HipDeviceptr, c_int, usize) -> HipError;
 type HipModuleLaunchKernel = unsafe extern "C" fn(
@@ -93,6 +98,9 @@ crate::dl::library! {
         pub hip_module_get_function: HipModuleGetFunction = "hipModuleGetFunction",
         pub hip_malloc: HipMalloc = "hipMalloc",
         pub hip_free: HipFree = "hipFree",
+        pub hip_host_malloc: HipHostMalloc = "hipHostMalloc",
+        pub hip_host_get_device_pointer: HipHostGetDevicePointer = "hipHostGetDevicePointer",
+        pub hip_host_free: HipHostFree = "hipHostFree",
         pub hip_memcpy: HipMemcpy = "hipMemcpy",
         pub hip_memset: HipMemset = "hipMemset",
         pub hip_module_launch_kernel: HipModuleLaunchKernel = "hipModuleLaunchKernel",

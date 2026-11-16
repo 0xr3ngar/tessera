@@ -5,12 +5,13 @@ speaking front-end protocols like HTTP, WebSockets or image formats, and transla
 like text and images to tokens for the engine to work with.
 
 <!-- crate table -->
-Crate | Description
---- | ---
-[bundle](bundle) | A Hugging Face model directory as graph, weights, tokenizer and template
-[checkpoint](checkpoint) | Reads weights from safetensors files
-[frontend-comm](comm) | Joins ranks over TCP or a shared file, then hands the handles to the engine
-[eval](eval) | Measures a model under a recipe: speed per batch, parity against a reference
-[serve](serve) | An HTTP front end: text in, streamed text out, over the engine
-[frontend-settings](settings) | Settings read once from the environment, passed down
-[tasks](tasks) | Text in, answers out: generation and tagging over a loaded model
+<table>
+<tr><th>Crate</th><th>Description</th></tr>
+<tr><td><a href="bundle">bundle</a></td><td>A Hugging Face model directory as graph, weights, tokenizer and template</td></tr>
+<tr><td><a href="checkpoint">checkpoint</a></td><td>Reads weights from safetensors files</td></tr>
+<tr><td><a href="comm">frontend-comm</a></td><td>Joins ranks over TCP or a shared file, then hands the handles to the engine</td></tr>
+<tr><td><a href="eval">eval</a></td><td>Measures a model under a recipe: speed per batch, parity against a reference</td></tr>
+<tr><td><a href="serve">serve</a></td><td>An HTTP front end: text in, streamed text out, over the engine</td></tr>
+<tr><td><a href="settings">frontend-settings</a></td><td>Settings read once from the environment, passed down</td></tr>
+<tr><td><a href="tasks">tasks</a></td><td>Text in, answers out: generation and tagging over a loaded model</td></tr>
+</table>

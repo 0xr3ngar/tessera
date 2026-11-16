@@ -57,37 +57,70 @@ macro_rules! device_runner {
                         .expect("this runner allocates device buffers")
                 }
 
-                /// Passes each argument by position, then enqueues.
-                fn launch(&self, step: usize, launch: &Launch) -> Result<(), Error> {
-                    let kernel = &self.kernels[step];
-                    let overlap = self.launching.pdl && self.overlaps && self.waits[step];
-                    self.ctx.programmatic(overlap);
-                    let mut args = KernelArgs::new();
-                    for arg in &launch.args {
+                /// Each argument by position, as the device takes it.
+                fn bound(&self, args: &[Arg]) -> Result<KernelArgs, Error> {
+                    let mut bound = KernelArgs::new();
+                    for arg in args {
                         match arg {
                             Arg::Buffer(slot, Extent::Fixed(skip)) => {
                                 let at = slot.at(*skip) as u64;
-                                args.device_ptr(self.buffer(*slot).device_ptr() + at)
+                                bound.device_ptr(self.buffer(*slot).device_ptr() + at)
                             }
-                            Arg::Value(bytes) => args.bytes(bytes),
-                            Arg::Size(_) | Arg::Buffer(..) => {
-                                unreachable!("bound before launching")
-                            }
+                            Arg::Value(bytes) => bound.bytes(bytes),
+                            Arg::Size(_) | Arg::Buffer(..) => return Err(Error::Unbound),
                         };
                     }
-                    match launch.shape {
-                        Shape::Line(count) => launch_1d(self.ctx, kernel, count, &mut args)?,
+                    Ok(bound)
+                }
+
+                fn fire(
+                    &self,
+                    kernel: &Kernel,
+                    shape: Shape,
+                    args: &mut KernelArgs,
+                ) -> Result<(), Error> {
+                    match shape {
+                        Shape::Line(count) => launch_1d(self.ctx, kernel, count, args)?,
                         Shape::Grid {
                             across,
                             down,
                             threads,
                         } => {
                             let threads = threads as u32;
-                            launch_grid(self.ctx, kernel, across, down, threads, &mut args)?
+                            launch_grid(self.ctx, kernel, across, down, threads, args)?
                         }
-                        Shape::Runtime(_) => unreachable!("bound before launching"),
+                        Shape::Runtime(_) => return Err(Error::Unbound),
                     }
                     Ok(())
+                }
+
+                /// Passes each argument by position, then enqueues.
+                fn launch(&self, step: usize, launch: &Launch) -> Result<(), Error> {
+                    let overlap = self.launching.pdl && self.overlaps && self.waits[step];
+                    self.ctx.programmatic(overlap);
+                    let mut args = self.bound(&launch.args)?;
+                    self.fire(&self.kernels[step], launch.shape, &mut args)
+                }
+            }
+
+            /// Pinned host memory from the shared context.
+            pub(crate) struct Pin(pub(crate) &'static Context);
+
+            impl engine_comm::Pinning for Pin {
+                fn pin(&self, len: usize) -> Result<engine_comm::Pinned, engine_comm::Error> {
+                    let (host, device) = self
+                        .0
+                        .pin(len)
+                        .map_err(|e| engine_comm::Error::Link(e.to_string()))?;
+                    Ok(engine_comm::Pinned {
+                        host: host as *mut u8,
+                        device,
+                        len,
+                    })
+                }
+
+                fn unpin(&self, pinned: engine_comm::Pinned) {
+                    self.0.unpin(pinned.host as u64);
                 }
             }
 
@@ -135,6 +168,24 @@ macro_rules! device_runner {
                 fn launching(&mut self, launching: Launching) {
                     self.launching = launching;
                     self.graphs.clear();
+                }
+
+                fn fixed(&self) -> bool {
+                    true
+                }
+
+                fn launch_fixed(
+                    &self,
+                    source: &'static str,
+                    entry: &'static str,
+                    args: &[Arg],
+                    shape: Shape,
+                ) -> Result<(), Error> {
+                    let kernel = cached_source_kernel(source, entry)?;
+                    self.ctx.programmatic(false);
+                    let mut args = self.bound(args)?;
+                    self.fire(&kernel, shape, &mut args)?;
+                    Ok(self.ctx.synchronize()?)
                 }
 
                 fn repeat(&mut self, step: usize, times: usize) -> Result<f64, Error> {

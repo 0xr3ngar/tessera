@@ -19,8 +19,10 @@ pub use run::{Base, Run};
 
 use codegen::Precision;
 use engine_settings::Backend;
+use engine_comm::Pinning;
 use engine_settings::Settings;
 use lower::{Error, Plan};
+use std::sync::Arc;
 
 /// How `backend`'s tiles round.
 pub fn precision(backend: Backend) -> Precision {
@@ -28,6 +30,23 @@ pub fn precision(backend: Backend) -> Precision {
         Backend::Metal => Precision::METAL,
         Backend::Cuda => Precision::CUDA,
         Backend::Rocm => Precision::HIP,
+    }
+}
+
+/// Pinned memory on the GPU `settings` picks, if any.
+pub fn pinning(settings: &Settings) -> Option<Arc<dyn Pinning>> {
+    match settings.gpu() {
+        #[cfg(feature = "cuda")]
+        Some(Backend::Cuda) => {
+            let ctx = gpukit::cuda::cached_context().ok()?;
+            Some(Arc::new(device::cuda::Pin(ctx)))
+        }
+        #[cfg(feature = "rocm")]
+        Some(Backend::Rocm) => {
+            let ctx = gpukit::rocm::cached_context().ok()?;
+            Some(Arc::new(device::rocm::Pin(ctx)))
+        }
+        _ => None,
     }
 }
 

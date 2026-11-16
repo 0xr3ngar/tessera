@@ -1,7 +1,7 @@
 //! The CUDA driver behind the shared context.
 
 use std::cell::Cell;
-use std::ffi::{CStr, c_char, c_int};
+use std::ffi::{CStr, c_char, c_int, c_void};
 use std::thread::LocalKey;
 
 use super::driver::{
@@ -289,6 +289,21 @@ impl Api for Driver {
 
     fn free(&self, ptr: u64) {
         unsafe { (self.cu_mem_free)(ptr) };
+    }
+
+    fn host_alloc(&self, size: usize) -> Result<(u64, u64), Error> {
+        let mut host = std::ptr::null_mut();
+        let flags = driver::CU_MEMHOSTALLOC_DEVICEMAP;
+        let code = unsafe { (self.cu_mem_host_alloc)(&mut host, size, flags) };
+        self.check(code, "cuMemHostAlloc")?;
+        let mut device = 0;
+        let code = unsafe { (self.cu_mem_host_get_device_pointer)(&mut device, host, 0) };
+        self.check(code, "cuMemHostGetDevicePointer")?;
+        Ok((host as u64, device))
+    }
+
+    fn host_free(&self, host: u64) {
+        unsafe { (self.cu_mem_free_host)(host as *mut c_void) };
     }
 
     fn upload(&self, ptr: u64, bytes: &[u8]) -> Result<(), Error> {

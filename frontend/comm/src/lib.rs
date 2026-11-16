@@ -1,5 +1,9 @@
 //! Opens the ranks' connections and hands them to the engine.
 
+mod roce;
+
+pub use roce::{port, ports};
+
 use engine_comm::{Error, Shm, Sockets};
 use std::fs::OpenOptions;
 use std::io::{self, Read, Write};
@@ -81,3 +85,5 @@ pub fn shm(path: &Path, rank: u32, ranks: u32, capacity: usize) -> Result<Shm, E
 
 #[cfg(test)]
 mod lib_test;
+#[cfg(test)]
+mod roce_test;

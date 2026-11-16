@@ -27,6 +27,7 @@ pub(crate) const CU_DEVICE_ATTRIBUTE_INTEGRATED: c_int = 18;
 pub(crate) const CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE: c_int = 36;
 pub(crate) const CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH: c_int = 37;
 pub(crate) const CU_STREAM_NON_BLOCKING: u32 = 1;
+pub(crate) const CU_MEMHOSTALLOC_DEVICEMAP: u32 = 2;
 pub(crate) const CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION: u32 = 1;
 
 /// `CUlaunchAttribute`: an id, then a 64-byte value.
@@ -67,6 +68,10 @@ type CuModuleGetFunction =
     unsafe extern "C" fn(*mut CUfunction, CUmodule, *const c_char) -> CUresult;
 type CuMemAlloc = unsafe extern "C" fn(*mut CUdeviceptr, usize) -> CUresult;
 type CuMemFree = unsafe extern "C" fn(CUdeviceptr) -> CUresult;
+type CuMemHostAlloc = unsafe extern "C" fn(*mut *mut c_void, usize, u32) -> CUresult;
+type CuMemHostGetDevicePointer =
+    unsafe extern "C" fn(*mut CUdeviceptr, *mut c_void, u32) -> CUresult;
+type CuMemFreeHost = unsafe extern "C" fn(*mut c_void) -> CUresult;
 type CuMemcpyHtoD = unsafe extern "C" fn(CUdeviceptr, *const c_void, usize) -> CUresult;
 type CuMemcpyDtoH = unsafe extern "C" fn(*mut c_void, CUdeviceptr, usize) -> CUresult;
 type CuMemsetD8 = unsafe extern "C" fn(CUdeviceptr, u8, usize) -> CUresult;
@@ -118,6 +123,10 @@ crate::dl::library! {
         pub(crate) cu_module_get_function: CuModuleGetFunction = "cuModuleGetFunction",
         pub(crate) cu_mem_alloc: CuMemAlloc = "cuMemAlloc_v2",
         pub(crate) cu_mem_free: CuMemFree = "cuMemFree_v2",
+        pub(crate) cu_mem_host_alloc: CuMemHostAlloc = "cuMemHostAlloc",
+        pub(crate) cu_mem_host_get_device_pointer: CuMemHostGetDevicePointer =
+            "cuMemHostGetDevicePointer_v2",
+        pub(crate) cu_mem_free_host: CuMemFreeHost = "cuMemFreeHost",
         pub(crate) cu_memcpy_htod: CuMemcpyHtoD = "cuMemcpyHtoD_v2",
         pub(crate) cu_memcpy_dtoh: CuMemcpyDtoH = "cuMemcpyDtoH_v2",
         pub(crate) cu_memset_d8: CuMemsetD8 = "cuMemsetD8_v2",
