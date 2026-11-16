@@ -114,8 +114,6 @@ impl Context {
 }
 
 thread_local! {
-    /// This thread's capture stream, or null outside a capture.
-    static CAPTURING: Cell<Handle> = const { Cell::new(std::ptr::null_mut()) };
     /// Whether this thread's next launches may overlap the last.
     static PROGRAMMATIC: Cell<bool> = const { Cell::new(false) };
 }

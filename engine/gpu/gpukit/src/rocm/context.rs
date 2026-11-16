@@ -1,6 +1,5 @@
 //! The HIP runtime behind the shared context.
 
-use std::cell::Cell;
 use std::ffi::c_int;
 use std::sync::OnceLock;
 
@@ -126,11 +125,6 @@ impl Context {
     pub fn runtime(&self) -> &'static Runtime {
         self.api()
     }
-}
-
-thread_local! {
-    /// This thread's capture stream, or null outside a capture.
-    static CAPTURING: Cell<Handle> = const { Cell::new(std::ptr::null_mut()) };
 }
 
 impl Api for Runtime {
