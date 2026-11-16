@@ -1,5 +1,5 @@
 use crate::Stored;
-use codegen::form::named;
+use engine::form::named;
 
 #[test]
 fn names_round_trip() {

@@ -4,7 +4,7 @@ mod roce;
 
 pub use roce::{port, ports};
 
-use engine_comm::{Error, Shm, Sockets};
+use engine::comm::{Error, Shm, Sockets};
 use std::fs::OpenOptions;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};

@@ -1,8 +1,7 @@
 use crate::names::{Unresolved, resolve, rules};
 use checkpoint::{Slice, Stored};
-use graph::{Graph, PathSeg};
-use models::decoder::{Config, Swiglu, stepper};
-use trace::Norm;
+use engine::decoder::{Config, Swiglu, stepper};
+use engine::{Graph, Norm, PathSeg};
 
 fn graph() -> Graph {
     stepper::<Norm, Swiglu>(&Config::toy(1, 8))
@@ -49,7 +48,7 @@ fn offered(g: &Graph, gguf: bool) -> Vec<Slice> {
     let mut out = Vec::new();
     for w in &g.weights {
         let name = tensor_name(&w.path, gguf).unwrap();
-        let axis = |e: &graph::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
+        let axis = |e: &engine::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
         out.push(Slice {
             name,
             shape: w.ty.shape.0.iter().map(axis).collect(),

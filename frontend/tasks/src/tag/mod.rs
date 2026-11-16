@@ -13,11 +13,9 @@ mod tag_test;
 use crate::Error;
 use bundle::spacy::{MAX_CONTEXT, Pipeline};
 use bundle::tokenize::spacy::{Spacy, Word};
-use engine::Model;
+use engine::tagger::{KEYS, PAD};
+use engine::{Model, Recipe, Settings, Tensor};
 use features::{Features, thinc_hash};
-use interp::Tensor;
-use lower::{Recipe, Settings};
-use models::tagger::{KEYS, PAD};
 use std::path::Path;
 
 /// The fewest rows a launch carries.

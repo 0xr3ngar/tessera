@@ -12,17 +12,19 @@ cuda = ["run/cuda"]
 rocm = ["run/rocm"]
 
 [dependencies]
+codegen = { workspace = true }
+cpu = { workspace = true }
+engine-comm = { workspace = true }
 graph = { workspace = true }
 interp = { workspace = true }
-cpu = { workspace = true }
 kernels = { workspace = true }
 linear = { workspace = true }
 lower = { workspace = true }
+models = { workspace = true }
 run = { workspace = true }
 serde = { version = "1", features = ["derive"] }
+trace = { workspace = true }
 
 [dev-dependencies]
-models = { workspace = true }
 frontend-settings = { workspace = true }
 testkit = { workspace = true }
-trace = { workspace = true }

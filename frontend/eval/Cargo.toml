@@ -19,7 +19,6 @@ rocm = ["engine/rocm"]
 engine = { workspace = true }
 bundle = { workspace = true }
 checkpoint = { workspace = true }
-lower = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 frontend-settings = { workspace = true }

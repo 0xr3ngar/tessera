@@ -7,7 +7,7 @@ publish.workspace = true
 description = "Joins ranks over TCP or a shared file, then hands the handles to the engine"
 
 [dependencies]
-engine-comm = { workspace = true }
+engine = { workspace = true }
 
 [dev-dependencies]
 frontend-settings = { workspace = true }

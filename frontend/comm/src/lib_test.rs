@@ -1,5 +1,5 @@
 use crate::shm;
-use engine_comm::Transport;
+use engine::comm::Transport;
 
 /// Rank 1 waits until rank 0 lays out the file.
 #[test]
