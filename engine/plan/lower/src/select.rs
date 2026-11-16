@@ -7,6 +7,7 @@ use cover::{Cover, EDGE, reads};
 use emit::Emit;
 
 use crate::cost::Device;
+use crate::error::Uncovered;
 use crate::form::{self, Load};
 use crate::kernel::KernelRef;
 use crate::plan::Share;
@@ -74,7 +75,7 @@ pub struct Selected {
 /// Names node `t`, and the root above it.
 fn uncovered(tree: &Tree, t: T, root: T) -> Unsupported {
     let node = tree.node(t);
-    Unsupported::Uncovered {
+    Unsupported::Uncovered(Box::new(Uncovered {
         term: node.term.clone(),
         shape: node.shape.clone(),
         reads: node
@@ -83,7 +84,7 @@ fn uncovered(tree: &Tree, t: T, root: T) -> Unsupported {
             .map(|a| tree.node(*a).shape.clone())
             .collect(),
         under: (t != root).then(|| tree.node(root).term.clone()),
-    }
+    }))
 }
 
 /// Chooses kernels for `entry`, sized by `sizes`, costed by `device`.

@@ -18,15 +18,20 @@ pub enum Unsupported {
         form: &'static str,
         align: usize,
     },
-    #[error("{term:?} over {shape:?} from {reads:?}{}", under_text(.under))]
-    Uncovered {
-        term: Term,
-        shape: Vec<usize>,
-        reads: Vec<Vec<usize>>,
-        under: Option<Term>,
-    },
+    #[error("{0}")]
+    Uncovered(Box<Uncovered>),
     #[error("any node: no rule crate is linked; add `use kernels as _; use linear as _;`")]
     Unlinked,
+}
+
+/// A node no rule covers, and the root above it.
+#[derive(Debug, thiserror::Error)]
+#[error("{term:?} over {shape:?} from {reads:?}{}", under_text(.under))]
+pub struct Uncovered {
+    pub term: Term,
+    pub shape: Vec<usize>,
+    pub reads: Vec<Vec<usize>>,
+    pub under: Option<Term>,
 }
 
 /// A size that does not fit this launch.
