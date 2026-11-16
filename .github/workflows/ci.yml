@@ -97,11 +97,17 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features
       # Profiles and test groups live in .config/nextest.toml.
       - run: cargo nextest run --workspace --all-features --profile ci
+      # The report job renders failed and slow tests into the PR comment.
+      - if: always() && hashFiles('target/nextest/ci/junit.xml') != ''
+        run: >
+          mkdir -p "$RUNNER_TEMP/checks" &&
+          cargo run -q -p tessera-check -- tests target/nextest/ci/junit.xml "$RUNNER_TEMP/checks/tests.json"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: junit-linux
-          path: target/nextest/ci/junit.xml
+          name: checks-tests
+          path: ${{ runner.temp }}/checks/tests.json
+          if-no-files-found: ignore
 
   features:
     # Builds with no GPU backend and with each one alone, so
@@ -250,9 +256,9 @@ jobs:
           path: ${{ runner.temp }}/checks/style.json
 
   report:
-    # One PR comment for lint, similarity and style (tools/check).
+    # One PR comment for lint, similarity, style and tests (tools/check).
     if: always() && github.event_name == 'pull_request'
-    needs: [lint, similarity, style]
+    needs: [lint, linux, similarity, style]
     runs-on: ubuntu-latest
     permissions:
       contents: read

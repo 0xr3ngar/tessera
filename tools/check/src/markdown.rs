@@ -45,8 +45,9 @@ fn finding(out: &mut String, f: &Finding, links: Option<&str>) -> std::fmt::Resu
         false => writeln!(out, "- {}: {}", place(&f.path, f.line, links), f.message)?,
     }
     for s in &f.snippets {
-        let at = place(&s.path, s.line, links);
-        writeln!(out, "\n  {at}")?;
+        if !s.path.is_empty() {
+            writeln!(out, "\n  {}", place(&s.path, s.line, links))?;
+        }
         fence(out, language(&s.path), &s.text)?;
     }
     if let Some(fix) = &f.fix {
