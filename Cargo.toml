@@ -39,6 +39,7 @@ gpukit = { path = "engine/gpu/gpukit" }
 bundle = { path = "frontend/bundle" }
 graph = { path = "engine/ir/graph" }
 interp = { path = "engine/ir/interp" }
+host = { path = "engine/plan/host" }
 jit = { path = "engine/plan/jit" }
 kernel-macro = { path = "engine/plan/kernel-macro" }
 kernels = { path = "engine/rules/kernels" }
@@ -59,6 +60,10 @@ trace = { path = "engine/ir/trace" }
 trace-derive = { path = "engine/ir/trace-derive" }
 
 # The host executor interprets whole kernels, so tests need it optimized.
+[profile.dev.package.host]
+opt-level = 3
+
+# The host executor decodes forms through codegen, once per element.
 [profile.dev.package.codegen]
 opt-level = 3
 
