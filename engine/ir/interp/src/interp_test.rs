@@ -257,7 +257,7 @@ fn rows_over(positions: Vec<u32>) -> Result<Vec<Tensor>, Error> {
     let q = typed([Rows, Hidden, HeadDim], DType::F32);
     let ports = [q, kv_port(Heads), kv_port(Heads), idx(), idx()];
     eval(ports, &inputs, None, |m, [q, k, v, s, p]| {
-        [m.attend_rows(1.0, [&q, &k, &v], [&s, &p])]
+        [m.attend_rows(1.0, [&q, &k, &v], [&s, &p], None)]
     })
 }
 

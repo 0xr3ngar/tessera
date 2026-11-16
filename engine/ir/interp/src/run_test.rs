@@ -17,7 +17,7 @@ fn kept() -> Graph {
     let rows = m.kept(TensorType::new([Seqs, Context, KvHeads, HeadDim], F32));
     let by = [&slots, &positions];
     let kv = x.append(&rows, by);
-    m.finish([(Role::Logits, &m.attend_rows(1.0, [&q, &kv, &kv], by))])
+    m.finish([(Role::Logits, &m.attend_rows(1.0, [&q, &kv, &kv], by, None))])
 }
 
 /// Zero queries average the rows their slot sees.

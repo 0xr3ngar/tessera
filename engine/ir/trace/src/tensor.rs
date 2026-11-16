@@ -92,6 +92,11 @@ impl Tensor {
         self.stage(Stage::Rope { theta, pairs }, &[positions])
     }
 
+    /// Entries past each row's position become -inf.
+    pub fn causal(&self, positions: &Tensor) -> Tensor {
+        self.stage(Stage::Causal, &[positions])
+    }
+
     pub fn act(&self, act: Act) -> Tensor {
         self.stage(Stage::Act(act), &[])
     }

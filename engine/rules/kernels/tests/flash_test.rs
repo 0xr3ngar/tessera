@@ -113,7 +113,7 @@ fn ragged(heads: u64, kv_heads: u64, width: u64) -> Graph {
     let (keys, values) = (m.kept(kept.clone()), m.kept(kept));
     let by = [&slots, &positions];
     let (k, v) = (k.append(&keys, by), v.append(&values, by));
-    let out = m.attend_rows(0.125, [&q, &k, &v], by);
+    let out = m.attend_rows(0.125, [&q, &k, &v], by, None);
     m.finish([(Role::Logits, &out)])
 }
 

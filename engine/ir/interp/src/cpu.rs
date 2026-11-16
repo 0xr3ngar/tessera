@@ -186,12 +186,13 @@ pub(crate) fn attend(
     Ok(Tensor::f32(vec![seqs, ctx, heads, dv], out))
 }
 
-/// Each query row reads its slot up to its position.
+/// Rows read their slot to their position, or listed keys.
 pub(crate) fn attend_rows(
     n: &Numerics,
     a: &Attend,
     [q, k, v]: [&Tensor; 3],
     [slots, positions]: [&Tensor; 2],
+    picked: Option<&Tensor>,
 ) -> Result<Tensor, Error> {
     let acc = Acc::new(n.accumulate)?;
     let [rows, heads, d] = q.shape[..] else {
@@ -210,6 +211,7 @@ pub(crate) fn attend_rows(
         v,
     };
     let (slots, positions) = (slots.indices()?, positions.indices()?);
+    let lists = picked.map(Tensor::indices).transpose()?;
     let mut out = vec![0.0; rows * heads * dv];
     let mut p = Vec::with_capacity(keys);
     for r in 0..rows {
@@ -218,12 +220,24 @@ pub(crate) fn attend_rows(
             let msg = format!("row {r} at position {} is past {keys} keys", seen - 1);
             return Err(Error::Mismatch(msg));
         }
+        let all: Vec<usize> = match &lists {
+            Some(ids) => {
+                let width = ids.len() / rows.max(1);
+                let list = &ids[r * width..][..width];
+                list.iter().copied().filter(|j| *j < seen).collect()
+            }
+            None => (0..seen).collect(),
+        };
         for h in 0..heads {
             let row = r * heads + h;
-            let kv_at = |j: usize| (s * keys + j) * kv_heads + h / group;
-            let at = (0..seen).map(kv_at);
+            let kv_at = |j: &usize| (s * keys + j) * kv_heads + h / group;
             let o = &mut out[row * dv..(row + 1) * dv];
-            kv.row(&qs[row * d..(row + 1) * d], at, &mut p, o);
+            kv.row(
+                &qs[row * d..(row + 1) * d],
+                all.iter().map(kv_at),
+                &mut p,
+                o,
+            );
         }
     }
     Ok(Tensor::f32(vec![rows, heads, dv], out))
@@ -277,6 +291,17 @@ pub(crate) fn stage(
             for (block, &pos) in out.chunks_mut(span.max(1)).zip(&at) {
                 for row in block.chunks_mut(width) {
                     turn(row, pos, *theta, *pairs);
+                }
+            }
+        }
+        (Stage::Causal, Some(at)) => {
+            let at = at.indices()?;
+            let span = out.len() / at.len().max(1);
+            for (block, &pos) in out.chunks_mut(span.max(1)).zip(&at) {
+                for row in block.chunks_mut(width) {
+                    row.iter_mut()
+                        .skip(pos + 1)
+                        .for_each(|v| *v = f32::NEG_INFINITY);
                 }
             }
         }

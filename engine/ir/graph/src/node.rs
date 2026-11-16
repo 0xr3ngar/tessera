@@ -175,13 +175,19 @@ pub enum Stage {
     Act(Act),
     Softmax,
     AllReduce,
+    /// Entries past the position in the argument become -inf.
+    Causal,
 }
 
 impl Stage {
     /// Arguments this stage reads besides the row itself.
     pub fn operands(&self) -> usize {
         match self {
-            Stage::Add | Stage::Mul | Stage::RmsNorm { .. } | Stage::Rope { .. } => 1,
+            Stage::Add
+            | Stage::Mul
+            | Stage::RmsNorm { .. }
+            | Stage::Rope { .. }
+            | Stage::Causal => 1,
             _ => 0,
         }
     }

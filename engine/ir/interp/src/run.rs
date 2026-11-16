@@ -426,7 +426,14 @@ impl Context<'_> {
             Op::Weight(i) => weight(&self.weights[*i as usize]),
             Op::Matmul => cpu::matmul(num, args[0], args[1]),
             Op::Attend(a) if a.ragged => {
-                cpu::attend_rows(num, a, [args[0], args[1], args[2]], [args[3], args[4]])
+                let keys = args.get(5).copied();
+                cpu::attend_rows(
+                    num,
+                    a,
+                    [args[0], args[1], args[2]],
+                    [args[3], args[4]],
+                    keys,
+                )
             }
             Op::Attend(a) => cpu::attend(num, a, [args[0], args[1], args[2]], args.get(3).copied()),
             Op::Mask(mask) => masked(*mask, args[0]),

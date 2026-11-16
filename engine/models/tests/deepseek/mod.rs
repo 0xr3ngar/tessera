@@ -1,7 +1,7 @@
 //! DeepSeek-V3.
 
-use crate::common::{Spec, suite};
-use models::mla::{Config, program};
+use crate::common::{Spec, Stepper, suite};
+use models::mla::{Config, program, stepper};
 use trace::Composite::{Attention, Mlp, Moe};
 use trace::Graph;
 
@@ -13,12 +13,17 @@ pub fn release() -> Graph {
     program(&Config::deepseek_v3(8, 163_840))
 }
 
+const STEPPER: Stepper = Stepper {
+    small: || stepper(&models::small::deepseek()),
+    release: || stepper(&Config::deepseek_v3(1, 1024)),
+};
+
 const SPEC: Spec = Spec {
     name: "deepseek",
     release,
     parameters: 671_026_419_200,
     regions: &[(Attention, 61), (Mlp, 3), (Moe, 58)],
-    stepper: None,
+    stepper: Some(STEPPER),
     small: Some(small),
     files: &[],
     golden: None,

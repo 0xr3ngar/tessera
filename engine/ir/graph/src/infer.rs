@@ -312,15 +312,25 @@ fn valued(q: &TensorType, v: &TensorType) -> TensorType {
 
 /// Positions must lead `x`, which keeps whole pairs.
 fn rope(dims: &[Dim], x: &TensorType, pos: &TensorType, p: Placement) -> Result<(), TypeError> {
-    let lead = pos.rank().min(x.rank() - 1);
-    let fits = pos.rank() < x.rank() && same_shape(dims, &front(&x.shape, lead), &pos.shape)?;
-    need(fits, ErrorKind::Shape, || {
-        format!("positions {} do not lead {}", pos.shape, x.shape)
-    })?;
     let width = poly(dims, x.shape.0.last().expect("rank checked"))?;
     let even = width.as_const().is_none_or(|w| w % 2 == 0);
     need(even, ErrorKind::Shape, || {
         format!("rope needs an even width, got {}", x.shape)
+    })?;
+    positions(dims, x, pos, p)
+}
+
+/// Integer positions lead the rows of `x`, on every rank.
+fn positions(
+    dims: &[Dim],
+    x: &TensorType,
+    pos: &TensorType,
+    p: Placement,
+) -> Result<(), TypeError> {
+    let lead = pos.rank().min(x.rank() - 1);
+    let fits = pos.rank() < x.rank() && same_shape(dims, &front(&x.shape, lead), &pos.shape)?;
+    need(fits, ErrorKind::Shape, || {
+        format!("positions {} do not lead {}", pos.shape, x.shape)
     })?;
     need(pos.dtype.is_int(), ErrorKind::DType, || {
         format!("positions must be integers, got {:?}", pos.dtype)
@@ -328,10 +338,7 @@ fn rope(dims: &[Dim], x: &TensorType, pos: &TensorType, p: Placement) -> Result<
     let last = x.rank() as u32 - 1;
     let placed = pos.placement == Placement::Replicated && p != Placement::Split { axis: last };
     need(placed, ErrorKind::Placement, || {
-        format!(
-            "rope cannot turn {p:?} rows by {:?} positions",
-            pos.placement
-        )
+        format!("{p:?} rows cannot follow {:?} positions", pos.placement)
     })
 }
 
@@ -393,6 +400,10 @@ fn row(dims: &[Dim], stages: &[Stage], args: &[&TensorType]) -> Result<TensorTyp
                     format!("rope base is {theta}")
                 })?;
                 rope(dims, x, pos, p)?;
+            }
+            (Stage::Causal, Some(pos)) => {
+                positions(dims, x, pos, p)?;
+                whole(p, last, s)?;
             }
             (Stage::Act(a), _) => {
                 // Routed zeros stay zero only where the activation keeps zero.

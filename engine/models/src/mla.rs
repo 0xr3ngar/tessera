@@ -1,10 +1,10 @@
 //! DeepSeek-style decoders: low-rank attention, MoE, indexed keys.
 
-use crate::shared::{Attend, Stack, rows, swiglu, tokens};
+use crate::shared::{Attend, Stack, rows, step_ports, swiglu, tokens};
 use trace::DimName::*;
 use trace::{
-    Act, Composite, Dim, DimExpr, Embed, Graph, Linear, Linears, Mask, Model, Norm, Pairs, Role,
-    Tensor, Vector, Weights,
+    Act, Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Linears, Mask, Model,
+    Norm, Pairs, Role, Size, Tensor, TensorType, Vector, Weights,
 };
 
 pub struct Config {
@@ -213,85 +213,171 @@ pub struct Mla {
     pub head: Linear,
 }
 
+/// One layer's kept latent, rotary key and index keys.
+struct Cache {
+    latent: Kept,
+    rope: Kept,
+    index: Option<Kept>,
+}
+
+/// The keys a layer reads.
+enum Keys<'a> {
+    All,
+    /// Keys an earlier layer picked.
+    Given(Tensor),
+    /// Keys this indexer picks.
+    Pick(&'a Indexer),
+}
+
+/// What one pass over the layers shares.
+struct Pass<'a> {
+    m: &'a Model,
+    c: &'a Config,
+    positions: &'a Tensor,
+    /// When stepping: each row's slot, and every layer's kept rows.
+    step: Option<(&'a Tensor, Vec<Cache>)>,
+}
+
 pub fn forward(m: &Model, c: &Config, w: &Mla, tokens: &Tensor, positions: &Tensor) -> Tensor {
-    let mut x = m.embed(tokens, &w.embed);
-    let mut indexers = w.indexers.iter();
-    let mut keys: Option<Tensor> = None;
-    for (l, a) in w.attn.iter().enumerate() {
-        let h = x.rms_norm(&a.norm, c.eps);
-        let at = [&h, positions];
-        let reused = keys.clone().filter(|_| !c.indexes(l as u64));
-        let attn = match (reused, &c.index) {
-            (Some(k), _) => m.composite(Composite::Attention, || [mla(m, c, a, at, |_| Some(k)).0]),
-            (None, None) => m.composite(Composite::Attention, || [mla(m, c, a, at, |_| None).0]),
-            (None, Some(_)) => {
-                let ix = indexers.next().expect("an indexer per indexing layer");
-                let pick = |qr: &Tensor| Some(pick_keys(c, ix, qr, &h));
-                let [out, k] = m.composite(Composite::Attention, || {
-                    let (out, k) = mla(m, c, a, at, pick);
-                    [out, k.expect("picked keys")]
-                });
-                keys = Some(k);
-                [out]
-            }
-        };
-        x = x.add(&attn[0]);
-        let h = x.rms_norm(&w.mlp_norm[l], c.eps);
-        let mlp = match l.checked_sub(w.dense.len()) {
-            None => {
-                let d = &w.dense[l];
-                m.composite(Composite::Mlp, || [swiglu(&h, [&d.gate, &d.up, &d.down])])
-            }
-            Some(i) => m.composite(Composite::Moe, || [moe(m, c, &w.moe[i], &h)]),
-        };
-        x = x.add(&mlp[0]);
+    let pass = Pass {
+        m,
+        c,
+        positions,
+        step: None,
+    };
+    pass.logits(w, tokens)
+}
+
+impl Pass<'_> {
+    fn logits(&self, w: &Mla, tokens: &Tensor) -> Tensor {
+        let (m, c) = (self.m, self.c);
+        let mut x = m.embed(tokens, &w.embed);
+        let mut indexers = w.indexers.iter();
+        let mut keys: Option<Tensor> = None;
+        for (l, a) in w.attn.iter().enumerate() {
+            let h = x.rms_norm(&a.norm, c.eps);
+            let reused = keys.clone().filter(|_| !c.indexes(l as u64));
+            let read = match (reused, &c.index) {
+                (Some(k), _) => Keys::Given(k),
+                (None, None) => Keys::All,
+                (None, Some(_)) => {
+                    Keys::Pick(indexers.next().expect("an indexer per indexing layer"))
+                }
+            };
+            let attn = match read {
+                Keys::Pick(_) => {
+                    let [out, k] = m.composite(Composite::Attention, || {
+                        let (out, k) = self.mla(l, a, &h, read);
+                        [out, k.expect("picked keys")]
+                    });
+                    keys = Some(k);
+                    [out]
+                }
+                _ => m.composite(Composite::Attention, || [self.mla(l, a, &h, read).0]),
+            };
+            x = x.add(&attn[0]);
+            let h = x.rms_norm(&w.mlp_norm[l], c.eps);
+            let mlp = match l.checked_sub(w.dense.len()) {
+                None => {
+                    let d = &w.dense[l];
+                    m.composite(Composite::Mlp, || [swiglu(&h, [&d.gate, &d.up, &d.down])])
+                }
+                Some(i) => m.composite(Composite::Moe, || [moe(m, c, &w.moe[i], &h)]),
+            };
+            x = x.add(&mlp[0]);
+        }
+        x.rms_norm(&w.norm, c.eps).matmul(&w.head)
     }
-    x.rms_norm(&w.norm, c.eps).matmul(&w.head)
+
+    /// The axes before a row's features: `[Seqs, Context]`, or `[Rows]`.
+    fn lead(&self, rest: impl IntoIterator<Item = DimExpr>) -> Vec<DimExpr> {
+        let lead = match self.step {
+            Some(_) => vec![Rows.into()],
+            None => rows([]),
+        };
+        lead.into_iter().chain(rest).collect()
+    }
+
+    /// The output, and the keys it picked, if any.
+    fn mla(&self, l: usize, w: &Attention, h: &Tensor, read: Keys) -> (Tensor, Option<Tensor>) {
+        let (m, c) = (self.m, self.c);
+        let feature = self.lead([]).len() as u32;
+        let shape = [Heads.into(), Heads.into(), HeadDim.into()];
+        let heads = Attend::new(&w.o, self.lead([]), shape);
+        let turn = |t: Tensor| t.rope(self.positions, c.rope_theta, Pairs::Adjacent);
+        let qr = h.matmul(&w.q_a).rms_norm(&w.q_norm, c.eps);
+        let keys = match read {
+            Keys::All => None,
+            Keys::Given(k) => Some(k),
+            Keys::Pick(ix) => Some(self.pick_keys(l, ix, &qr, h)),
+        };
+        let q = heads.split(qr.matmul(&w.q_b), Heads, Nope + Rope);
+        let head = feature + 1;
+        let q = q
+            .slice(head, 0u64, Nope)
+            .concat(&turn(q.slice(head, Nope, Rope)));
+        let kv = h.matmul(&w.kv_a);
+        let latent = kv.slice(feature, 0u64, Latent).rms_norm(&w.kv_norm, c.eps);
+        // Every head shares one rotary key part.
+        let shared = turn(kv.slice(feature, Latent, Rope));
+        let scale = 1.0 / ((c.nope + c.rope) as f32).sqrt();
+        let out = match &self.step {
+            None => {
+                let [k, v] = keys_values(w, &latent, &shared);
+                m.attend(Mask::Causal, scale, [&q, &k, &v], keys.as_ref())
+            }
+            Some((slots, caches)) => {
+                let by = [*slots, self.positions];
+                let latent = latent.append(&caches[l].latent, by);
+                let [k, v] = keys_values(w, &latent, &shared.append(&caches[l].rope, by));
+                m.attend_rows(scale, [&q, &k, &v], by, keys.as_ref())
+            }
+        };
+        (heads.merge(out), keys)
+    }
+
+    /// Each query's best `IndexKeep` visible keys.
+    fn pick_keys(&self, l: usize, w: &Indexer, qr: &Tensor, h: &Tensor) -> Tensor {
+        let c = self.c;
+        let q = qr
+            .matmul(&w.wq)
+            .reshape(self.lead([IndexHeads.into(), IndexDim.into()]));
+        let k = h.matmul(&w.wk).center().rms_norm(&w.k_norm, c.eps);
+        let k = k.add_vector(&w.k_bias);
+        // A step reads its slot's kept keys.
+        let k = match &self.step {
+            None => k,
+            Some((slots, caches)) => {
+                let kept = caches[l].index.as_ref().expect("an index cache");
+                k.append(kept, [*slots, self.positions]).gather(slots)
+            }
+        };
+        // Per query: one score for each head and key.
+        let hits = q.matmul_rows(&k).act(Act::Relu);
+        let by_head = h
+            .matmul(&w.weights)
+            .reshape(self.lead([DimExpr::Const(1), IndexHeads.into()]));
+        let rank = self.lead([]).len() as u32 + 2;
+        let swap: Vec<u32> = (0..rank - 2).chain([rank - 1, rank - 2]).collect();
+        let scores = hits.permute(&swap).matmul_rows(&by_head);
+        let scores = scores.reshape(self.lead([Context.into()]));
+        let seen = match self.step {
+            Some(_) => scores.causal(self.positions),
+            None => scores.mask(Mask::Causal),
+        };
+        seen.top_k(IndexKeep)
+    }
 }
 
-/// The output, and the keys read when picked.
-fn mla(
-    m: &Model,
-    c: &Config,
-    w: &Attention,
-    [h, positions]: [&Tensor; 2],
-    keys: impl FnOnce(&Tensor) -> Option<Tensor>,
-) -> (Tensor, Option<Tensor>) {
-    let shape = [Heads.into(), Heads.into(), HeadDim.into()];
-    let heads = Attend::new(&w.o, rows([]), shape);
-    let turn = |t: Tensor| t.rope(positions, c.rope_theta, Pairs::Adjacent);
-    let qr = h.matmul(&w.q_a).rms_norm(&w.q_norm, c.eps);
-    let keys = keys(&qr);
-    let q = heads.split(qr.matmul(&w.q_b), Heads, Nope + Rope);
-    let q = q.slice(3, 0u64, Nope).concat(&turn(q.slice(3, Nope, Rope)));
-    let kv = h.matmul(&w.kv_a);
-    let latent = kv.slice(2, 0u64, Latent).rms_norm(&w.kv_norm, c.eps);
-    // Every head shares one rotary key part.
-    let shared = heads.split(turn(kv.slice(2, Latent, Rope)), 1u64, Rope);
-    let per_head = heads.split(latent.matmul(&w.kv_b), Heads, Nope + HeadDim);
-    let k = per_head
-        .slice(3, 0u64, Nope)
-        .concat(&shared.expand(2, Heads));
-    let v = per_head.slice(3, Nope, HeadDim);
-    let scale = 1.0 / ((c.nope + c.rope) as f32).sqrt();
-    let out = m.attend(Mask::Causal, scale, [&q, &k, &v], keys.as_ref());
-    (heads.merge(out), keys)
-}
-
-/// Each query's best `IndexKeep` visible keys.
-fn pick_keys(c: &Config, w: &Indexer, qr: &Tensor, h: &Tensor) -> Tensor {
-    let q = qr
-        .matmul(&w.wq)
-        .reshape([Seqs, Context, IndexHeads, IndexDim]);
-    let k = h.matmul(&w.wk).center().rms_norm(&w.k_norm, c.eps);
-    // Per query: one score for each head and key.
-    let hits = q.matmul_rows(&k.add_vector(&w.k_bias)).act(Act::Relu);
-    let by_head = h
-        .matmul(&w.weights)
-        .reshape(rows([DimExpr::Const(1), IndexHeads.into()]));
-    let scores = hits.permute(&[0, 1, 3, 2]).matmul_rows(&by_head);
-    let scores = scores.reshape([Seqs, Context, Context]);
-    scores.mask(Mask::Causal).top_k(IndexKeep)
+/// Per-head keys and values from latents and rotary keys.
+fn keys_values(w: &Attention, latent: &Tensor, shared: &Tensor) -> [Tensor; 2] {
+    let per_head = latent
+        .matmul(&w.kv_b)
+        .reshape(rows([Heads.into(), Nope + HeadDim]));
+    let one = rows([DimExpr::Const(1), Rope.into()]);
+    let shared = shared.reshape(one).expand(2, Heads);
+    let k = per_head.slice(3, 0u64, Nope).concat(&shared);
+    [k, per_head.slice(3, Nope, HeadDim)]
 }
 
 /// Each row's top experts, weighted, plus the shared expert.
@@ -315,4 +401,29 @@ pub fn program(c: &Config) -> Graph {
     let [tokens, positions] = tokens(&m);
     let logits = forward(&m, c, &w, &tokens, &positions);
     m.finish([(Role::Logits, &logits)])
+}
+
+/// One step entry: rows in, each row's likeliest token out.
+pub fn stepper(c: &Config) -> Graph {
+    let mut dims = c.dims();
+    let size = Size::Bounded(c.stack.max_context);
+    dims.push(Dim { name: Rows, size });
+    let m = Model::new(dims);
+    let w: Mla = trace::declare(&m);
+    let [tokens, positions, slots] = step_ports(&m);
+    let kept = |width: DimName| m.kept(TensorType::new(rows([width.into()]), DType::F32));
+    let cache = |l| Cache {
+        latent: kept(Latent),
+        rope: kept(Rope),
+        index: c.indexes(l).then(|| kept(IndexDim)),
+    };
+    let pass = Pass {
+        m: &m,
+        c,
+        positions: &positions,
+        step: Some((&slots, (0..c.stack.layers).map(cache).collect())),
+    };
+    let logits = pass.logits(&w, &tokens);
+    let ids = logits.top_k(1u64).reshape([Rows]);
+    m.finish([(Role::Tokens, &ids), (Role::Logits, &logits)])
 }
