@@ -178,9 +178,14 @@ impl Run for Runner {
     }
 }
 
+/// Threads a launch is worth spreading over.
+const SPREAD: usize = 2048;
+
 /// Group ranges across the threads at hand.
-fn ranges(groups: usize) -> Vec<(usize, usize)> {
+fn ranges(groups: usize, threads: usize) -> Vec<(usize, usize)> {
     let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+    // Starting threads costs more than a small launch does.
+    let cores = if groups * threads < SPREAD { 1 } else { cores };
     let workers = cores.min(groups).max(1);
     let per = groups.div_ceil(workers);
     (0..workers)
@@ -236,7 +241,7 @@ fn compiled(
         lanes,
         precision,
     });
-    let (ranges, shared) = (ranges(grid.groups), &shared);
+    let (ranges, shared) = (ranges(grid.groups, grid.threads), &shared);
     let run = |(lo, hi): (usize, usize)| {
         // SAFETY: the entry was compiled for this body's parameters.
         unsafe { entry(&shared.0, lo, hi) }
