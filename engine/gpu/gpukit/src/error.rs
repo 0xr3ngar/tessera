@@ -20,5 +20,6 @@ pub enum Error {
     #[error("format error: {0}")]
     Format(&'static str),
     /// A Metal device, buffer or dispatch failure.
+    #[error("metal: {0}")]
     Metal(String),
 }
