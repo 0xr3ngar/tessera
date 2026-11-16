@@ -104,8 +104,17 @@ impl Attend {
     }
 }
 
+/// Small groups: workers split a launch by group.
+fn small(jobs: usize) -> Shape {
+    Shape::Grid {
+        across: jobs.div_ceil(8),
+        down: 1,
+        threads: 8,
+    }
+}
+
 fn attend_launches(k: &Attend, step: &Step) -> Vec<Launch> {
-    let mut launches = vec![Launch::plain(step, &[k.jobs()], Shape::Line(k.jobs()))];
+    let mut launches = vec![Launch::plain(step, &[k.jobs()], small(k.jobs()))];
     // The scale sits before the counts.
     let at = launches[0].args.len() - 1;
     launches[0].args.insert(at, lower::Arg::value(&k.scale));
@@ -179,7 +188,7 @@ fn rows_launches(k: &AttendRows, step: &Step) -> Vec<Launch> {
     args.extend(a.kept_args());
     vec![Launch {
         args,
-        shape: Shape::Line(a.queries * a.heads),
+        shape: small(a.queries * a.heads),
     }]
 }
 

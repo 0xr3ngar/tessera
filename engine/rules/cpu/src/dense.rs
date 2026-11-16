@@ -1,7 +1,7 @@
 //! `x[m, k]` times `w[n, k]` transposed, dense or picked.
 
 use crate::{GUESS, source};
-use codegen::ir::{Body, Expr, Intrinsic, Ty};
+use codegen::ir::{BinOp, Body, Expr, Intrinsic, Stmt, Ty};
 use codegen::prelude::*;
 use lower::form::Load as Stored;
 use lower::kernels::finish;
@@ -27,6 +27,39 @@ fn cpu_dense(
     let row = (gid() / n) as u64 * k as u64;
     let col = (gid() % n) as u64 * k as u64;
     sums[0] += x.dot(row, w, col, k);
+}
+
+/// One thread per block of 16 rows by 16 columns.
+#[kernel]
+fn cpu_tiled(
+    x: Buf<F32>,
+    #[form(form)] w: Buf<Dyn>,
+    mut out: BufMut<F32>,
+    m: u32,
+    n: u32,
+    k: u32,
+    #[build] form: &'static dyn Stored,
+) {
+    // Groups of four by four blocks stay in cache.
+    let across = (n / 16 + 3) / 4;
+    let group = gid() / 16;
+    let row = (group / across * 4 + gid() % 16 / 4) * 16;
+    let col = (group % across * 4 + gid() % 4) * 16;
+    if row >= m || col >= n {
+        return;
+    }
+    let rows = if m - row < 16 { m - row } else { 16 };
+    let at = row as u64 * n as u64 + col as u64;
+    out.dots(
+        at,
+        n,
+        x,
+        row as u64 * k as u64,
+        w,
+        col as u64 * k as u64,
+        k,
+        rows,
+    );
 }
 
 /// Which matrix each row reads, and where this rank's start.
@@ -76,6 +109,44 @@ fn finished(mut body: Body, after: &After, operands_at: usize) -> Body {
     body
 }
 
+/// The stages after each sum the thread's block holds.
+fn tiled_finish(mut body: Body, after: &After) -> Body {
+    if after.stages.is_empty() {
+        return body;
+    }
+    lower::kernels::add_operands(&mut body, 2, after.others());
+    let e = || Expr::var("e");
+    let (r, c) = (
+        Expr::bin(BinOp::Div, e(), Expr::lit(16)),
+        Expr::bin(BinOp::Rem, e(), Expr::lit(16)),
+    );
+    let offset = Expr::bin(
+        BinOp::Add,
+        Expr::bin(BinOp::Mul, r.clone(), Expr::var("n")),
+        c,
+    );
+    let at = Expr::bin(BinOp::Add, Expr::var("at"), Expr::cast(Ty::U64, offset));
+    let sum = Expr::index(Expr::var("out"), at.clone());
+    body.stmts.push(Stmt::For {
+        var: "e".into(),
+        from: Expr::lit(0),
+        to: Expr::lit(256),
+        step: Expr::lit(1),
+        unroll: 0,
+        body: vec![Stmt::If {
+            cond: Expr::bin(BinOp::Lt, r, Expr::var("rows")),
+            then: finish(after, sum, at),
+            els: Vec::new(),
+        }],
+    });
+    body
+}
+
+/// Blocks need whole columns and f32 or bf16 weights.
+fn tiles(m: usize, n: usize, form: &dyn Stored) -> bool {
+    m >= 4 && n.is_multiple_of(16) && ["f32", "bf16"].contains(&form.name())
+}
+
 /// Weights read as stored. Rows and operands come as f32.
 fn accepts(input: usize, form: &dyn Stored) -> bool {
     input == 1 || !form.narrow()
@@ -108,6 +179,33 @@ fn dense_launches(k: &Dense, step: &Step) -> Vec<Launch> {
         &[k.m, k.n, k.k],
         Shape::Line(k.m * k.n),
     )]
+}
+
+/// A matmul in square blocks, and its stages.
+#[derive(Clone, Debug, Kernel)]
+#[launch(
+    crate = lower,
+    name = "cpu_tiled",
+    sizes = [self.0.m, self.0.n, self.0.k],
+    work = self.0.m * self.0.n * self.0.k,
+    guess = GUESS / 4.0,
+    runs_on = ZoneKind::Cpu,
+    accepts = accepts(input, form),
+    source = source("cpu_tiled", tiled_finish(cpu_tiled_ir(self.0.form), &self.0.after)),
+    launches = tiled_launches,
+)]
+pub struct Tiled(pub Dense);
+
+fn tiled_launches(k: &Tiled, step: &Step) -> Vec<Launch> {
+    let d = &k.0;
+    // Small groups, as workers split a launch by group.
+    let groups = d.m.div_ceil(64) * (d.n / 16).div_ceil(4) * 4;
+    let shape = Shape::Grid {
+        across: groups,
+        down: 1,
+        threads: 4,
+    };
+    vec![Launch::plain(step, &[d.m, d.n, d.k], shape)]
 }
 
 /// Each row against its id's matrix, then the stages.
@@ -159,18 +257,16 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
         ..
     } = site.product;
     let after = site.after.clone();
+    let dense = Dense {
+        m,
+        n,
+        k,
+        form,
+        after: after.clone(),
+    };
     let kernel = match picked {
-        None => Draft::new(
-            Dense {
-                m,
-                n,
-                k,
-                form,
-                after,
-            },
-            site.reads(),
-            m * n,
-        ),
+        None if tiles(m, n, form) => Draft::new(Tiled(dense), site.reads(), m * n),
+        None => Draft::new(dense, site.reads(), m * n),
         Some(pick) => Draft::new(
             Picked {
                 m,

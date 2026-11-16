@@ -118,6 +118,47 @@ pub unsafe extern "C" fn st_f32(p: *mut u8, len: usize, at: usize, v: f32) {
     }
 }
 
+macro_rules! tiles {
+    ($($name:ident = $form:expr, $bytes:expr;)*) => {$(
+        #[allow(clippy::too_many_arguments, reason = "three buffers and their offsets")]
+        pub unsafe extern "C" fn $name(
+            out: *mut u8,
+            out_len: usize,
+            at: usize,
+            stride: usize,
+            x: *const u8,
+            x_len: usize,
+            x_at: usize,
+            w: *const u8,
+            w_len: usize,
+            w_at: usize,
+            k: usize,
+            rows: usize,
+        ) {
+            let bytes: fn(usize) -> usize = $bytes;
+            let block = lockstep::BLOCK;
+            let rows = rows.min(block);
+            let last = (at + rows.saturating_sub(1) * stride + block) * 4;
+            let (Some(_), Some(x), Some(w)) = (
+                unsafe { within(out, out_len, last) },
+                unsafe { within(x, x_len, (x_at + rows * k) * 4) },
+                unsafe { within(w, w_len, bytes(w_at + block * k)) },
+            ) else {
+                return;
+            };
+            // SAFETY: checked above.
+            let out = unsafe { std::slice::from_raw_parts_mut(out, out_len) };
+            let d = lockstep::Dots { at, stride, x_at, w_at, k };
+            lockstep::dots_form($form, out, x, w, &d, rows);
+        }
+    )*};
+}
+
+tiles! {
+    dots_f32 = codegen::form::F32_FORM, |n| n * 4;
+    dots_bf16 = codegen::form::BF16_FORM, |n| n * 2;
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "two rows, two scales and a length"

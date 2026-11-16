@@ -203,6 +203,25 @@ impl<F: Elems> BufMut<F> {
         device()
     }
 
+    /// A block of rows of `x` against rows of `w`.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "two rows, their offsets, the sizes"
+    )]
+    pub fn dots<G: Elems, H: Elems>(
+        &mut self,
+        _: u64,
+        _: u32,
+        _: Buf<G>,
+        _: u64,
+        _: Buf<H>,
+        _: u64,
+        _: u32,
+        _: u32,
+    ) {
+        device()
+    }
+
     /// `n` elements from `at` become `self * keep + p * b`.
     pub fn mix<G: Elems>(&mut self, _: u64, _: f32, _: f32, _: Buf<G>, _: u64, _: u32) {
         device()
