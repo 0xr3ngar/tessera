@@ -1,8 +1,7 @@
 //! The CUDA driver behind the shared context.
 
 use std::cell::Cell;
-use std::ffi::{CStr, c_char, c_int, c_void};
-use std::thread::LocalKey;
+use std::ffi::{CStr, c_char, c_int};
 
 use super::driver::{
     self, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
@@ -13,9 +12,8 @@ use super::driver::{
     CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION, CU_STREAM_CAPTURE_MODE_RELAXED,
     CU_STREAM_NON_BLOCKING, CUcontext, CUdevice, Driver, LaunchAttribute, LaunchConfig,
 };
-use crate::api::{self, Api, Call, Handle, Kind};
+use crate::api::{self, Api, Call, Handle};
 use crate::backend::Backend;
-use crate::device::Caches;
 use crate::platform::{self, Asked, Platform};
 use crate::{Error, Limits};
 
@@ -187,25 +185,27 @@ impl Api for Driver {
 
     const BACKEND: Backend = Backend::Cuda;
 
-    fn error(msg: String) -> Error {
-        Error::Cuda(msg)
-    }
-
-    fn describe(ctx: &Context) -> Platform {
-        ctx.platform()
-    }
-
-    fn open() -> Result<Context, Error> {
-        Context::new(ContextConfig::default())
-    }
-
-    fn caches() -> &'static Caches<Context> {
-        static CACHES: Caches<Context> = Caches::new();
-        &CACHES
-    }
-
-    fn capturing() -> &'static LocalKey<Cell<Handle>> {
-        &CAPTURING
+    api::shared_api! {
+        context: Context,
+        error: Error::Cuda,
+        check: Driver::check,
+        synchronize: (cu_stream_synchronize, "cuStreamSynchronize"),
+        begin_capture: (
+            cu_stream_begin_capture, "cuStreamBeginCapture", CU_STREAM_CAPTURE_MODE_RELAXED
+        ),
+        end_capture: (cu_stream_end_capture, "cuStreamEndCapture"),
+        replay: (cu_graph_launch, "cuGraphLaunch"),
+        unload: (cu_module_unload, cu_graph_exec_destroy, cu_graph_destroy, cu_stream_destroy),
+        load: (cu_module_load_data, "cuModuleLoadData"),
+        function: (cu_module_get_function, "cuModuleGetFunction"),
+        alloc: (cu_mem_alloc, "cuMemAlloc"),
+        free: cu_mem_free,
+        host_alloc: (
+            cu_mem_host_alloc, "cuMemHostAlloc", driver::CU_MEMHOSTALLOC_DEVICEMAP,
+            cu_mem_host_get_device_pointer, "cuMemHostGetDevicePointer"
+        ),
+        host_free: cu_mem_free_host,
+        zero: (cu_memset_d8, "cuMemsetD8"),
     }
 
     fn programmatic(on: bool) {
@@ -216,18 +216,9 @@ impl Api for Driver {
         unsafe { (self.cu_ctx_destroy)(own.raw) };
     }
 
-    fn check(&self, code: c_int, what: &str) -> Result<(), Error> {
-        Driver::check(self, code, what)
-    }
-
     fn set_current(&self, own: &Own, _: c_int) -> Result<(), Error> {
         let code = unsafe { (self.cu_ctx_set_current)(own.raw) };
         self.check(code, "cuCtxSetCurrent")
-    }
-
-    fn synchronize(&self) -> Result<(), Error> {
-        let code = unsafe { (self.cu_stream_synchronize)(std::ptr::null_mut()) };
-        self.check(code, "cuStreamSynchronize")
     }
 
     fn stream(&self) -> Result<Handle, Error> {
@@ -236,47 +227,9 @@ impl Api for Driver {
         })
     }
 
-    fn begin_capture(&self, stream: Handle) -> Result<(), Error> {
-        let mode = CU_STREAM_CAPTURE_MODE_RELAXED;
-        let code = unsafe { (self.cu_stream_begin_capture)(stream, mode) };
-        self.check(code, "cuStreamBeginCapture")
-    }
-
-    fn end_capture(&self, stream: Handle, graph: &mut Handle) -> Result<(), Error> {
-        let code = unsafe { (self.cu_stream_end_capture)(stream, graph) };
-        self.check(code, "cuStreamEndCapture")
-    }
-
     fn instantiate(&self, graph: Handle) -> Result<Handle, Error> {
         self.out("cuGraphInstantiate", |e| unsafe {
             (self.cu_graph_instantiate)(e, graph, 0)
-        })
-    }
-
-    fn replay(&self, exec: Handle) -> Result<(), Error> {
-        let code = unsafe { (self.cu_graph_launch)(exec, std::ptr::null_mut()) };
-        self.check(code, "cuGraphLaunch")
-    }
-
-    fn destroy(&self, kind: Kind, handle: Handle) {
-        let free = match kind {
-            Kind::Module => self.cu_module_unload,
-            Kind::Exec => self.cu_graph_exec_destroy,
-            Kind::Graph => self.cu_graph_destroy,
-            Kind::Stream => self.cu_stream_destroy,
-        };
-        unsafe { free(handle) };
-    }
-
-    fn load(&self, image: &[u8]) -> Result<Handle, Error> {
-        self.out("cuModuleLoadData", |m| unsafe {
-            (self.cu_module_load_data)(m, image.as_ptr().cast())
-        })
-    }
-
-    fn function(&self, module: Handle, name: &CStr) -> Result<Handle, Error> {
-        self.out("cuModuleGetFunction", |f| unsafe {
-            (self.cu_module_get_function)(f, module, name.as_ptr())
         })
     }
 
@@ -288,31 +241,6 @@ impl Api for Driver {
         self.check(code, "cuLaunchKernel")
     }
 
-    fn alloc(&self, size: usize) -> Result<u64, Error> {
-        let mut ptr = 0;
-        self.check(unsafe { (self.cu_mem_alloc)(&mut ptr, size) }, "cuMemAlloc")?;
-        Ok(ptr)
-    }
-
-    fn free(&self, ptr: u64) {
-        unsafe { (self.cu_mem_free)(ptr) };
-    }
-
-    fn host_alloc(&self, size: usize) -> Result<(u64, u64), Error> {
-        let mut host = std::ptr::null_mut();
-        let flags = driver::CU_MEMHOSTALLOC_DEVICEMAP;
-        let code = unsafe { (self.cu_mem_host_alloc)(&mut host, size, flags) };
-        self.check(code, "cuMemHostAlloc")?;
-        let mut device = 0;
-        let code = unsafe { (self.cu_mem_host_get_device_pointer)(&mut device, host, 0) };
-        self.check(code, "cuMemHostGetDevicePointer")?;
-        Ok((host as u64, device))
-    }
-
-    fn host_free(&self, host: u64) {
-        unsafe { (self.cu_mem_free_host)(host as *mut c_void) };
-    }
-
     fn upload(&self, ptr: u64, bytes: &[u8]) -> Result<(), Error> {
         let code = unsafe { (self.cu_memcpy_htod)(ptr, bytes.as_ptr().cast(), bytes.len()) };
         self.check(code, "cuMemcpyHtoD")
@@ -321,10 +249,6 @@ impl Api for Driver {
     fn download(&self, ptr: u64, bytes: &mut [u8]) -> Result<(), Error> {
         let code = unsafe { (self.cu_memcpy_dtoh)(bytes.as_mut_ptr().cast(), ptr, bytes.len()) };
         self.check(code, "cuMemcpyDtoH")
-    }
-
-    fn zero(&self, ptr: u64, size: usize) -> Result<(), Error> {
-        self.check(unsafe { (self.cu_memset_d8)(ptr, 0, size) }, "cuMemsetD8")
     }
 
     fn compile(ctx: &Context, source: &str) -> Result<Vec<u8>, Error> {
