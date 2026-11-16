@@ -1,7 +1,7 @@
 //! What compiled bodies call: buffers, math, shuffles and tiles.
 
 use codegen::Precision;
-use codegen::form::{BF16_FORM, F32_FORM, LOADS, Load, U8_FORM, U32_FORM};
+use codegen::form::{BF16_FORM, Bf16, F32, F32_FORM, Form, LOADS, Load, U8, U32};
 use host::lockstep::{self, THREADS, Tiles};
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -61,7 +61,7 @@ unsafe fn within<'a>(p: *const u8, len: usize, end: usize) -> Option<&'a [u8]> {
 macro_rules! readers {
     ($($name:ident = $read:ident : $ty:ty, $form:expr;)*) => {$(
         pub unsafe extern "C" fn $name(p: *const u8, len: usize, at: usize) -> $ty {
-            match unsafe { within(p, len, $form.bytes(at + 1)) } {
+            match unsafe { within(p, len, Form::bytes(&$form, at + 1)) } {
                 Some(b) => lockstep::$read(b, at),
                 None => Default::default(),
             }
@@ -70,10 +70,10 @@ macro_rules! readers {
 }
 
 readers! {
-    rd_f32 = rd_f32: f32, F32_FORM;
-    rd_bf16 = rd_bf16: f32, BF16_FORM;
-    rd_u32 = rd_u32: u32, U32_FORM;
-    rd_u8 = rd_u8: u32, U8_FORM;
+    rd_f32 = rd_f32: f32, F32;
+    rd_bf16 = rd_bf16: f32, Bf16;
+    rd_u32 = rd_u32: u32, U32;
+    rd_u8 = rd_u8: u32, U8;
 }
 
 /// Element `at` of a buffer in the registered form `form`.
