@@ -148,6 +148,14 @@ impl Launch {
         Launch { args, shape }
     }
 
+    /// One launch: the step's reads, its output, then `counts`.
+    pub fn plain(step: &Step, counts: &[usize], shape: Shape) -> Launch {
+        let mut args: Vec<Arg> = (0..step.reads.len()).map(|i| step.read(i)).collect();
+        args.push(step.out());
+        args.extend(counts.iter().copied().map(Arg::count));
+        Launch { args, shape }
+    }
+
     /// The same launch with every runtime size filled in.
     pub fn bound(self, size: &dyn Fn(DimName) -> Option<u32>) -> Option<Launch> {
         let count = |e: &Extent| Some(e.value(size)? as u32);

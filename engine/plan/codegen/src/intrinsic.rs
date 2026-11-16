@@ -352,6 +352,30 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                 host: |g, args, mask| g.narrow(args, mask, 8, |x| f32::from(E4M3(x as u8))),
                 count: |c, _| c.tally(Ops { e4m3: 1.0, ..Ops::default() }, true),
             }
+            /// `a.dot(a_at, b, b_at, n)`: the sum of `n` products.
+            Dot = method dot(self, u64, Buf, u64, u32) -> f32 {
+                device: none(),
+                text: |p, args| p.spell("f_dot", args),
+                host: |g, args, mask| {
+                    let (Expr::Var(a), Expr::Var(b)) = (&args[0], &args[2]) else {
+                        panic!("a dot names its buffers");
+                    };
+                    let (a, b) = (g.arg(a), g.arg(b));
+                    let (a_at, b_at) = (g.eval(&args[1], mask), g.eval(&args[3], mask));
+                    let n = g.eval(&args[4], mask);
+                    (0..g.threads)
+                        .map(|t| {
+                            let mut sum = 0.0;
+                            for i in 0..u64::from(n[t].u()) * u64::from(mask[t]) {
+                                let x = g.load(&a, a_at[t].l() + i).f();
+                                sum += x * g.load(&b, b_at[t].l() + i).f();
+                            }
+                            Val::F(sum)
+                        })
+                        .collect()
+                },
+                count: |c, _| c.tally(float(2.0), true),
+            }
             /// `w.e2m1(low)`: 4 bits read as an e2m1.
             E2M1 = method e2m1(self, u32) -> f32 {
                 device: both(&format!(

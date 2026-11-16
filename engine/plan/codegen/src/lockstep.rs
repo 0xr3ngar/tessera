@@ -291,3 +291,78 @@ pub(crate) fn products(
         }
     }
 }
+
+thread_local! {
+    /// A weight row widened to f32, reused between dots.
+    static ROW: std::cell::RefCell<Vec<f32>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Eight running sums, so the loop vectorizes.
+pub fn dot(a: &[f32], b: &[f32]) -> f32 {
+    let mut acc = [0.0f32; 8];
+    let (whole, rest) = (a.len() / 8 * 8, a.len() % 8);
+    let (xs, _) = a[..whole].as_chunks::<8>();
+    let (ys, _) = b[..whole].as_chunks::<8>();
+    for (x, y) in xs.iter().zip(ys) {
+        for i in 0..8 {
+            acc[i] += x[i] * y[i];
+        }
+    }
+    let mut sum = acc.iter().sum::<f32>();
+    for i in 0..rest {
+        sum += a[whole + i] * b[whole + i];
+    }
+    sum
+}
+
+/// `n` floats of `bytes` from element `at`, copied when unaligned.
+fn f32_row<'a>(bytes: &'a [u8], at: usize, n: usize, scratch: &'a mut Vec<f32>) -> &'a [f32] {
+    let slice = &bytes[at * 4..(at + n) * 4];
+    // SAFETY: f32 has no invalid bit patterns.
+    let (head, body, _) = unsafe { slice.align_to::<f32>() };
+    if head.is_empty() && body.len() == n {
+        return body;
+    }
+    scratch.clear();
+    let (words, _) = slice.as_chunks::<4>();
+    scratch.extend(words.iter().map(|c| f32::from_le_bytes(*c)));
+    scratch
+}
+
+/// `x` against bf16 `w`, widened as it is multiplied.
+pub fn dot_bf16(x: &[f32], w: &[u8]) -> f32 {
+    let mut acc = [0.0f32; 8];
+    let (xs, xr) = x.as_chunks::<8>();
+    let (ws, wr) = w.as_chunks::<16>();
+    for (xc, wc) in xs.iter().zip(ws) {
+        for i in 0..8 {
+            let bits = u16::from_le_bytes([wc[2 * i], wc[2 * i + 1]]);
+            acc[i] += xc[i] * f32::from_bits(u32::from(bits) << 16);
+        }
+    }
+    let mut sum = acc.iter().sum::<f32>();
+    for (i, xi) in xr.iter().enumerate() {
+        let bits = u16::from_le_bytes([wr[2 * i], wr[2 * i + 1]]);
+        sum += xi * f32::from_bits(u32::from(bits) << 16);
+    }
+    sum
+}
+
+/// `n` products of an f32 row and a `form` row.
+pub fn dot_form(form: &dyn Form, a: &[u8], a_at: usize, b: &[u8], b_at: usize, n: usize) -> f32 {
+    let mut scratch = Vec::new();
+    let x = f32_row(a, a_at, n, &mut scratch);
+    match form.name() {
+        "f32" => {
+            let mut other = Vec::new();
+            dot(x, f32_row(b, b_at, n, &mut other))
+        }
+        "bf16" => dot_bf16(x, &b[b_at * 2..(b_at + n) * 2]),
+        _ => ROW.with(|row| {
+            let mut row = row.borrow_mut();
+            row.clear();
+            row.extend((0..n).map(|i| form.unpack(b, b_at + i)));
+            dot(x, &row)
+        }),
+    }
+}

@@ -1,12 +1,86 @@
 //! `x[m, k]` times `w[n, k]` transposed, dense or picked.
 
-use crate::rows::weight_row;
-use crate::{GUESS, Out, dot, finished, floats, ids, parallel};
-use lower::kernels::Map;
-use lower::sites::{After, Picked};
-use lower::{Draft, Form, Kernel, Native, T, Tree, ZoneKind, sites};
+use crate::{GUESS, source};
+use codegen::ir::{Body, Expr, Intrinsic, Ty};
+use codegen::prelude::*;
+use lower::kernels::finish;
+use lower::sites::{After, Picked as Pick};
+use lower::{Draft, Form as Stored, Kernel, Launch, Shape, Step, T, Tree, ZoneKind, sites};
 
-/// A matmul and its finishing stages, on the host.
+/// One thread per output: its row dotted with its column.
+#[kernel]
+fn cpu_dense(
+    x: Buf<F32>,
+    #[form(form)] w: Buf<Dyn>,
+    out: BufMut<F32>,
+    m: u32,
+    n: u32,
+    k: u32,
+    #[build] form: &'static dyn Stored,
+) {
+    if gid() >= m * n {
+        return;
+    }
+    let mut sums = [0.0f32; 1];
+    sums[0] = 0.0;
+    let row = (gid() / n) as u64 * k as u64;
+    let col = (gid() % n) as u64 * k as u64;
+    sums[0] += x.dot(row, w, col, k);
+}
+
+/// Which matrix each row reads, and where this rank's start.
+#[derive(Group)]
+struct Picking {
+    count: u32,
+    stride: u32,
+    offset: u32,
+    repeat: u32,
+    first: u32,
+}
+
+/// One thread per output, along the matrix its row picks.
+#[kernel]
+fn cpu_picked(
+    x: Buf<F32>,
+    #[form(form)] w: Buf<Dyn>,
+    ids: Buf<U32>,
+    out: BufMut<F32>,
+    rows: u32,
+    n: u32,
+    k: u32,
+    pick: Picking,
+    #[build] form: &'static dyn Stored,
+) {
+    if gid() >= rows * n {
+        return;
+    }
+    let row = gid() / n;
+    let col = gid() % n;
+    let id = ids[row as u64];
+    let mut sums = [0.0f32; 1];
+    sums[0] = 0.0;
+    if id >= pick.first && id - pick.first < pick.count {
+        let matrix = (id - pick.first) as u64 * pick.stride as u64 + pick.offset as u64;
+        let line = (matrix + col as u64) * k as u64;
+        sums[0] += x.dot((row / pick.repeat) as u64 * k as u64, w, line, k);
+    }
+}
+
+/// The stages after the sum, into the thread's output.
+fn finished(mut body: Body, after: &After, operands_at: usize) -> Body {
+    lower::kernels::add_operands(&mut body, operands_at, after.others());
+    let at = Expr::cast(Ty::U64, Expr::Call(Intrinsic::Gid, Vec::new()));
+    let sum = Expr::index(Expr::var("sums"), Expr::Int(0));
+    body.stmts.extend(finish(after, sum, at));
+    body
+}
+
+/// Weights read as stored. Rows and operands come as f32.
+fn accepts(input: usize, form: &dyn Stored) -> bool {
+    input == 1 || !form.narrow()
+}
+
+/// A matmul and its finishing stages.
 #[derive(Clone, Debug, Kernel)]
 #[launch(
     crate = lower,
@@ -15,91 +89,61 @@ use lower::{Draft, Form, Kernel, Native, T, Tree, ZoneKind, sites};
     work = self.m * self.n * self.k,
     guess = GUESS,
     runs_on = ZoneKind::Cpu,
-    accepts = self.accepts(input, form),
-    source = Map::plain(Vec::new()).source(),
-    launches = Vec::new(),
-    native,
+    accepts = accepts(input, form),
+    source = source("cpu_dense", finished(cpu_dense_ir(self.form), &self.after, 2)),
+    launches = dense_launches,
 )]
 pub struct Dense {
     pub m: usize,
     pub n: usize,
     pub k: usize,
-    pub form: &'static dyn Form,
+    pub form: &'static dyn Stored,
     pub after: After,
-    /// Set when each row reads its own matrix.
-    pub pick: Option<Pick>,
 }
 
-/// Which matrix each row reads, as the site has it.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Pick {
-    pub count: usize,
-    pub stride: usize,
-    pub offset: usize,
-    pub repeat: usize,
-    pub first: usize,
+fn dense_launches(k: &Dense, step: &Step) -> Vec<Launch> {
+    vec![Launch::plain(
+        step,
+        &[k.m, k.n, k.k],
+        Shape::Line(k.m * k.n),
+    )]
 }
 
-impl From<Picked> for Pick {
-    fn from(p: Picked) -> Self {
-        Self {
-            count: p.count,
-            stride: p.stride,
-            offset: p.offset,
-            repeat: p.repeat,
-            first: p.first.unwrap_or(0),
-        }
-    }
+/// Each row against its id's matrix, then the stages.
+#[derive(Clone, Debug, Kernel)]
+#[launch(
+    crate = lower,
+    name = "cpu_picked",
+    sizes = [self.m, self.n, self.k],
+    work = self.m * self.n * self.k,
+    guess = GUESS,
+    runs_on = ZoneKind::Cpu,
+    accepts = accepts(input, form),
+    source = source("cpu_picked", finished(cpu_picked_ir(self.form), &self.after, 3)),
+    launches = picked_launches,
+)]
+pub struct Picked {
+    pub m: usize,
+    pub n: usize,
+    pub k: usize,
+    pub form: &'static dyn Stored,
+    pub after: After,
+    pub pick: Pick,
 }
 
-impl Dense {
-    /// Weights read as stored. Rows and operands come as f32.
-    fn accepts(&self, input: usize, form: &dyn Form) -> bool {
-        input == 1 || !form.narrow()
-    }
-}
-
-impl Native for Dense {
-    fn run(&self, reads: &[&[u8]], write: &mut [u8]) -> Result<(), String> {
-        let (x, w) = (floats(reads[0]), reads[1]);
-        let picked = self.pick.map(|p| (p, ids(reads[2])));
-        let skip = 2 + usize::from(picked.is_some());
-        let operands: Vec<&[f32]> = reads[skip..].iter().map(|r| floats(r)).collect();
-        let out = Out::new(write);
-        let (m, n, k) = (self.m, self.n, self.k);
-        match picked {
-            None => parallel(n, |cols| {
-                let mut row = vec![0.0f32; k];
-                for col in cols {
-                    weight_row(self.form, w, col, k, &mut row);
-                    for r in 0..m {
-                        let sum = dot(&x[r * k..(r + 1) * k], &row);
-                        let at = r * n + col;
-                        out.part(at, 1)[0] = finished(&self.after, &operands, at, sum);
-                    }
-                }
-            }),
-            Some((p, ids)) => parallel(m, |rows| {
-                let mut row = vec![0.0f32; k];
-                for r in rows {
-                    let line_out = out.part(r * n, n);
-                    let id = ids[r] as usize;
-                    let held = id >= p.first && id - p.first < p.count;
-                    let xr = &x[(r / p.repeat) * k..(r / p.repeat + 1) * k];
-                    for (col, o) in line_out.iter_mut().enumerate() {
-                        let mut sum = 0.0;
-                        if held {
-                            let line = (id - p.first) * p.stride + p.offset + col;
-                            weight_row(self.form, w, line, k, &mut row);
-                            sum = dot(xr, &row);
-                        }
-                        *o = finished(&self.after, &operands, r * n + col, sum);
-                    }
-                }
-            }),
-        }
-        Ok(())
-    }
+fn picked_launches(k: &Picked, step: &Step) -> Vec<Launch> {
+    let p = k.pick;
+    let counts = [
+        k.m,
+        k.n,
+        k.k,
+        p.count,
+        p.stride,
+        p.offset,
+        p.repeat,
+        p.first.unwrap_or(0),
+    ];
+    vec![Launch::plain(step, &counts, Shape::Line(k.m * k.n))]
 }
 
 /// Any finished matmul, dense or picked.
@@ -113,15 +157,33 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
         picked,
         ..
     } = site.product;
-    let kernel = Dense {
-        m,
-        n,
-        k,
-        form,
-        after: site.after.clone(),
-        pick: picked.map(Pick::from),
+    let after = site.after.clone();
+    let kernel = match picked {
+        None => Draft::new(
+            Dense {
+                m,
+                n,
+                k,
+                form,
+                after,
+            },
+            site.reads(),
+            m * n,
+        ),
+        Some(pick) => Draft::new(
+            Picked {
+                m,
+                n,
+                k,
+                form,
+                after,
+                pick,
+            },
+            site.reads(),
+            m * n,
+        ),
     };
-    Some(vec![Draft::new(kernel, site.reads(), m * n)])
+    Some(vec![kernel])
 }
 
 lower::rule!("cpu_dense", propose);

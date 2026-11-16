@@ -28,7 +28,7 @@ pub use engine_settings::{Pick, Settings};
 pub use extent::Extent;
 pub use form::{Form, Pins, Weight};
 pub use gpukit::{Limits, Platform};
-pub use kernel::{Kernel, KernelRef, Native, Needs, UNPROVEN};
+pub use kernel::{Kernel, KernelRef, Needs, UNPROVEN};
 pub use kernel_macro::Kernel;
 pub use mem::{Buffer, DType, Tensor, View, ViewMut};
 pub use plan::{Loaded, Output, Plan, Share, Slot, Step};

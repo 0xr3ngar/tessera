@@ -75,6 +75,11 @@ helpers! {
     rd_q8_0(P, P, P) -> F32;
     rd_q4_0(P, P, P) -> F32;
     rd_nvfp4(P, P, P) -> F32;
+    dot_f32(P, P, P, P, P, P, P) -> F32;
+    dot_bf16(P, P, P, P, P, P, P) -> F32;
+    dot_q8_0(P, P, P, P, P, P, P) -> F32;
+    dot_q4_0(P, P, P, P, P, P, P) -> F32;
+    dot_nvfp4(P, P, P, P, P, P, P) -> F32;
     st_f32(P, P, P, F32);
     st_u32(P, P, P, I32);
     word(P, P, P) -> I32;

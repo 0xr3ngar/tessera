@@ -505,6 +505,53 @@ impl Lowerer<'_, '_> {
                     }
                 }
             }
+            Intrinsic::Dot => {
+                let [a, a_at, b, b_at, n] = args else {
+                    return Err("a dot takes five arguments".into());
+                };
+                let (Expr::Var(a), Expr::Var(b)) = (a, b) else {
+                    return Err("a dot names its buffers".into());
+                };
+                let (
+                    Kind::Buffer {
+                        form: fa,
+                        ptr: pa,
+                        len: la,
+                        skip: sa,
+                    },
+                    Kind::Buffer {
+                        form: fb,
+                        ptr: pb,
+                        len: lb,
+                        skip: sb,
+                    },
+                ) = (self.kind(a)?, self.kind(b)?)
+                else {
+                    return Err("a dot runs over buffers".into());
+                };
+                if fa.name() != "f32" {
+                    return Err(format!("a dot's first row is f32, not {}", fa.name()));
+                }
+                let f = match fb.name() {
+                    "f32" => "dot_f32",
+                    "bf16" => "dot_bf16",
+                    "q8_0" => "dot_q8_0",
+                    "q4_0" => "dot_q4_0",
+                    "nvfp4" => "dot_nvfp4",
+                    other => return Err(format!("no dot over the {other} form")),
+                };
+                let (a_at, b_at, n) = (
+                    self.index(a_at, t)?,
+                    self.index(b_at, t)?,
+                    self.index(n, t)?,
+                );
+                let a_at = self.b.ins().iadd(sa, a_at);
+                let b_at = self.b.ins().iadd(sb, b_at);
+                Val::S(
+                    self.call(f, &[pa, la, a_at, pb, lb, b_at, n])
+                        .expect("a sum"),
+                )
+            }
             Intrinsic::F16 | Intrinsic::E4M3 | Intrinsic::E2M1 => {
                 let v = self.u32s(args, t)?;
                 let f = match i {

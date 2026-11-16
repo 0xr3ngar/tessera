@@ -132,6 +132,11 @@ impl<F: Elems> Buf<F> {
     pub fn half(&self, _: u32) -> u32 {
         device()
     }
+
+    /// The sum of `n` products with `b`, from each offset.
+    pub fn dot<G: Elems>(&self, _: u64, _: Buf<G>, _: u64, _: u32) -> f32 {
+        device()
+    }
 }
 
 /// Bit fields of a word, below 32 bits wide.
