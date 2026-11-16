@@ -5,6 +5,8 @@ mod gguf;
 #[cfg(test)]
 mod gguf_test;
 pub mod mla;
+#[cfg(test)]
+mod mla_test;
 pub mod names;
 #[cfg(test)]
 mod names_test;

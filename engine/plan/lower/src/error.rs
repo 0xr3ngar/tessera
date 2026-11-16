@@ -20,7 +20,7 @@ pub enum Unsupported {
     },
     #[error("{0}")]
     Uncovered(Box<Uncovered>),
-    #[error("any node: no rule crate is linked; add `use kernels as _; use linear as _;`")]
+    #[error("any node: no rule crate is linked; add `use rules as _;`")]
     Unlinked,
 }
 

@@ -2,8 +2,8 @@
 
 use crate::names::Rule;
 use crate::pull;
-use checkpoint::File;
-use engine::mla::{Config, Index, Moe, program};
+use checkpoint::{File, Offer, exlr8};
+use engine::mla::{Config, Index, Moe, RotatedMoe, program};
 use engine::{Graph, Pins, Stack, Weight};
 use serde::Deserialize;
 use std::error::Error;
@@ -27,12 +27,20 @@ struct Hf {
     num_experts_per_tok: u64,
     first_k_dense_replace: u64,
     routed_scaling_factor: f32,
-    rope_theta: f32,
+    /// DeepSeek sets it here, GLM under `rope_parameters`.
+    rope_theta: Option<f32>,
+    rope_parameters: Option<Rope>,
     rms_norm_eps: f32,
-    /// DeepSeek-V3.2 keys. Every layer past the dense ones indexes.
+    /// DeepSeek-V3.2 and GLM keys. GLM indexes every `freq`-th layer.
     index_n_heads: Option<u64>,
     index_head_dim: Option<u64>,
     index_topk: Option<u64>,
+    index_topk_freq: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct Rope {
+    rope_theta: f32,
 }
 
 /// The model `json` describes: `seqs` sequences of `context` rows.
@@ -51,16 +59,18 @@ pub fn config(json: &str, seqs: u64, context: u64) -> Result<Config, serde_json:
             heads,
             dim,
             keep,
-            every: 1,
+            every: h.index_topk_freq.unwrap_or(1),
         }),
         _ => None,
     };
+    let theta = h.rope_theta.or(h.rope_parameters.map(|r| r.rope_theta));
+    let theta = theta.ok_or_else(|| serde::de::Error::missing_field("rope_theta"))?;
     Ok(Config {
         stack: Stack::sized(sizes, seqs, context),
         dense_layers: h.first_k_dense_replace,
         nope: h.qk_nope_head_dim,
         rope: h.qk_rope_head_dim,
-        rope_theta: h.rope_theta,
+        rope_theta: theta,
         q_latent: h.q_lora_rank,
         latent: h.kv_lora_rank,
         dense_ffn: h.intermediate_size,
@@ -72,8 +82,8 @@ pub fn config(json: &str, seqs: u64, context: u64) -> Result<Config, serde_json:
     })
 }
 
-/// Each weight path to its HF slice. `{}` is an expert.
-pub fn rules(c: &Config) -> Vec<Rule> {
+/// Each weight's HF slice. `rotated` names GLM's exlr8 experts.
+pub fn rules(c: &Config, rotated: bool) -> Vec<Rule> {
     let mut rules: Vec<Rule> = Vec::new();
     let mut add = |path: String, stem: String| rules.push((path, stem));
     add("embed".into(), "model.embed_tokens".into());
@@ -128,11 +138,26 @@ pub fn rules(c: &Config) -> Vec<Rule> {
         add(format!("moe.{m}.router"), format!("{at}.mlp.gate"));
         let bias = format!("{at}.mlp.gate.e_score_correction_bias");
         add(format!("moe.{m}.router_bias"), bias);
+        for side in ["signs_in", "signs_out"].iter().filter(|_| rotated) {
+            add(
+                format!("moe.{m}.{side}"),
+                format!("{at}.mlp.experts.{side}"),
+            );
+        }
         for (field, stem) in mlp {
-            let experts = format!("{at}.mlp.experts.{{}}.{stem}");
-            add(format!("moe.{m}.{field}"), experts);
             let shared = format!("{at}.mlp.shared_experts.{stem}");
             add(format!("moe.{m}.shared.{field}"), shared);
+            if !rotated {
+                let experts = format!("{at}.mlp.experts.{{}}.{stem}");
+                add(format!("moe.{m}.{field}"), experts);
+                continue;
+            }
+            // One set per projection, and its scales on each side.
+            let set = format!("{at}.mlp.experts.{field}");
+            for end in ["su", "sv"] {
+                add(format!("moe.{m}.{field}_{end}"), format!("{set}.{end}"));
+            }
+            add(format!("moe.{m}.{field}"), set);
         }
     }
     rules
@@ -146,18 +171,28 @@ pub struct Release {
     pub pins: Pins,
 }
 
-/// The release in `dir`: `config.json` and `model.safetensors`.
+/// `dir` as safetensors, or exlr8 with experts at `width`.
 pub fn release(
     dir: &Path,
     seqs: u64,
     context: u64,
+    width: u32,
 ) -> Result<Release, Box<dyn Error + Send + Sync>> {
     let json = std::fs::read_to_string(dir.join("config.json"))?;
     let config = config(&json, seqs, context)?;
-    let graph = program::<Moe>(&config);
-    let file = File::open(&dir.join("model.safetensors"))?;
-    let rules = rules(&config);
-    let (weights, pins) = pull(&graph, &file, config.stack.layers, &[&rules])?;
+    let exlr8 = dir.join("dense/exlr8-vocab.safetensors").is_file();
+    let (graph, offer): (Graph, Box<dyn Offer>) = match exlr8 {
+        true => {
+            let offer = exlr8::Release::open(dir).width(width);
+            (program::<RotatedMoe>(&config), Box::new(offer))
+        }
+        false => {
+            let file = File::open(&dir.join("model.safetensors"))?;
+            (program::<Moe>(&config), Box::new(file))
+        }
+    };
+    let rules = rules(&config, exlr8);
+    let (weights, pins) = pull(&graph, &*offer, config.stack.layers, &[&rules])?;
     Ok(Release {
         config,
         graph,

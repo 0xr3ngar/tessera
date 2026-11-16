@@ -236,6 +236,8 @@ pub struct Release {
     files: RefCell<HashMap<String, File>>,
     /// GLM's layout: `dense/` files, layer names without their prefix.
     glm: bool,
+    /// The trellis width GLM's routed experts load at.
+    width: u32,
 }
 
 /// GLM's vocabulary file, which marks its layout.
@@ -287,9 +289,29 @@ impl Release {
             at,
             files: RefCell::new(HashMap::new()),
             glm: false,
+            width: 3,
         };
         release.glm = release.with(GLM_VOCAB, |_| Ok(())).is_ok();
         release
+    }
+
+    /// GLM's routed experts at `k` bits: 2, 3 or 4.
+    pub fn width(mut self, k: u32) -> Self {
+        self.width = k;
+        self
+    }
+
+    /// An expert's packed codes, from its layer's width file.
+    fn expert_codes(&self, layer: usize, local: &str) -> Result<Vec<u8>, Error> {
+        let k = self.width;
+        let sizes = self.with(&experts::index_file(layer), |f| {
+            experts::sizes(f, k).ok_or_else(|| Error::Missing(local.into()))
+        })?;
+        let shared = local.starts_with("shared_experts.");
+        let width = if shared { experts::shared_width(k) } else { k };
+        let [hidden, _, ffn] = sizes;
+        let file = experts::codes_file(layer, width);
+        self.with(&file, |f| experts::packed(f, local, [hidden, ffn]))
     }
 
     /// The file holding `name`, and the name inside it.
@@ -329,6 +351,9 @@ impl Release {
 
     /// The packed codes of `M.codes`, or `rows` as `(first, count)`.
     pub fn packed(&self, name: &str, rows: Option<(usize, usize)>) -> Result<Vec<u8>, Error> {
+        if let Some((layer, local)) = experts::split(name).filter(|_| self.glm) {
+            return self.expert_codes(layer, local);
+        }
         let (file, local) = self.place(name);
         let matrix_name = local.strip_suffix(".codes").unwrap_or(&local).to_string();
         self.with(&file, |f| codes_packed(f, &matrix_name, rows))
@@ -336,6 +361,12 @@ impl Release {
 
     /// Tensor `name` as f32. `M.codes`, `M.suh`, `M.svh`: unrotated parts.
     pub fn read(&self, name: &str) -> Result<Vec<f32>, Error> {
+        if let Some((layer, local)) = experts::split(name).filter(|_| self.glm) {
+            let k = self.width;
+            return self.with(&experts::index_file(layer), |f| {
+                experts::floats(f, local, k)
+            });
+        }
         let (file, local) = self.place(name);
         self.with(&file, |f| {
             let (matrix_name, part) = match local.rsplit_once('.') {
@@ -486,6 +517,21 @@ impl Offer for Release {
             let slices = self.with(&shard.file, |f| Ok(Self::offered(f, &shard)));
             out.extend(slices.unwrap_or_default());
         }
+        if !self.glm {
+            return out;
+        }
+        // GLM's routed layers keep their experts apart.
+        for layer in 0.. {
+            if self
+                .with(&format!("dense/exlr8-dense-{layer:03}"), |_| Ok(()))
+                .is_err()
+            {
+                break;
+            }
+            let index = experts::index_file(layer);
+            let found = self.with(&index, |f| Ok(experts::offered(f, layer, self.width)));
+            out.extend(found.unwrap_or_default());
+        }
         out
     }
 
@@ -499,5 +545,167 @@ impl Offer for Release {
 
     fn packed_rows(&self, name: &str, rows: (usize, usize)) -> Result<Vec<u8>, Error> {
         Release::packed(self, name, Some(rows))
+    }
+}
+
+/// GLM's routed and shared experts at one trellis width.
+mod experts {
+    use super::{Error, File, Slice, Stored, trellis};
+
+    /// Channels one rotation block scale covers.
+    const BLOCK: usize = 128;
+
+    /// A layer's index file: side data for every width.
+    pub(crate) fn index_file(layer: usize) -> String {
+        format!("experts/exlr8-layer-{layer:03}.index")
+    }
+
+    /// A layer's trellis codes at width `k`.
+    pub(crate) fn codes_file(layer: usize, k: u32) -> String {
+        format!("experts/exlr8-layer-{layer:03}.k{k}")
+    }
+
+    /// The shared expert has no K2 codes.
+    pub(crate) fn shared_width(k: u32) -> u32 {
+        k.max(3)
+    }
+
+    /// A layer and its expert name, under the layer's MLP.
+    pub(crate) fn split(name: &str) -> Option<(usize, &str)> {
+        let rest = name.strip_prefix("model.layers.")?;
+        let (layer, local) = rest.split_once('.')?;
+        let local = local.strip_prefix("mlp.")?;
+        let ours = local.starts_with("experts.") || local.starts_with("shared_experts.");
+        ours.then_some((layer.parse().ok()?, local))
+    }
+
+    /// Hidden width, expert count and expert width, from the index.
+    pub(crate) fn sizes(idx: &File, k: u32) -> Option<[usize; 3]> {
+        let hidden = idx.shape("signs.in")?[0];
+        let &[experts, ffn] = idx.shape(&format!("k{k}.gate.svh"))? else {
+            return None;
+        };
+        Some([hidden, experts, ffn])
+    }
+
+    /// The layer's slices: codes as trellis sets, rotations as floats.
+    pub(crate) fn offered(idx: &File, layer: usize, k: u32) -> Vec<Slice> {
+        let (Some([hidden, experts, ffn]), Some(routed), Some(shared)) = (
+            sizes(idx, k),
+            trellis::form_for(k),
+            trellis::form_for(shared_width(k)),
+        ) else {
+            return Vec::new();
+        };
+        let at = format!("model.layers.{layer}.mlp.");
+        let slice = |name: String, shape: Vec<usize>, stored| Slice {
+            name: format!("{at}{name}"),
+            shape,
+            stored,
+        };
+        let mut out = Vec::new();
+        for (p, shape) in [
+            ("gate", [ffn, hidden]),
+            ("up", [ffn, hidden]),
+            ("down", [hidden, ffn]),
+        ] {
+            let [rows, cols] = shape;
+            let set = vec![experts, rows, cols];
+            out.push(slice(
+                format!("experts.{p}.weight"),
+                set,
+                Stored::Form(routed),
+            ));
+            let (into, from) = (format!("experts.{p}.su"), format!("experts.{p}.sv"));
+            out.push(slice(into, vec![experts, cols], Stored::F32));
+            out.push(slice(from, vec![experts, rows], Stored::F32));
+            let stem = format!("shared_experts.{p}_proj");
+            out.push(slice(
+                format!("{stem}.codes"),
+                vec![rows, cols],
+                Stored::Form(shared),
+            ));
+            out.push(slice(format!("{stem}.suh"), vec![cols], Stored::F32));
+            out.push(slice(format!("{stem}.svh"), vec![rows], Stored::F32));
+        }
+        for side in ["signs_in", "signs_out"] {
+            out.push(slice(format!("experts.{side}"), vec![hidden], Stored::F32));
+        }
+        out
+    }
+
+    /// Each value repeated over its block of channels.
+    fn repeated(values: &[f32]) -> Vec<f32> {
+        values.iter().flat_map(|v| [*v; BLOCK]).collect()
+    }
+
+    /// The layer's signs, as floats.
+    fn signs(idx: &File, which: &str) -> Result<Vec<f32>, Error> {
+        let bytes = idx.bytes(&format!("signs.{which}"))?;
+        Ok(bytes.iter().map(|b| f32::from(*b as i8)).collect())
+    }
+
+    /// A rotation table or vector, from the index file.
+    pub(crate) fn floats(idx: &File, local: &str, k: u32) -> Result<Vec<f32>, Error> {
+        let half = |name: String| idx.floats(&name);
+        let signed = |which: &str, v: Vec<f32>| -> Result<Vec<f32>, Error> {
+            let s = signs(idx, which)?;
+            Ok(v.iter().zip(s).map(|(a, b)| a * b).collect())
+        };
+        let ks = shared_width(k);
+        match local {
+            "experts.signs_in" => signs(idx, "in"),
+            "experts.signs_out" => signs(idx, "out"),
+            "experts.gate.su" | "experts.up.su" => {
+                let p = &local["experts.".len()..local.len() - 3];
+                Ok(repeated(&half(format!("k{k}.{p}.su_block"))?))
+            }
+            "experts.gate.sv" | "experts.up.sv" => {
+                let p = &local["experts.".len()..local.len() - 3];
+                half(format!("k{k}.{p}.svh"))
+            }
+            "experts.down.su" => half(format!("k{k}.down.suh")),
+            "experts.down.sv" => Ok(repeated(&half(format!("k{k}.down.sv_block"))?)),
+            "shared_experts.gate_proj.suh" | "shared_experts.up_proj.suh" => {
+                let p = &local["shared_experts.".len()..local.len() - "_proj.suh".len()];
+                let block = repeated(&half(format!("shared.k{ks}.{p}.su_block"))?);
+                signed("in", block)
+            }
+            "shared_experts.gate_proj.svh" | "shared_experts.up_proj.svh" => {
+                let p = &local["shared_experts.".len()..local.len() - "_proj.svh".len()];
+                half(format!("shared.k{ks}.{p}.svh"))
+            }
+            "shared_experts.down_proj.suh" => half(format!("shared.k{ks}.down.suh")),
+            "shared_experts.down_proj.svh" => {
+                let block = repeated(&half(format!("shared.k{ks}.down.sv_block"))?);
+                signed("out", block)
+            }
+            _ => Err(Error::Missing(local.into())),
+        }
+    }
+
+    /// A set or shared matrix as packed trellis codes.
+    pub(crate) fn packed(
+        codes: &File,
+        local: &str,
+        [hidden, ffn]: [usize; 2],
+    ) -> Result<Vec<u8>, Error> {
+        let missing = || Error::Missing(local.into());
+        let (tensor, p) = match local.strip_prefix("shared_experts.") {
+            Some(rest) => (true, rest.strip_suffix("_proj.codes").ok_or_else(missing)?),
+            None => {
+                let rest = local.strip_prefix("experts.").ok_or_else(missing)?;
+                (false, rest.strip_suffix(".weight").ok_or_else(missing)?)
+            }
+        };
+        let name = match tensor {
+            true => format!("shared.trellis.{p}"),
+            false => format!("trellis.{p}"),
+        };
+        let entries = codes.bytes(&name)?;
+        Ok(match p {
+            "down" => trellis::packed(ffn, hidden, trellis::INPUT_SIDE, &entries),
+            _ => trellis::packed(hidden, ffn, 1, &entries),
+        })
     }
 }

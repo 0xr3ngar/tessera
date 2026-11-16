@@ -1,9 +1,7 @@
 //! The per-model suite: what every model test runs alike.
 
 // Linking these registers their lowering rules.
-use cpu as _;
-use kernels as _;
-use linear as _;
+use rules as _;
 
 mod golden;
 mod gpu;

@@ -1,6 +1,6 @@
 use crate::exlr8::Release;
 use crate::{Offer, Stored};
-use engine::{E4M3, F16};
+use engine::{E4M3, F16, trellis};
 use std::path::Path;
 
 /// One tensor: name, safetensors dtype, shape, bytes.
@@ -141,5 +141,73 @@ fn glm_dense_formats() {
     }
     assert_eq!(read("lm_head.weight"), [1.0, 2.0, 3.0, 4.0]);
     assert_eq!(read("model.norm.weight"), [0.5, 0.25]);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// A routed layer's sets and rotations, at one width.
+#[test]
+fn glm_experts() {
+    let dir = testkit::scratch(&format!("{}-glm-experts", std::process::id()));
+    let norm = || ("norm.weight", "F32", vec![1], floats(&[1.0]));
+    for file in ["exlr8-vocab", "exlr8-dense-000", "exlr8-dense-001"] {
+        write(&dir.join(format!("dense/{file}.safetensors")), &[norm()]);
+    }
+    let signs: Vec<u8> = (0..128)
+        .map(|i| if i % 3 == 0 { 0xFF } else { 1 })
+        .collect();
+    let ends = [
+        "gate.su_block",
+        "up.su_block",
+        "down.sv_block",
+        "gate.svh",
+        "up.svh",
+        "down.suh",
+    ];
+    let names: Vec<[String; 2]> = (ends.iter())
+        .map(|e| [format!("k3.{e}"), format!("shared.k3.{e}")])
+        .collect();
+    let mut index: Vec<Tensor> = vec![
+        ("signs.in", "I8", vec![128], signs.clone()),
+        ("signs.out", "I8", vec![128], signs),
+    ];
+    for (i, [own, shared]) in names.iter().enumerate() {
+        let (width, value) = (if i < 3 { 1 } else { 128 }, 0.5 * (i + 1) as f32);
+        index.push((own, "F16", vec![2, width], halves(&vec![value; 2 * width])));
+        index.push((shared, "F16", vec![1, width], halves(&vec![4.0; width])));
+    }
+    write(
+        &dir.join("experts/exlr8-layer-001.index.safetensors"),
+        &index,
+    );
+    let (set, one) = (ramp(2 * 128 * 128 * 3 / 8, 5), ramp(128 * 128 * 3 / 8, 9));
+    let codes: Vec<[String; 2]> = (["gate", "up", "down"].iter())
+        .map(|p| [format!("trellis.{p}"), format!("shared.trellis.{p}")])
+        .collect();
+    let mut stored: Vec<Tensor> = Vec::new();
+    for [own, shared] in &codes {
+        stored.push((own, "U8", vec![set.len()], set.clone()));
+        stored.push((shared, "U8", vec![one.len()], one.clone()));
+    }
+    write(&dir.join("experts/exlr8-layer-001.k3.safetensors"), &stored);
+    let release = Release::open(&dir).width(3);
+    let at = "model.layers.1.mlp.";
+    let gate = format!("{at}experts.gate.weight");
+    let offered = release
+        .slices()
+        .into_iter()
+        .find(|s| s.name == gate)
+        .unwrap();
+    assert_eq!(offered.shape, [2, 128, 128]);
+    let read = |name: &str| release.floats(&format!("{at}{name}")).unwrap();
+    let su = read("experts.gate.su");
+    assert_eq!((su.len(), su[0], su[128]), (256, 0.5, 0.5));
+    assert_eq!(read("experts.down.sv")[200], 1.5);
+    // The shared expert's input scales carry the signs.
+    let shared = read("shared_experts.gate_proj.suh");
+    assert_eq!((shared[0], shared[1]), (-4.0, 4.0));
+    let down = release
+        .packed(&format!("{at}experts.down.weight"), None)
+        .unwrap();
+    assert_eq!(down, trellis::packed(128, 128, trellis::INPUT_SIDE, &set));
     std::fs::remove_dir_all(dir).unwrap();
 }

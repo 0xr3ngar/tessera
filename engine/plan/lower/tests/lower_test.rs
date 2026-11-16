@@ -496,9 +496,5 @@ fn unlinked_rules_fail() {
     let Err(Error::Unsupported(what)) = lower::linked(&own) else {
         panic!("only this crate's rules passed as linked");
     };
-    assert!(
-        what.to_string()
-            .contains("use kernels as _; use linear as _;"),
-        "{what}"
-    );
+    assert!(what.to_string().contains("use rules as _;"), "{what}");
 }
