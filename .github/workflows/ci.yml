@@ -171,6 +171,13 @@ jobs:
         with:
           path: ${{ runner.temp }}/eg2-text
           key: eg2-text-914f7f89142e33e77833254d9c9b90c3cef7303b
+      # The older single-file cache. simcheck reads it when no shard
+      # folder restores, and saves it as shards.
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/simcheck.bin
+          key: simcheck-${{ github.run_id }}
+          restore-keys: simcheck-
       # Embeddings keyed by window text, in shard files. Each run saves
       # a fresh copy.
       - uses: actions/cache/restore@v4
