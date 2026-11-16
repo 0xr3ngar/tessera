@@ -13,6 +13,7 @@ struct Env {
     costs: Option<PathBuf>,
     names: Option<PathBuf>,
     emulate: Option<Backend>,
+    verbs: Option<String>,
     #[serde(flatten)]
     references: BTreeMap<String, PathBuf>,
 }
@@ -48,6 +49,7 @@ pub fn read() -> Settings {
         references: env.references,
         names: env.names,
         emulate: env.emulate,
+        verbs: env.verbs,
     }
 }
 
