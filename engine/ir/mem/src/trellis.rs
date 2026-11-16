@@ -245,30 +245,43 @@ impl<const K: u32> Form for Trellis<K> {
             return Some(packed(shape.inp, shape.out, shape.side, set));
         }
         let input = shape.side == INPUT_SIDE;
-        // Outputs lead, so an output split has one outer part.
-        let part = match (outer, inner) {
-            (1, i) if i == shape.inp && !input => Shape {
-                out: count,
-                ..shape
-            },
-            (o, 1) if o == shape.out && input => Shape {
-                inp: count,
-                ..shape
-            },
-            _ => return None,
-        };
         if !first.is_multiple_of(ENTRY) || !count.is_multiple_of(ENTRY) {
             return None;
         }
-        let across = if input { shape.out } else { shape.inp };
-        let entry = across * ENTRY * K as usize / 8;
-        let at = HEAD + first / ENTRY * entry;
-        Some(packed(
-            part.inp,
-            part.out,
-            part.side,
-            &bytes[at..at + count / ENTRY * entry],
-        ))
+        // Outputs lead, so an output split has one outer part.
+        let outputs = match (outer, inner) {
+            (1, i) if i == shape.inp => true,
+            (o, 1) if o == shape.out => false,
+            _ => return None,
+        };
+        let part = match outputs {
+            true => Shape {
+                out: count,
+                ..shape
+            },
+            false => Shape {
+                inp: count,
+                ..shape
+            },
+        };
+        // `take` tiles from `at` in each run of `per`.
+        let (entries, per, at, take) = match (outputs, input) {
+            // Along the stored side: whole entries, in one run.
+            (true, false) | (false, true) => {
+                let tiles = if input { shape.out / 2 } else { shape.inp / 2 };
+                (1, 0, first / ENTRY * tiles, count / ENTRY * tiles)
+            }
+            // Outputs of input entries: 64 tiles per 128 outputs.
+            (true, true) => (shape.inp / ENTRY, shape.out / 2, first / 2, count / 2),
+            // Inputs of output entries: 8 tiles per 16 inputs.
+            (false, false) => (shape.out / ENTRY, shape.inp / 2, first / 2, count / 2),
+        };
+        let mut codes = Vec::with_capacity(entries * take * Self::TILE);
+        for g in 0..entries {
+            let from = HEAD + (g * per + at) * Self::TILE;
+            codes.extend_from_slice(&bytes[from..from + take * Self::TILE]);
+        }
+        Some(packed(part.inp, part.out, part.side, &codes))
     }
 }
 

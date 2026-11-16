@@ -34,3 +34,5 @@ pub(crate) fn mismatch<T>(what: impl fmt::Display) -> Result<T, Error> {
 mod block_test;
 #[cfg(test)]
 mod mem_test;
+#[cfg(test)]
+mod trellis_test;

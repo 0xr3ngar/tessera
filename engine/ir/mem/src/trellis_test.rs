@@ -1,0 +1,58 @@
+use crate::block_test::same_part;
+use crate::form::Form;
+use crate::trellis::{INPUT_SIDE, TRELLIS_K2, TRELLIS_K2_ROT, packed, rotated};
+use graph::F16;
+
+/// Each side's cuts, and a set's, decode as the whole.
+#[test]
+fn trellis_shares() {
+    // Noise is valid codes under any header.
+    let mut state = 7u32;
+    let mut noise = |n: usize| -> Vec<u8> {
+        let byte = |_| {
+            state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            (state >> 16) as u8
+        };
+        (0..n).map(byte).collect()
+    };
+    let outputs = packed(32, 256, 0, &noise(32 * 256 * 2 / 8));
+    same_part(&TRELLIS_K2, &outputs, [1, 256, 32], [128, 128]);
+    let inputs = packed(256, 128, INPUT_SIDE, &noise(128 * 256 * 2 / 8));
+    same_part(&TRELLIS_K2, &inputs, [128, 256, 1], [128, 128]);
+    assert!(TRELLIS_K2.share(&inputs, [1, 128, 256], [0, 64]).is_none());
+    // Across the stored side: tiles from each entry.
+    let rows = packed(256, 128, 1, &noise(256 * 128 * 2 / 8));
+    same_part(&TRELLIS_K2, &rows, [128, 256, 1], [128, 128]);
+    let cols = packed(128, 256, INPUT_SIDE, &noise(128 * 256 * 2 / 8));
+    same_part(&TRELLIS_K2, &cols, [1, 256, 128], [128, 128]);
+    // A set: matrices behind one header, cut whole.
+    let (a, b) = (noise(128 * 256 * 2 / 8), noise(128 * 256 * 2 / 8));
+    let set = packed(256, 128, INPUT_SIDE, &[a, b.clone()].concat());
+    let second = packed(256, 128, INPUT_SIDE, &b);
+    for i in (0..128 * 256).step_by(97) {
+        let got = TRELLIS_K2.unpack(&set, 128 * 256 + i);
+        assert_eq!(got, TRELLIS_K2.unpack(&second, i), "element {i}");
+    }
+    same_part(&TRELLIS_K2, &set, [1, 2, 128 * 256], [1, 1]);
+}
+
+/// A rotated file splits into codes, `suh` and `svh`.
+#[test]
+fn rotated_trellis_splits() {
+    let codes = packed(128, 128, 1, &vec![0x5A; 128 * 128 * 2 / 8]);
+    // Values f16 holds exactly, so the halves round trip.
+    let suh: Vec<f32> = (0..128).map(|i| 1.0 + i as f32 / 64.0).collect();
+    let svh: Vec<f32> = (0..128).map(|i| 0.5 - i as f32 / 512.0).collect();
+    let half = |v: &[f32]| {
+        v.iter()
+            .flat_map(|x| F16::from(*x).0.to_le_bytes())
+            .collect::<Vec<u8>>()
+    };
+    let file = [codes.clone(), half(&suh), half(&svh)].concat();
+    let want = rotated(&TRELLIS_K2.unpack_all(&codes), 128, 128, &suh, &svh);
+    assert_eq!(TRELLIS_K2_ROT.unpack_all(&file), want);
+    let floats = |v: &[f32]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+    let parts = TRELLIS_K2_ROT.split(&file).unwrap();
+    assert_eq!(parts, [codes, floats(&suh), floats(&svh)]);
+    assert!(TRELLIS_K2.split(&file).is_none());
+}
