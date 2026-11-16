@@ -481,6 +481,7 @@ fn uncovered_is_named() {
     let Err(Error::Unsupported(what)) = lower(&g, 0, &SIZES, &Device::guess(&host())) else {
         panic!("a lone center lowered");
     };
+    let what = what.to_string();
     assert!(what.starts_with("Stage(Center)"), "{what}");
 }
 
@@ -496,7 +497,8 @@ fn unlinked_rules_fail() {
         panic!("only this crate's rules passed as linked");
     };
     assert!(
-        what.contains("use kernels as _; use linear as _;"),
+        what.to_string()
+            .contains("use kernels as _; use linear as _;"),
         "{what}"
     );
 }

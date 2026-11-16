@@ -5,6 +5,7 @@ mod assign;
 mod cache;
 mod cost;
 mod cut;
+mod error;
 mod extent;
 pub mod form;
 mod kernel;
@@ -26,6 +27,7 @@ pub use codegen::{Dialect, LANES, Precision, Terms, Text, float, hash, hip_tiles
 pub use cost::Device;
 pub use cut::cut;
 pub use engine_settings::{Backend, Pick, Settings};
+pub use error::{Size, Unsupported};
 pub use extent::Extent;
 pub use form::{Pins, Weight};
 pub use gpukit::{Limits, Platform};
@@ -78,10 +80,10 @@ pub(crate) fn lower_upto(
 pub enum Error {
     /// The graph uses something no rule covers yet.
     #[error("no rule lowers {0}")]
-    Unsupported(String),
+    Unsupported(#[from] Unsupported),
     /// A dimension has no size for this launch.
     #[error("{0} has no size in this launch")]
-    Size(String),
+    Size(#[from] Size),
     /// A view did not fit its buffer or its use.
     #[error("memory: {0}")]
     Memory(#[from] mem::Error),

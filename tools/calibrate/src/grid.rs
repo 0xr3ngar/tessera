@@ -1,9 +1,9 @@
 //! Small graphs that reach every rule, at many sizes.
 
 use crate::measure;
+use engine::Error;
 use graph::DimName::{self, *};
 use lower::{Device, Settings, Step, Tensor, View, lower};
-use run::Error;
 use run::{Run, open};
 use testkit::Noise;
 use testkit::graphs::{attention, indexed, indexed_rows, linear, rotation, routed, rows, table};
@@ -40,7 +40,7 @@ fn bounded(names: &[DimName]) -> Vec<Dim> {
 
 /// Noise for `ty` as one row. Ids stay below eight.
 fn fill(g: &Graph, ty: &TensorType, sizes: &Sizes, noise: &mut Noise) -> Result<Tensor, Error> {
-    let unsized_shape = || Error::from(lower::Error::Size(ty.shape.to_string()));
+    let unsized_shape = || Error::from(lower::Error::from(lower::Size::Shape(ty.shape.clone())));
     testkit::fill(g, ty, sizes, noise).ok_or_else(unsized_shape)
 }
 

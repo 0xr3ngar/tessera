@@ -10,9 +10,9 @@ use linear as _;
 
 pub use grid::Grid;
 
+use engine::Error;
 use graph::{DimName, Graph};
 use lower::{Device, Settings, Step, View, lower, select};
-use run::Error;
 use run::Run;
 use sim::Chip;
 use std::collections::BTreeMap;

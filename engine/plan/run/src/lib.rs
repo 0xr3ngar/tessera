@@ -26,13 +26,51 @@ pub enum Error {
     Memory(#[from] mem::Error),
     #[error("comm: {0}")]
     Comm(#[from] engine_comm::Error),
+    #[error("{0} is hand-written")]
+    Handwritten(&'static str),
+    #[error("{arg:?} as {param:?} on the host")]
+    HostArg { arg: Arg, param: Param },
+    #[error("jit: {0}")]
+    Jit(&'static str),
+    #[error("plans out of rank order")]
+    RankOrder,
+    #[error("ranks disagree on an output")]
+    OutputsDisagree,
+    #[error("rank {plan} of {plans} on rank {rank} of {ranks}")]
+    RankMismatch {
+        plan: u32,
+        plans: u32,
+        rank: u32,
+        ranks: u32,
+    },
+    #[error("a sum of {0} floats does not fit the device")]
+    SumTooLong(usize),
+    #[error("a plan over several zones")]
+    Zones,
+    #[error("a fixed kernel on this runner")]
+    FixedKernel,
+    #[error("weight {weight} does not fit {form}")]
+    WeightSize { weight: u32, form: &'static str },
+    #[error("weight {0} has the wrong length")]
+    WeightLen(u32),
+    #[error("weight {weight} as {form} split on axis {axis}")]
+    WeightSplit {
+        weight: u32,
+        form: &'static str,
+        axis: u32,
+    },
+    #[error("the input list does not match the plan")]
+    InputCount,
+    #[error("input {0} does not match the plan")]
+    InputShape(usize),
 }
 
 use codegen::Precision;
+use codegen::ir::Param;
 use engine_comm::Pinning;
 use engine_settings::Backend;
 use engine_settings::Settings;
-use lower::Plan;
+use lower::{Arg, Plan};
 use std::sync::Arc;
 
 /// How `backend`'s tiles round.

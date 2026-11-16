@@ -19,7 +19,7 @@ impl Loopback {
         let mut ranks = Vec::with_capacity(plans.len());
         for (rank, plan) in plans.iter().enumerate() {
             if plan.rank as usize != rank || plan.ranks.max(1) as usize != plans.len() {
-                return Err(lower::Error::Unsupported("plans out of rank order".into()).into());
+                return Err(Error::RankOrder);
             }
             ranks.push(open(plan.clone(), settings)?);
         }
@@ -75,9 +75,7 @@ impl Loopback {
             let first = self.ranks[0].read(o.slot)?;
             for r in &self.ranks[1..] {
                 if r.read(o.slot)? != first {
-                    return Err(
-                        lower::Error::Unsupported("ranks disagree on an output".into()).into(),
-                    );
+                    return Err(Error::OutputsDisagree);
                 }
             }
             out.push(first.reshaped(o.shape.clone()));

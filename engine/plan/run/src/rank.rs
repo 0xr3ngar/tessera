@@ -22,14 +22,12 @@ impl<T: Transport> Rank<T> {
     pub fn open(plan: Plan, settings: &Settings, transport: T) -> Result<Self, Error> {
         let fits = plan.ranks.max(1) == transport.ranks() && plan.rank == transport.rank();
         if !fits {
-            let what = format!(
-                "rank {} of {} on rank {} of {}",
-                plan.rank,
-                plan.ranks,
-                transport.rank(),
-                transport.ranks()
-            );
-            return Err(lower::Error::Unsupported(what).into());
+            return Err(Error::RankMismatch {
+                plan: plan.rank,
+                plans: plan.ranks,
+                rank: transport.rank(),
+                ranks: transport.ranks(),
+            });
         }
         let runner = open(plan, settings)?;
         let mut transport = transport;
@@ -54,7 +52,7 @@ impl<T: Transport> Rank<T> {
         let r = self.reduce.as_mut().expect("a device");
         let n = step.write.len;
         if 16 + 4 * n > r.capacity {
-            return Err(lower::Error::Size(format!("a sum of {n} floats")).into());
+            return Err(Error::SumTooLong(n));
         }
         let seq = r.round();
         let args = [

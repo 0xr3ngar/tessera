@@ -1,6 +1,7 @@
 //! Times whole model plans against the cost model.
 
 use crate::{headroom, measure};
+use engine::Error;
 use engine::{Engine, Request};
 use graph::DimName::{self, Context, Rows, Segments, Seqs};
 use graph::Graph;
@@ -8,7 +9,6 @@ use lower::form::BF16_FORM;
 use lower::{Device, Pins, Plan, Recipe, Settings, Tensor, View, Weight, lower, select};
 use models::decoder::Swiglu;
 use models::{decoder, eg2};
-use run::Error;
 use run::{Run, open};
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -109,9 +109,12 @@ impl<'a> Bench<'a> {
     fn feeds(&self, at: &Sizes, noise: &mut Noise) -> Result<Vec<Tensor>, Error> {
         let g = &self.s.graph;
         let ports = g.entries[0].inputs.iter();
-        let fed = ports.map(|p| fill(g, &p.ty, at, noise));
-        fed.map(|t| t.ok_or_else(|| Error::from(lower::Error::Size("an input".into()))))
-            .collect()
+        let fed = ports.map(|p| {
+            let unsized_shape =
+                || Error::from(lower::Error::from(lower::Size::Shape(p.ty.shape.clone())));
+            fill(g, &p.ty, at, noise).ok_or_else(unsized_shape)
+        });
+        fed.collect()
     }
 
     /// Runs `rows` as planned for `device`, and times each launch.

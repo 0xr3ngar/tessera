@@ -1,12 +1,12 @@
 //! An entry as trees: values with one reader join it.
 
-use crate::Error;
 use crate::extent::Extent;
 use crate::form::{Load, Pins};
 use crate::kernels::MapStage;
 use crate::plan::Share;
 use crate::select::Home;
 use crate::sites::Pattern;
+use crate::{Error, Size, Unsupported};
 use codegen::kept::Layout;
 use graph::{DType, DimName, Graph, NodeId, Op, Parts, Placement, Shape, Stage};
 
@@ -58,10 +58,6 @@ pub struct Tree<'a> {
     pub(crate) rank: u32,
     /// Per node: the part of a split weight loaded here.
     shares: Vec<Option<Share>>,
-}
-
-pub(crate) fn unsupported<T>(what: impl std::fmt::Debug) -> Result<T, Error> {
-    Err(Error::Unsupported(format!("{what:?}")))
 }
 
 pub(crate) fn map_stage(s: &Stage) -> Option<MapStage> {
@@ -132,7 +128,7 @@ fn sized(
         Some(runtime.unwrap_or(Extent::Fixed(most)))
     };
     let all: Option<Vec<Extent>> = s.0.iter().map(dim).collect();
-    all.ok_or_else(|| Error::Size(s.to_string()))
+    all.ok_or_else(|| Size::Shape(s.clone()).into())
 }
 
 impl<'a> Tree<'a> {
@@ -160,7 +156,7 @@ impl<'a> Tree<'a> {
         rank: u32,
     ) -> Result<Self, Error> {
         let Some(e) = g.entries.get(entry) else {
-            return unsupported(format_args!("entry {entry}"));
+            return Err(Unsupported::Entry(entry).into());
         };
         let outputs: Vec<usize> = e.outputs.iter().map(|o| o.node.0 as usize).collect();
         let needed = needed(g, &outputs);
@@ -196,8 +192,13 @@ impl<'a> Tree<'a> {
                 let fixed = extents[a] == Extent::Fixed(whole);
                 let Some((first, count)) = parts.part(whole, rank as usize).filter(|_| fixed)
                 else {
-                    let what = format!("axis {axis} of {} over {:?}", n.ty.shape, parts.0);
-                    return Err(Error::Size(what));
+                    let (shape, parts) = (n.ty.shape.clone(), parts.clone());
+                    return Err(Size::Split {
+                        axis: a,
+                        shape,
+                        parts,
+                    }
+                    .into());
                 };
                 extents[a] = Extent::Fixed(count);
                 let inner = extents[a + 1..].iter().map(Extent::most).product();
@@ -211,7 +212,7 @@ impl<'a> Tree<'a> {
             }
             let shape: Vec<usize> = extents.iter().map(Extent::most).collect();
             let from = NodeId(i as u32);
-            let missing = || Error::Unsupported(format!("node {i} reads an unsupported node"));
+            let missing = || Error::from(Unsupported::Unread { node: i });
             let args: Result<Vec<T>, Error> =
                 (n.args.iter().map(|a| at[a.0 as usize].ok_or_else(missing))).collect();
             let args = args?;
@@ -221,8 +222,13 @@ impl<'a> Tree<'a> {
             };
             // Kernels read whole blocks, so a row holds whole ones.
             if !shape.last().is_none_or(|k| k.is_multiple_of(form.align())) {
-                let what = format!("node {i} in {} needs rows of {}", form.name(), form.align());
-                return Err(Error::Unsupported(what));
+                let (form, align) = (form.name(), form.align());
+                return Err(Unsupported::Align {
+                    node: i,
+                    form,
+                    align,
+                }
+                .into());
             }
             let mut push = |term: Term, args: Vec<T>| {
                 let (shape, extents) = (shape.clone(), extents.clone());
@@ -243,7 +249,7 @@ impl<'a> Tree<'a> {
                     push(Term::Leaf(Home::Input(*port)), args)
                 }
                 Op::Weight(w) => push(Term::Leaf(Home::Weight(*w)), args),
-                Op::Input { .. } => return unsupported(&n.op),
+                Op::Input { .. } => return Err(Unsupported::EntryInput.into()),
                 Op::Row(r) => {
                     let (mut cur, mut rest) = (args[0], args[1..].iter());
                     // One rank holds the whole sum already.

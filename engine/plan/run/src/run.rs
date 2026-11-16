@@ -36,7 +36,7 @@ impl Base {
             return Ok(false);
         }
         if plan.zoned() {
-            return Err(lower::Error::Unsupported("a plan over several zones".into()).into());
+            return Err(Error::Zones);
         }
         Ok(true)
     }
@@ -93,7 +93,7 @@ pub trait Run {
         _args: &[Arg],
         _shape: Shape,
     ) -> Result<(), Error> {
-        Err(lower::Error::Unsupported("a fixed kernel on this runner".into()).into())
+        Err(Error::FixedKernel)
     }
     /// How to launch from now on, where the device can.
     fn launching(&mut self, _: Launching) {}
@@ -144,9 +144,10 @@ pub trait Run {
         let bytes = part.as_deref().unwrap_or(bytes);
         for slot in slots {
             if form.bytes(slot.len) != bytes.len() {
-                return Err(
-                    lower::Error::Size(format!("weight {weight} as {}", form.name())).into(),
-                );
+                return Err(Error::WeightSize {
+                    weight,
+                    form: form.name(),
+                });
             }
             if slot.form.name() == form.name() {
                 self.held_mut().upload(slot, bytes)?;
@@ -166,9 +167,10 @@ pub trait Run {
             .collect();
         for slot in slots {
             if slot.form.bytes(slot.len) != bytes.len() {
-                return Err(
-                    lower::Error::Size(format!("weight {weight} as {}", slot.form.name())).into(),
-                );
+                return Err(Error::WeightSize {
+                    weight,
+                    form: slot.form.name(),
+                });
             }
             self.held_mut().upload(slot, bytes)?;
         }
@@ -209,7 +211,7 @@ pub trait Run {
             .collect();
         for slot in slots {
             if slot.len != data.len() {
-                return Err(lower::Error::Size(format!("weight {weight}")).into());
+                return Err(Error::WeightLen(weight));
             }
             self.write(slot, data.clone())?;
         }
@@ -219,11 +221,11 @@ pub trait Run {
     fn feed(&mut self, inputs: &[View]) -> Result<(), Error> {
         let slots = self.plan().inputs.clone();
         if inputs.len() != slots.len() {
-            return Err(lower::Error::Size("the input list".into()).into());
+            return Err(Error::InputCount);
         }
         for (at, (slot, input)) in slots.into_iter().zip(inputs).enumerate() {
             if input.len() != slot.len || input.dtype() != slot.form.dtype() {
-                return Err(lower::Error::Size(format!("input {at}")).into());
+                return Err(Error::InputShape(at));
             }
             self.write(slot, input.clone())?;
         }
@@ -268,12 +270,8 @@ fn unpacked<R: Run + ?Sized>(
         .collect();
     for slot in slots {
         if !slot.form.packs() {
-            let what = format!(
-                "weight {weight} as {} split on axis {}",
-                form.name(),
-                share.axis
-            );
-            return Err(lower::Error::Unsupported(what).into());
+            let (form, axis) = (form.name(), share.axis);
+            return Err(Error::WeightSplit { weight, form, axis });
         }
         r.write(slot, part.clone())?;
     }

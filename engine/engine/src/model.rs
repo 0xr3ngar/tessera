@@ -45,7 +45,7 @@ fn sizes_of(
         }
     }
     if sizes.len() != bounded.len() {
-        return Err(lower::Error::Size("an input axis for every bounded dimension".into()).into());
+        return Err(Error::InputAxis);
     }
     Ok(sizes)
 }
@@ -60,13 +60,6 @@ fn floats(g: &Graph, at: usize, w: &Weight) -> Tensor {
             let n = f.elements(bytes.len());
             Tensor::f32(shape, (0..n).map(|i| f.unpack(bytes, i)).collect())
         }
-    }
-}
-
-fn interpreted(e: interp::Error) -> lower::Error {
-    match e {
-        interp::Error::Unsupported(m) => lower::Error::Unsupported(m),
-        interp::Error::Mismatch(m) => lower::Error::Size(m),
     }
 }
 
@@ -134,7 +127,7 @@ impl Model {
         let sizes = sizes_of(g, &self.bounded, inputs)?;
         match &mut self.executor {
             Executor::Interpreted(weights) => {
-                interp::run(g, weights, 0, inputs).map_err(|e| interpreted(e).into())
+                interp::run(g, weights, 0, inputs).map_err(Error::from)
             }
             Executor::Planned(p) => {
                 let plan = p.plans.lower(g, 0, &sizes, &p.device)?;
@@ -142,7 +135,10 @@ impl Model {
                 let views: Vec<_> = inputs.iter().map(Tensor::view).collect();
                 p.runner.feed(&views)?;
                 p.runner.submit(0..plan.steps.len())?;
-                plan.outputs.iter().map(|o| p.runner.read(o.slot)).collect()
+                plan.outputs
+                    .iter()
+                    .map(|o| Ok(p.runner.read(o.slot)?))
+                    .collect()
             }
         }
     }

@@ -44,8 +44,7 @@ impl Runner {
     /// One launch of `step`'s tree over the host.
     fn launch(&mut self, step: usize, launch: &Launch) -> Result<(), Error> {
         let Some(body) = &self.bodies[step] else {
-            let what = self.base.plan.steps[step].kernel.name();
-            return Err(lower::Error::Unsupported(format!("{what} is hand-written")).into());
+            return Err(Error::Handwritten(self.base.plan.steps[step].kernel.name()));
         };
         // Every buffer once, however many arguments point into it.
         let mut buffers: Vec<u32> = Vec::new();
@@ -75,8 +74,8 @@ impl Runner {
                     ArgVal::U32(arg.u32().unwrap())
                 }
                 (other, param) => {
-                    let what = format!("{other:?} as {param:?} on the host");
-                    return Err(lower::Error::Unsupported(what).into());
+                    let (arg, param) = (other.clone(), param.clone());
+                    return Err(Error::HostArg { arg, param });
                 }
             });
         }
@@ -299,7 +298,7 @@ fn compiled(
         }),
     }
     match jit::failure() {
-        Some(why) => Err(lower::Error::Unsupported(why.into()).into()),
+        Some(why) => Err(Error::Jit(why)),
         None => Ok(()),
     }
 }

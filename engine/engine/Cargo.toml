@@ -24,6 +24,7 @@ mem = { workspace = true }
 models = { workspace = true }
 run = { workspace = true }
 serde = { version = "1", features = ["derive"] }
+thiserror = "2"
 trace = { workspace = true }
 
 [dev-dependencies]

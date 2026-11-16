@@ -6,7 +6,8 @@ use lower::{
     Arg, Cluster, DType, Kernel, KernelRef, Launch, Link, Plan, Settings, Shape, Slot, Source,
     Step, Tensor, Zone, ZoneKind,
 };
-use run::{Error, Run, open};
+use run::Error;
+use run::{Run, open};
 use sim::{Fit, Tag};
 use std::time::Instant;
 

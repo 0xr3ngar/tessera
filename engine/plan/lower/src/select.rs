@@ -6,13 +6,13 @@ mod emit;
 use cover::{Cover, EDGE, reads};
 use emit::Emit;
 
-use crate::Error;
 use crate::cost::Device;
 use crate::form::{self, Load};
 use crate::kernel::KernelRef;
 use crate::plan::Share;
 use crate::rule::{Read, linked, rules};
 use crate::tree::{T, Term, Tree};
+use crate::{Error, Unsupported};
 use graph::{DimName, Graph, NodeId, View};
 use std::collections::BTreeSet;
 
@@ -72,14 +72,18 @@ pub struct Selected {
 }
 
 /// Names node `t`, and the root above it.
-fn uncovered(tree: &Tree, t: T, root: T) -> String {
+fn uncovered(tree: &Tree, t: T, root: T) -> Unsupported {
     let node = tree.node(t);
-    let reads: Vec<&[usize]> = node.args.iter().map(|a| &tree.node(*a).shape[..]).collect();
-    let mut what = format!("{:?} over {:?} from {reads:?}", node.term, node.shape);
-    if t != root {
-        what += &format!(", under {:?}", tree.node(root).term);
+    Unsupported::Uncovered {
+        term: node.term.clone(),
+        shape: node.shape.clone(),
+        reads: node
+            .args
+            .iter()
+            .map(|a| tree.node(*a).shape.clone())
+            .collect(),
+        under: (t != root).then(|| tree.node(root).term.clone()),
     }
-    what
 }
 
 /// Chooses kernels for `entry`, sized by `sizes`, costed by `device`.
@@ -137,7 +141,7 @@ pub(crate) fn select_upto(
         };
         let Some(zone) = zone else {
             if tree.root(t) {
-                return Err(Error::Unsupported(uncovered(&tree, cover.uncovered(t), t)));
+                return Err(uncovered(&tree, cover.uncovered(t), t).into());
             }
             continue;
         };

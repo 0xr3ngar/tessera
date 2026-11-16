@@ -5,9 +5,7 @@ use graph::{DType, Dim, Graph, TensorType};
 use lower::kernels::Map;
 use lower::sites;
 use lower::testing::host;
-use lower::{
-    Cluster, Device, Draft, Error, Kernel, Link, Plan, Step, T, Tree, Zone, ZoneKind, lower,
-};
+use lower::{Cluster, Device, Draft, Kernel, Link, Plan, Step, T, Tree, Zone, ZoneKind, lower};
 use run::open;
 use sim::Tag;
 use testkit::scratch;
@@ -131,10 +129,7 @@ fn cheap_links_place_work() {
     }
     let cost = device.cost(&plan);
     assert!(cost.seconds.is_finite() && cost.seconds > 0.0);
-    assert!(matches!(
-        open(plan, &host()),
-        Err(run::Error::Lower(Error::Unsupported(_)))
-    ));
+    assert!(matches!(open(plan, &host()), Err(run::Error::Zones)));
 }
 
 #[test]
