@@ -21,7 +21,7 @@ pub use engine_comm as comm;
 pub use engine_settings::Backend;
 pub use graph::{Bf16, DimExpr, E4M3, F16, Graph, PathSeg, Shape};
 pub use interp::{Tensor, bind};
-pub use lower::{Error, Pick, Pins, Recipe, Settings, Weight, form};
+pub use lower::{Pick, Pins, Recipe, Settings, Weight, form};
 pub use mem::form as storage;
 pub use mem::{block, trellis};
 pub use models::{Stack, decoder, eg2, mla, tagger};
@@ -51,6 +51,23 @@ pub enum Reason {
 pub enum Event {
     Token(u32),
     Done(Reason),
+}
+
+/// A failure while planning, loading or running.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Lower(#[from] lower::Error),
+    #[error(transparent)]
+    Run(#[from] run::Error),
+    #[error("interpreter: {0}")]
+    Interp(#[from] interp::Error),
+    #[error("the rows do not fit the engine")]
+    Rows,
+    #[error("a row's slot or position is out of range")]
+    RowPlace,
+    #[error("an input has no axis for a bounded dimension")]
+    InputAxis,
 }
 
 /// Rows in, each row's likeliest id out, on one runner.
@@ -124,7 +141,9 @@ impl Engine {
         let plan = plans.lower(&graph, 0, &sizes, &device)?;
         let mut runner = open(plan, settings)?;
         runner.launching(recipe.launch);
-        let device = Device::stored(runner.platform(), settings)?.with(recipe);
+        let device = Device::stored(runner.platform(), settings)
+            .map_err(lower::Error::from)?
+            .with(recipe);
         Ok(Self {
             graph,
             runner,
@@ -160,13 +179,13 @@ impl Engine {
     /// One launch of `rows`: the likeliest token after each.
     pub fn step(&mut self, rows: &[Row]) -> Result<Vec<u32>, Error> {
         if rows.is_empty() {
-            return Err(Error::Size("the rows".into()));
+            return Err(Error::Rows);
         }
         if rows
             .iter()
             .any(|r| r.slot as usize >= self.slots || r.position as usize >= self.context)
         {
-            return Err(Error::Size("a row's slot or position".into()));
+            return Err(Error::RowPlace);
         }
         let (sizes, feeds) = launch_of(rows, self.slots);
         let (plan, bound) =

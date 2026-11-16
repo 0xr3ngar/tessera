@@ -1,7 +1,8 @@
 //! Compiled kernels, shared by the GPU runners.
 
+use crate::Error;
 use codegen::Dialect;
-use lower::{Error, Source, Step};
+use lower::{Source, Step};
 use std::collections::HashMap;
 
 /// Compiled kernels, by how a kernel prints and by entry.

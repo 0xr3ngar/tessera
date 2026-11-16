@@ -1,13 +1,14 @@
 //! Writes the chosen covers as ops over values.
 
 use crate::Error;
+use crate::Unsupported;
 use crate::form::{self, Load};
 use crate::kernel::{Kernel, KernelRef};
 use crate::kernels::{Move, Scatter, Widen};
 use crate::rule::Draft;
 use crate::select::cover::EDGE;
 use crate::select::{Home, Op, Selected, Val, Value};
-use crate::tree::{T, Tree, unsupported};
+use crate::tree::{T, Tree};
 use graph::{DimExpr, NodeId};
 use std::collections::HashMap;
 
@@ -140,7 +141,7 @@ impl Emit {
     ) -> Result<Val, Error> {
         let (n, all) = (tree.node(t), &tree.node(t).shape);
         let DimExpr::Dim(axis) = &tree.g.kept[index as usize].shape.0[1] else {
-            return unsupported("kept rows along a computed axis");
+            return Err(Unsupported::KeptRows.into());
         };
         // A slot holds the axis's bound, whatever this launch sees.
         let most = tree.g.dims.iter().find(|d| d.name == *axis);

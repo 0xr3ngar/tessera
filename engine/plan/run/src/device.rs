@@ -1,5 +1,6 @@
 //! Replays a plan on any GPU over the device traits.
 
+use crate::Error;
 use crate::kernels::Kernels;
 use crate::run::{Base, Run};
 use codegen::Dialect;
@@ -7,7 +8,7 @@ use gpukit::backend::Backend;
 use gpukit::device::{Device, DeviceBuffer, cached_context, cached_source};
 use gpukit::launch::{KernelArgs, Launch, launch_1d, launch_grid};
 use graph::DimName;
-use lower::{Arg, Error, Extent, Launch as Call, Launching, Plan, Shape, Slot};
+use lower::{Arg, Extent, Launch as Call, Launching, Plan, Shape, Slot};
 use mem::Buffer;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -70,7 +71,7 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
                     bound.device_ptr(self.buffer(*slot).device_ptr() + at)
                 }
                 Arg::Value(bytes) => bound.bytes(bytes),
-                Arg::Size(_) | Arg::Buffer(..) => return Err(Error::Unbound),
+                Arg::Size(_) | Arg::Buffer(..) => return Err(lower::Error::Unbound.into()),
             };
         }
         Ok(bound)
@@ -92,7 +93,7 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
                 let threads = threads as u32;
                 launch_grid(self.ctx, kernel, across, down, threads, args)?
             }
-            Shape::Runtime(_) => return Err(Error::Unbound),
+            Shape::Runtime(_) => return Err(lower::Error::Unbound.into()),
         }
         Ok(())
     }
