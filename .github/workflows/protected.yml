@@ -27,8 +27,9 @@ jobs:
       - name: Label changes to protected files
         if: contains(fromJSON('["opened", "reopened", "synchronize"]'), github.event.action)
         run: |
+          # README.md changes inside the generated crate table skip review.
           gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
-            --jq '.[] | .filename, (.previous_filename // empty)' \
+            | tools/scripts/review-paths.sh \
             | tools/scripts/protected.sh > "$RUNNER_TEMP/hits"
           if [ -s "$RUNNER_TEMP/hits" ]; then
             cat "$RUNNER_TEMP/hits"

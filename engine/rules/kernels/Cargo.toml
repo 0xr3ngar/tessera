@@ -11,7 +11,6 @@ codegen = { workspace = true }
 graph = { workspace = true }
 lower = { workspace = true }
 sim = { workspace = true }
-gemm = { workspace = true }
 
 [dev-dependencies]
 frontend-settings = { workspace = true }

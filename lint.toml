@@ -72,11 +72,6 @@ layers = [
 
 # Dependencies that point up a layer today. Remove each when it is fixed.
 [[layer_allow]]
-from = "gemm"
-to = "frontend-settings"
-reason = "gemm's test helper asks settings for a GPU"
-
-[[layer_allow]]
 from = "lower"
 to = "frontend-settings"
 reason = "lower tests read settings"
