@@ -405,7 +405,11 @@ pub fn program(c: &Config) -> Graph {
 
 /// One step entry: rows in, each row's likeliest token out.
 pub fn stepper(c: &Config) -> Graph {
+    // Kept rows span the whole context, as buffers hold them.
     let mut dims = c.dims();
+    for d in dims.iter_mut().filter(|d| d.name == Context) {
+        d.size = Size::Fixed(c.stack.max_context);
+    }
     let size = Size::Bounded(c.stack.max_context);
     dims.push(Dim { name: Rows, size });
     let m = Model::new(dims);

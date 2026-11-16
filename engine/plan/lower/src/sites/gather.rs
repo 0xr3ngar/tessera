@@ -3,7 +3,7 @@ use crate::form::Load;
 use crate::tree::{T, Term, Tree};
 use graph::{Op, Select};
 
-/// Rows of a rank-two `table` picked by `ids`.
+/// Rows of `table` picked by `ids`, along its first axis.
 #[derive(Clone, Copy, Debug)]
 pub struct Gather {
     pub table: T,
@@ -22,8 +22,12 @@ impl Pattern for Gather {
         }
         let (table, ids) = (node.args[0], node.args[1]);
         let rows = tree.elements(ids);
-        let [table_rows, _] = tree.node(table).shape[..] else {
-            return None;
+        // Stored tables are matrices. Computed ones may have more axes.
+        let shape = &tree.node(table).shape;
+        let table_rows = match shape[..] {
+            [rows, _] => rows,
+            [rows, _, ..] if !tree.leaf(table) => rows,
+            _ => return None,
         };
         Some(Self {
             table,

@@ -48,7 +48,8 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let floats = |t: T| tree.node(t).form.name() == F32_FORM.name();
     let shape = &tree.node(w).shape;
     // Picked weights belong to the picked rules.
-    let picked = matches!(tree.node(w).term, Term::Op(Op::Select(_)));
+    let wn = tree.node(w);
+    let picked = matches!(wn.term, Term::Op(Op::Select(_))) && tree.leaf(wn.args[0]);
     if picked || shape.len() < 3 || !floats(x) || !floats(w) {
         return None;
     }
