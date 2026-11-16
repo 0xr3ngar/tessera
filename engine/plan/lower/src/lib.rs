@@ -27,7 +27,7 @@ pub use cost::{Cost, Device, Sample};
 pub use cut::cut;
 pub use engine_settings::{Backend, Pick, Settings};
 pub use extent::Extent;
-pub use form::{Form, Pins, Weight};
+pub use form::{Pins, Weight};
 pub use gpukit::{Limits, Platform};
 pub use kernel::{Kernel, KernelRef, Needs, UNPROVEN};
 pub use kernel_macro::Kernel;

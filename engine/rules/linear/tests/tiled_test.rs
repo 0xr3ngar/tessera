@@ -10,7 +10,7 @@ use interp::{Tensor, run};
 mod common;
 use common::{linear, noise, terms};
 use linear::{SCHEDULES, Schedule};
-use lower::form::FORMS;
+use lower::form::LOADS;
 use lower::testing::{emulations, host, runs};
 use lower::{Device, Dialect, Pins, Settings, Source, lower};
 use run::open;
@@ -20,7 +20,7 @@ use testkit::{Noise, cosine_f32, max_abs_diff};
 fn only(at: usize, settings: &Settings) -> Device {
     let others = SCHEDULES.iter().enumerate().filter(|(i, _)| *i != at);
     let bar = |d: Device, (_, s): (usize, &Schedule)| {
-        FORMS.iter().fold(d, |d, f| d.without(f.suffixed(s.name)))
+        LOADS.iter().fold(d, |d, f| d.without(f.suffixed(s.name)))
     };
     others.fold(Device::guess(settings).favoring("tiled"), bar)
 }

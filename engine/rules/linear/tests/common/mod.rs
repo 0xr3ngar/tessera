@@ -64,9 +64,9 @@ pub fn terms(plan: &Plan) -> Terms {
 }
 
 /// Every weight form whose blocks fit rows of `k`.
-pub fn forms(k: usize) -> Vec<&'static dyn lower::Form> {
-    let fits = |f: &&&dyn lower::Form| k.is_multiple_of(f.align());
-    lower::form::FORMS
+pub fn forms(k: usize) -> Vec<&'static dyn lower::form::Load> {
+    let fits = |f: &&&dyn lower::form::Load| k.is_multiple_of(f.align());
+    lower::form::LOADS
         .iter()
         .filter(fits)
         .copied()

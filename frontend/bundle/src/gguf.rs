@@ -5,7 +5,7 @@ use crate::tokenize::hf::Hf;
 use crate::{Bundle, Template, head_dim, stepper};
 use checkpoint::Gguf;
 use engine::decoder::{Config, Scales};
-use engine::form::{F32_FORM, Form, named};
+use engine::form::{F32_FORM, Load, named};
 use engine::{Graph, PathSeg, Pins, Stack};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -66,7 +66,7 @@ fn segment(p: &PathSeg) -> String {
     }
 }
 
-pub(crate) fn pins(graph: &Graph, forms: &[&'static dyn Form], layers: u64) -> Pins {
+pub(crate) fn pins(graph: &Graph, forms: &[&'static dyn Load], layers: u64) -> Pins {
     let mut counts = BTreeMap::new();
     for f in forms {
         *counts.entry(f.name()).or_insert(0) += 1;
@@ -77,7 +77,7 @@ pub(crate) fn pins(graph: &Graph, forms: &[&'static dyn Form], layers: u64) -> P
         .and_then(|(name, _)| named(name))
         .unwrap_or(F32_FORM);
     let mut pins = Pins::all(base);
-    let mut fields: BTreeMap<String, Vec<(u64, &'static dyn Form)>> = BTreeMap::new();
+    let mut fields: BTreeMap<String, Vec<(u64, &'static dyn Load)>> = BTreeMap::new();
     for (w, &f) in graph.weights.iter().zip(forms) {
         if let [PathSeg::Field(root), PathSeg::Index(i), rest @ ..] = w.path.as_slice()
             && root == "layers"

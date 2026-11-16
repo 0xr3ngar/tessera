@@ -1,7 +1,7 @@
 //! A trip's operations, counted from the tree.
 
 use crate::LANES;
-use crate::form::Form;
+use crate::form::Load;
 use crate::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt, Ty};
 use sim::Ops;
 use std::collections::HashMap;
@@ -59,7 +59,7 @@ struct Counter {
     /// Freshness and width summed over loads, for their means.
     fresh: f64,
     width: f64,
-    buffers: HashMap<String, &'static dyn Form>,
+    buffers: HashMap<String, &'static dyn Load>,
     shared: Vec<String>,
     tiles: HashMap<String, (usize, usize)>,
     /// Global loads this statement has made, which repeats share.
@@ -149,7 +149,7 @@ impl Counter {
         }
     }
 
-    fn global(&self, e: &Expr) -> Option<&'static dyn Form> {
+    fn global(&self, e: &Expr) -> Option<&'static dyn Load> {
         match e {
             Expr::Var(name) => self.buffers.get(name).copied(),
             _ => None,

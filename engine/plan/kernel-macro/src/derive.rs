@@ -274,7 +274,7 @@ pub fn derive(input: DeriveInput) -> Result<Tokens, Error> {
     });
     let accepts = line.expr("accepts").map(|e| {
         let call = applied(e, &[quote!(self), quote!(input), quote!(form)]);
-        quote!(fn accepts(&self, input: usize, form: &dyn #krate::Form) -> bool { #call })
+        quote!(fn accepts(&self, input: usize, form: &dyn #krate::form::Load) -> bool { #call })
     });
     Ok(quote! {
         #[allow(clippy::all, unused_variables)]

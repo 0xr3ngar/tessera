@@ -2,7 +2,7 @@
 
 use crate::LANES;
 use crate::dialect::{self, Text};
-use crate::form::{Form, U8_FORM};
+use crate::form::{Load, U8_FORM};
 use crate::kept::Layout;
 use std::collections::HashMap;
 
@@ -194,7 +194,7 @@ impl Expr {
 }
 
 /// A buffer element's type as a value.
-fn element(form: &dyn Form) -> Ty {
+fn element(form: &dyn Load) -> Ty {
     match form.dtype().is_float() {
         true => Ty::F32,
         false => Ty::U32,
@@ -279,7 +279,7 @@ pub enum Stmt {
 pub enum Param {
     Buffer {
         name: String,
-        form: &'static dyn Form,
+        form: &'static dyn Load,
         writes: bool,
     },
     Scalar {
@@ -343,9 +343,9 @@ pub struct Helper {
 enum Kind {
     Value(Ty),
     /// Four elements of this form, loaded at once.
-    Wide(&'static dyn Form),
+    Wide(&'static dyn Load),
     /// A buffer parameter of this form.
-    Buffer(&'static dyn Form),
+    Buffer(&'static dyn Load),
     /// Group memory, or a local array, of this element type.
     Array(Ty),
     /// Tile sums over this many rows and columns.
@@ -443,7 +443,7 @@ impl Printer<'_> {
     }
 
     /// The form of a buffer parameter.
-    fn buffer(&self, e: &Expr) -> &'static dyn Form {
+    fn buffer(&self, e: &Expr) -> &'static dyn Load {
         match e {
             Expr::Var(name) => match self.kind(name) {
                 Kind::Buffer(form) => form,
@@ -454,7 +454,7 @@ impl Printer<'_> {
     }
 
     /// The form behind a four-wide value from a buffer.
-    fn wide(&self, e: &Expr) -> Option<&'static dyn Form> {
+    fn wide(&self, e: &Expr) -> Option<&'static dyn Load> {
         match e {
             Expr::Var(name) => match self.kind(name) {
                 Kind::Wide(form) => Some(form),

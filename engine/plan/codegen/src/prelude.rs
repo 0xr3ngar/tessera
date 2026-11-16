@@ -14,7 +14,7 @@ pub trait Elems {
 
 /// A buffer whose form the kernel text settles.
 pub trait Form: Elems {
-    const FORM: &'static dyn form::Form;
+    const FORM: &'static dyn form::Load;
 }
 
 pub struct F32;
@@ -47,19 +47,19 @@ impl Elems for Dyn {
 }
 
 impl Form for F32 {
-    const FORM: &'static dyn form::Form = form::F32_FORM;
+    const FORM: &'static dyn form::Load = form::F32_FORM;
 }
 
 impl Form for Bf16 {
-    const FORM: &'static dyn form::Form = form::BF16_FORM;
+    const FORM: &'static dyn form::Load = form::BF16_FORM;
 }
 
 impl Form for U32 {
-    const FORM: &'static dyn form::Form = form::U32_FORM;
+    const FORM: &'static dyn form::Load = form::U32_FORM;
 }
 
 impl Form for U8 {
-    const FORM: &'static dyn form::Form = form::U8_FORM;
+    const FORM: &'static dyn form::Load = form::U8_FORM;
 }
 
 /// A float4, loaded or stored in one go.

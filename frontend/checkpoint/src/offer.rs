@@ -1,7 +1,7 @@
 //! What a checkpoint offers: named slices, read when claimed.
 
 use crate::Error;
-use engine::form::Form;
+use engine::storage::Form;
 
 /// How a slice's elements lie in the file.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -34,7 +34,7 @@ impl Stored {
             "bf16" => Ok(Stored::Bf16),
             "f16" => Ok(Stored::F16),
             "other" => Ok(Stored::Other),
-            _ => match engine::form::named(name) {
+            _ => match engine::storage::named(name) {
                 Some(form) => Ok(Stored::Form(form)),
                 None => Err(Error::Format(format!("unknown stored type {name:?}"))),
             },

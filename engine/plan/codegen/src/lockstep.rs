@@ -2,7 +2,7 @@
 
 use crate::block::{NVFP4, Q4_0, Q8_0};
 use crate::exec::{ArgVal, Grid};
-use crate::form::Form;
+use crate::form::{Form, Load};
 use crate::numerics::Precision;
 use graph::{E2M1, E4M3, F16};
 
@@ -370,7 +370,7 @@ pub fn dot_bf16(x: &[f32], w: &[u8]) -> f32 {
 }
 
 /// `n` products of an f32 row and a `form` row.
-pub fn dot_form(form: &dyn Form, a: &[u8], a_at: usize, b: &[u8], b_at: usize, n: usize) -> f32 {
+pub fn dot_form(form: &dyn Load, a: &[u8], a_at: usize, b: &[u8], b_at: usize, n: usize) -> f32 {
     let mut scratch = Vec::new();
     let x = f32_row(a, a_at, n, &mut scratch);
     match form.name() {

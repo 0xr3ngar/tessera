@@ -4,22 +4,22 @@ use graph::PathSeg;
 use mem::Tensor;
 use serde::{Deserialize, Serialize};
 
-pub use codegen::form::{BF16_FORM, Bf16, F32, F32_FORM, FORMS, Form, U32, U32_FORM, named, of};
+pub use codegen::form::{BF16_FORM, Bf16, F32, F32_FORM, LOADS, Load, U32, U32_FORM, named, of};
 
 /// A weight as a file holds it.
 pub enum Weight {
     Floats(Tensor),
     /// One form's bytes, as `Form::pack` lays them out.
-    Packed(&'static dyn Form, Vec<u8>),
+    Packed(&'static dyn Load, Vec<u8>),
 }
 
 /// The form of each weight, as the user says.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Pins {
     /// The form of every weight no pattern names.
-    pub weights: &'static dyn Form,
+    pub weights: &'static dyn Load,
     /// Patterns over weight paths, the last match winning.
-    pub named: Vec<(String, &'static dyn Form)>,
+    pub named: Vec<(String, &'static dyn Load)>,
 }
 
 impl Default for Pins {
@@ -29,7 +29,7 @@ impl Default for Pins {
 }
 
 impl Pins {
-    pub fn all(weights: &'static dyn Form) -> Self {
+    pub fn all(weights: &'static dyn Load) -> Self {
         Self {
             weights,
             named: Vec::new(),
@@ -37,13 +37,13 @@ impl Pins {
     }
 
     /// Pins weights whose path fits `pattern`. `*` is any run.
-    pub fn pin(mut self, pattern: &str, form: &'static dyn Form) -> Self {
+    pub fn pin(mut self, pattern: &str, form: &'static dyn Load) -> Self {
         self.named.push((pattern.into(), form));
         self
     }
 
     /// The form of the weight at `path`.
-    pub fn form(&self, path: &[PathSeg]) -> &'static dyn Form {
+    pub fn form(&self, path: &[PathSeg]) -> &'static dyn Load {
         let seg = |s: &PathSeg| match s {
             PathSeg::Field(f) => f.clone(),
             PathSeg::Index(i) => i.to_string(),
@@ -64,7 +64,7 @@ struct PinNames {
 
 impl Serialize for Pins {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let named = |(p, f): &(String, &dyn Form)| (p.clone(), f.name().to_string());
+        let named = |(p, f): &(String, &dyn Load)| (p.clone(), f.name().to_string());
         PinNames {
             weights: self.weights.name().into(),
             named: self.named.iter().map(named).collect(),

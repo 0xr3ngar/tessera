@@ -2,7 +2,7 @@
 
 use crate::Error;
 use crate::extent::Extent;
-use crate::form::{Form, Pins};
+use crate::form::{Load, Pins};
 use crate::kernels::MapStage;
 use crate::plan::Share;
 use crate::select::Home;
@@ -34,7 +34,7 @@ pub struct Node {
     /// Each axis, with runtime dimensions kept symbolic.
     pub extents: Vec<Extent>,
     /// How its elements are stored.
-    pub form: &'static dyn Form,
+    pub form: &'static dyn Load,
     /// The graph node it came from.
     pub from: NodeId,
 }

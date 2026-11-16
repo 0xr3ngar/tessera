@@ -4,8 +4,8 @@ use super::{Spec, inputs, interpreted, loaded, runs};
 use bundle::names::repo;
 use checkpoint::{File, Offer};
 use interp::Tensor;
-use lower::form::BF16_FORM;
-use lower::{Device, Form, Pins, Weight, lower};
+use lower::form::{BF16_FORM, Load};
+use lower::{Device, Pins, Weight, lower};
 use run::Run;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -19,7 +19,7 @@ pub struct Golden {
     /// Values the test itself holds, else the model's reference directory.
     pub record: Option<fn(&Graph) -> Reference>,
     /// The form the plan keeps weights in.
-    pub form: &'static dyn Form,
+    pub form: &'static dyn Load,
     pub checks: &'static [Check],
     /// The plan runs on a host with no GPU too.
     pub anywhere: bool,

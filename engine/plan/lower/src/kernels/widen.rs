@@ -2,7 +2,7 @@
 
 use crate::Kernel;
 use crate::abi::Source;
-use crate::form::Form as Stored;
+use crate::form::Load as Stored;
 use codegen::prelude::*;
 use sim::Load;
 
