@@ -162,10 +162,7 @@ pub fn pulled(model: &str, g: &Graph, offer: &dyn Offer) -> Vec<Tensor> {
             Weight::Packed(f, bytes) if f.block() == 1 => {
                 Tensor::from_bytes(shape, f.dtype(), &bytes)
             }
-            Weight::Packed(f, bytes) => {
-                let n = f.elements(bytes.len());
-                Tensor::f32(shape, (0..n).map(|i| f.unpack(&bytes, i)).collect())
-            }
+            Weight::Packed(f, bytes) => Tensor::f32(shape, f.unpack_all(&bytes)),
         });
     })
     .unwrap();

@@ -145,7 +145,7 @@ pub trait Run {
                 self.held_mut().upload(slot, bytes)?;
                 continue;
             }
-            let floats = (0..slot.len).map(|i| form.unpack(bytes, i)).collect();
+            let floats = form.unpack_all(bytes);
             self.write(slot, Tensor::f32(vec![slot.len], floats).view())?;
         }
         Ok(())
@@ -253,7 +253,7 @@ fn unpacked<R: Run + ?Sized>(
     let outer = n / (share.whole * share.inner).max(1);
     let floats = Tensor::f32(
         vec![outer, share.whole, share.inner],
-        (0..n).map(|i| form.unpack(bytes, i)).collect(),
+        form.unpack_all(bytes),
     );
     let part = floats.view().slice(1, share.first, share.count);
     let slots: Vec<Slot> = (r.plan().weights.iter())

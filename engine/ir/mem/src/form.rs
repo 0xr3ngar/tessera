@@ -55,6 +55,13 @@ pub trait Form: Sync {
         Some(out)
     }
 
+    /// Every element `bytes` hold, in order.
+    fn unpack_all(&self, bytes: &[u8]) -> Vec<f32> {
+        (0..self.elements(bytes.len()))
+            .map(|i| self.unpack(bytes, i))
+            .collect()
+    }
+
     /// `data` as this form keeps it.
     fn roundtrip(&self, data: &[f32]) -> Vec<f32> {
         let packed = self.pack(data);
