@@ -296,6 +296,16 @@ pub fn form_for(k: u32) -> Option<&'static dyn Form> {
     }
 }
 
+/// The rotated form for `k` bits a weight.
+pub fn turned_for(k: u32) -> Option<&'static dyn Form> {
+    match k {
+        2 => Some(&TRELLIS_K2_ROT),
+        3 => Some(&TRELLIS_K3_ROT),
+        4 => Some(&TRELLIS_K4_ROT),
+        _ => None,
+    }
+}
+
 /// The scaled Walsh-Hadamard transform of 128 values at `stride`.
 fn hadamard(x: &mut [f32], start: usize, stride: usize) {
     let mut len = 1;

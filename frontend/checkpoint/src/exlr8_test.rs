@@ -1,5 +1,7 @@
 use crate::exlr8::Release;
 use crate::{Offer, Stored};
+use engine::block::Q4_0;
+use engine::storage::Form;
 use engine::{E4M3, F16, trellis};
 use std::path::Path;
 
@@ -77,6 +79,10 @@ fn glm_dense_formats() {
             ("qi.record", "I64", vec![8], record(2, 2, 128, 2)),
             ("qi.q4", "U8", vec![1, 2, 64], q4_in.clone()),
             ("qi.s4", "F16", vec![1, 2, 4], halves(&s4_in)),
+            ("tr.record", "I64", vec![8], record(1, 128, 128, 1)),
+            ("tr.trellis", "U8", vec![1, 4096], ramp(4096, 3)),
+            ("tr.suh", "F16", vec![128], halves(&[0.5; 128])),
+            ("tr.svh", "F16", vec![128], halves(&[2.0; 128])),
         ],
     );
     write(
@@ -94,14 +100,15 @@ fn glm_dense_formats() {
     );
     let release = Release::open(&dir);
     let slices = release.slices();
-    let shape = |name: &str| {
-        let s = slices
-            .iter()
-            .find(|s| s.name == name)
-            .unwrap_or_else(|| panic!("{name}"));
-        assert_eq!(s.stored, Stored::F32, "{name}");
-        s.shape.clone()
-    };
+    let found = |name: &str| slices.iter().find(|s| s.name == name).unwrap();
+    let shape = |name: &str| found(name).shape.clone();
+    // Each matrix comes in the most compact form tessera reads.
+    let repacked = Stored::Form(&Q4_0);
+    assert_eq!(found("model.layers.0.qi.weight").stored, repacked);
+    assert_eq!(found("model.layers.0.mx.weight").stored, Stored::Bf16);
+    assert_eq!(found("lm_head.weight").stored, Stored::F32);
+    let turned = Stored::Form(&engine::trellis::TRELLIS_K2_ROT);
+    assert_eq!(found("model.layers.0.tr.weight").stored, turned);
     assert_eq!(shape("model.layers.0.mx.weight"), [2, 64]);
     assert_eq!(shape("model.layers.0.qi.weight"), [2, 128]);
     assert_eq!(shape("lm_head.weight"), [2, 2]);
@@ -141,6 +148,21 @@ fn glm_dense_formats() {
     }
     assert_eq!(read("lm_head.weight"), [1.0, 2.0, 3.0, 4.0]);
     assert_eq!(read("model.norm.weight"), [0.5, 0.25]);
+    // Trellis stays packed, its rotations after the codes.
+    let file = release.packed("model.layers.0.tr.weight", None).unwrap();
+    let codes = trellis::packed(128, 128, 1, &ramp(4096, 3));
+    assert_eq!(
+        file,
+        [codes, halves(&[0.5; 128]), halves(&[2.0; 128])].concat()
+    );
+    // int4 repacks as q4_0 bit for bit, from either side.
+    for (name, want) in [("q", &q), ("qi", &qi)] {
+        let bytes = release
+            .packed(&format!("model.layers.0.{name}.weight"), None)
+            .unwrap();
+        let back: Vec<f32> = (0..want.len()).map(|i| Q4_0.unpack(&bytes, i)).collect();
+        assert_eq!(&back, want, "{name}");
+    }
     std::fs::remove_dir_all(dir).unwrap();
 }
 

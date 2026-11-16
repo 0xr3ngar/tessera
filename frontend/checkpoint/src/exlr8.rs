@@ -3,7 +3,7 @@
 use crate::file::{Error, File};
 use crate::offer::{Offer, Slice, Stored};
 pub use engine::trellis::rotated;
-use engine::{E4M3, F16, trellis};
+use engine::{E4M3, F16, block, trellis};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -140,25 +140,54 @@ fn plain(f: &File, name: &str, r: &Record, format: i64) -> Result<Vec<f32>, Erro
 
 /// Nibbles as `(n - 8) * s`, one scale per 32 inputs.
 fn int4(f: &File, name: &str, r: &Record) -> Result<Vec<f32>, Error> {
-    let (inp, outp) = (r.inp, r.out);
     let q4 = f.bytes(&format!("{name}.q4"))?;
     let s4 = halves(f, &format!("{name}.s4"))?;
-    let mut w = Vec::with_capacity(inp * outp);
-    for o in 0..outp {
-        for i in 0..inp {
-            // Input-side shards lie in blocks of 128 inputs.
-            let (byte, scale) = match r.side == trellis::INPUT_SIDE as i64 {
-                true => {
-                    let (g, j) = (i / 128, i % 128);
-                    ((g * outp + o) * 64 + j / 2, (g * outp + o) * 4 + j / 32)
-                }
-                false => (o * inp / 2 + i / 2, o * inp / 32 + i / 32),
-            };
+    let mut w = Vec::with_capacity(r.inp * r.out);
+    for o in 0..r.out {
+        for i in 0..r.inp {
+            let (byte, scale) = int4_at(r, o, i);
             let n = (q4[byte] >> (4 * (i % 2))) & 0xF;
             w.push((f32::from(n) - 8.0) * s4[scale]);
         }
     }
     Ok(w)
+}
+
+/// Input `i` of output `o`: its byte and scale index.
+fn int4_at(r: &Record, o: usize, i: usize) -> (usize, usize) {
+    let (inp, outp) = (r.inp, r.out);
+    // Input-side shards lie in blocks of 128 inputs.
+    match r.side == trellis::INPUT_SIDE as i64 {
+        true => {
+            let (g, j) = (i / 128, i % 128);
+            ((g * outp + o) * 64 + j / 2, (g * outp + o) * 4 + j / 32)
+        }
+        false => (o * inp / 2 + i / 2, o * inp / 32 + i / 32),
+    }
+}
+
+/// int4 g32 as q4_0, bit for bit, nibbles reordered.
+fn q4_0(f: &File, name: &str, r: &Record) -> Result<Vec<u8>, Error> {
+    let q4 = f.bytes(&format!("{name}.q4"))?;
+    let s4 = f.bytes(&format!("{name}.s4"))?;
+    let nibble = |o: usize, i: usize| (q4[int4_at(r, o, i).0] >> (4 * (i % 2))) & 0xF;
+    let mut out = Vec::with_capacity(r.out * r.inp / 32 * 18);
+    for o in 0..r.out {
+        for g in (0..r.inp).step_by(32) {
+            let scale = int4_at(r, o, g).1;
+            out.extend_from_slice(&s4[2 * scale..2 * scale + 2]);
+            out.extend((0..16).map(|j| nibble(o, g + j) | (nibble(o, g + j + 16) << 4)));
+        }
+    }
+    Ok(out)
+}
+
+/// A trellis matrix as a rotated file, rotations after codes.
+fn turned(f: &File, name: &str) -> Result<Vec<u8>, Error> {
+    let mut bytes = codes_packed(f, name, None)?;
+    bytes.extend(f.bytes(&format!("{name}.suh"))?);
+    bytes.extend(f.bytes(&format!("{name}.svh"))?);
+    Ok(bytes)
 }
 
 /// An exlr8 release, read by HF tensor name.
@@ -287,8 +316,16 @@ impl Release {
             return self.expert_codes(layer, local);
         }
         let (file, local) = self.place(name);
-        let matrix_name = local.strip_suffix(".codes").unwrap_or(&local).to_string();
-        self.with(&file, |f| codes_packed(f, &matrix_name, rows))
+        let matrix = local
+            .strip_suffix(".codes")
+            .or(local.strip_suffix(".weight"));
+        let matrix = matrix.unwrap_or(&local).to_string();
+        let whole = local.ends_with(".weight");
+        self.with(&file, |f| match record(f, &matrix)? {
+            r if r.format == INT4 => q4_0(f, &matrix, &r),
+            r if r.format == TRELLIS && whole => turned(f, &matrix),
+            _ => codes_packed(f, &matrix, rows),
+        })
     }
 
     /// Tensor `name` as f32. `M.codes`, `M.suh`, `M.svh`: unrotated parts.
@@ -358,8 +395,8 @@ impl Release {
         out
     }
 
-    /// A shard's slices: matrix parts and plain tensors.
-    fn offered(f: &File, shard: &Shard) -> Vec<Slice> {
+    /// A shard's slices. GLM's take their most compact forms.
+    fn offered(f: &File, shard: &Shard, glm: bool) -> Vec<Slice> {
         let raw = f.slices();
         let shape = |name: &str| raw.iter().find(|s| s.name == name).map(|s| s.shape.clone());
         let mut out = Vec::new();
@@ -374,10 +411,15 @@ impl Release {
             ) else {
                 // Other formats decode to the HF weight.
                 if let Ok(r) = record(f, matrix) {
+                    let stored = match (glm, r.format) {
+                        (false, _) | (true, FP32) => Stored::F32,
+                        (true, INT4) => Stored::Form(&block::Q4_0),
+                        (true, _) => Stored::Bf16,
+                    };
                     out.push(Slice {
                         name: name("weight"),
                         shape: vec![r.out, r.inp],
-                        stored: Stored::F32,
+                        stored,
                     });
                 }
                 continue;
@@ -390,10 +432,15 @@ impl Release {
             let Some(form) = trellis::form_for(k) else {
                 continue;
             };
+            // GLM keeps the matrix packed, its rotations beside the codes.
+            let whole = match (glm, trellis::turned_for(k)) {
+                (true, Some(turned)) => Stored::Form(turned),
+                _ => Stored::F32,
+            };
             out.push(Slice {
                 name: name("weight"),
                 shape: vec![outp, inp],
-                stored: Stored::F32,
+                stored: whole,
             });
             out.push(Slice {
                 name: name("codes"),
@@ -446,7 +493,7 @@ impl Offer for Release {
     fn slices(&self) -> Vec<Slice> {
         let mut out = Vec::new();
         for shard in self.shards() {
-            let slices = self.with(&shard.file, |f| Ok(Self::offered(f, &shard)));
+            let slices = self.with(&shard.file, |f| Ok(Self::offered(f, &shard, self.glm)));
             out.extend(slices.unwrap_or_default());
         }
         if !self.glm {
