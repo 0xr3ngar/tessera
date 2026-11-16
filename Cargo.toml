@@ -14,6 +14,7 @@ members = [
     "tools/findings",
     "tools/lint",
     "tools/load",
+    "tools/parity",
     "tools/ranks",
     "tools/shape",
     "tools/style",
@@ -50,7 +51,7 @@ lower = { path = "engine/plan/lower" }
 mem = { path = "engine/ir/mem" }
 models = { path = "engine/models" }
 platform = { path = "engine/gpu/platform" }
-parity = { path = "frontend/parity" }
+parity = { path = "tools/parity" }
 run = { path = "engine/plan/run" }
 shape = { path = "tools/shape" }
 sim = { path = "engine/plan/sim" }

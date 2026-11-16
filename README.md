@@ -60,7 +60,6 @@ tessera is not alpha or beta. It's an experiment right now and no numbers are av
 <tr><td>&emsp;<a href="frontend/checkpoint">checkpoint</a></td><td>Reads weights from safetensors files</td></tr>
 <tr><td>&emsp;<a href="frontend/comm">frontend-comm</a></td><td>Joins ranks over TCP or a shared file, then hands the handles to the engine</td></tr>
 <tr><td>&emsp;<a href="frontend/eval">eval</a></td><td>Measures a model under a recipe: speed per batch, parity against a reference</td></tr>
-<tr><td>&emsp;<a href="frontend/parity">parity</a></td><td>Every model against its reference, the interpreter and the device</td></tr>
 <tr><td>&emsp;<a href="frontend/serve">serve</a></td><td>An HTTP front end: text in, streamed text out, over the engine</td></tr>
 <tr><td>&emsp;<a href="frontend/settings">frontend-settings</a></td><td>Settings read once from the environment, passed down</td></tr>
 <tr><td>&emsp;<a href="frontend/tasks">tasks</a></td><td>Text in, answers out: generation and tagging over a loaded model</td></tr>
@@ -70,6 +69,7 @@ tessera is not alpha or beta. It's an experiment right now and no numbers are av
 <tr><td>&emsp;<a href="tools/findings">findings</a></td><td>The JSON each check writes, for tessera-check to render</td></tr>
 <tr><td>&emsp;<a href="tools/lint">tessera-lint</a></td><td>The repository's code-shape rules, run by CI and the pre-commit hook</td></tr>
 <tr><td>&emsp;<a href="tools/load">load</a></td><td>Drives concurrent requests against tessera-serve and reports throughput</td></tr>
+<tr><td>&emsp;<a href="tools/parity">parity</a></td><td>Every model against its reference, the interpreter and the device</td></tr>
 <tr><td>&emsp;<a href="tools/ranks">ranks</a></td><td>Runs one rank of a sharded Qwen3 forward pass, joined to the others over TCP</td></tr>
 <tr><td>&emsp;<a href="tools/shape">shape</a></td><td>Line shapes: a line with names, numbers and strings collapsed</td></tr>
 <tr><td>&emsp;<a href="tools/simcheck">tessera-simcheck</a></td><td>Fails on near-copies of code, found with EmbeddingGemma 2 embeddings</td></tr>

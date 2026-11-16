@@ -87,9 +87,3 @@ placement_gap = 4
 # Dependencies in the lowest layer, or whose names other crates use
 # fewer than `min_surface` of, pass. `use a as _` links and passes.
 thin_edge = { dirs = ["engine/"], min_names = 3, min_dev_names = 1, min_surface = 6 }
-
-# Upward edges that stay, and why.
-[[layer_allow]]
-from = "lower"
-to = "run"
-reason = "lower's tests run the plans they make"
