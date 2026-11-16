@@ -1,6 +1,7 @@
 use crate::block::{NVFP4, Q4_0, Q8_0};
 use crate::form::Form;
-use crate::trellis::{INPUT_SIDE, TRELLIS_K2, packed};
+use crate::trellis::{INPUT_SIDE, TRELLIS_K2, TRELLIS_K2_ROT, packed, rotated};
+use graph::F16;
 
 /// Each form keeps `data` within a share of its largest.
 #[test]
@@ -84,4 +85,25 @@ fn shares_round_trip() {
         assert_eq!(got, TRELLIS_K2.unpack(&second, i), "element {i}");
     }
     same_part(&TRELLIS_K2, &set, [1, 2, 128 * 256], [1, 1]);
+}
+
+/// A rotated file splits into codes, `suh` and `svh`.
+#[test]
+fn rotated_trellis_splits() {
+    let codes = packed(128, 128, 1, &vec![0x5A; 128 * 128 * 2 / 8]);
+    // Values f16 holds exactly, so the halves round trip.
+    let suh: Vec<f32> = (0..128).map(|i| 1.0 + i as f32 / 64.0).collect();
+    let svh: Vec<f32> = (0..128).map(|i| 0.5 - i as f32 / 512.0).collect();
+    let half = |v: &[f32]| {
+        v.iter()
+            .flat_map(|x| F16::from(*x).0.to_le_bytes())
+            .collect::<Vec<u8>>()
+    };
+    let file = [codes.clone(), half(&suh), half(&svh)].concat();
+    let want = rotated(&TRELLIS_K2.unpack_all(&codes), 128, 128, &suh, &svh);
+    assert_eq!(TRELLIS_K2_ROT.unpack_all(&file), want);
+    let floats = |v: &[f32]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+    let parts = TRELLIS_K2_ROT.split(&file).unwrap();
+    assert_eq!(parts, [codes, floats(&suh), floats(&svh)]);
+    assert!(TRELLIS_K2.split(&file).is_none());
 }

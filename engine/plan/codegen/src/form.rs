@@ -9,6 +9,10 @@ pub(crate) use mem::form::{gather, scatter};
 
 /// Decodes its elements in kernel text.
 pub trait Load: Form {
+    /// The plain form of a rotated weight's codes, if rotated.
+    fn codes(&self) -> Option<&'static dyn Load> {
+        None
+    }
     /// A generated kernel's type for one element.
     fn ty(&self) -> &'static str;
     /// Kernel text: element `index` of `name` as a float.

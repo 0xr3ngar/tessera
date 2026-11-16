@@ -2,6 +2,7 @@
 
 use crate::file::{Error, File};
 use crate::offer::{Offer, Slice, Stored};
+pub use engine::trellis::rotated;
 use engine::{E4M3, F16, trellis};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -60,64 +61,6 @@ fn decoded(f: &File, name: &str, r: &Record) -> Result<Vec<f32>, Error> {
     Ok(form.unpack_all(&bytes))
 }
 
-/// The scaled Walsh-Hadamard transform of 128 values at `stride`.
-fn hadamard(x: &mut [f32], start: usize, stride: usize) {
-    let mut len = 1;
-    while len < 128 {
-        for i in (0..128).step_by(2 * len) {
-            for j in i..i + len {
-                let (a, b) = (x[start + j * stride], x[start + (j + len) * stride]);
-                x[start + j * stride] = a + b;
-                x[start + (j + len) * stride] = a - b;
-            }
-        }
-        len *= 2;
-    }
-    let scale = 1.0 / 128f32.sqrt();
-    for j in 0..128 {
-        x[start + j * stride] *= scale;
-    }
-}
-
-/// `diag(suh) H T H diag(svh)`, transposed to `[out][in]`.
-fn rotate(mut t: Vec<f32>, r: &Record, suh: &[f32], svh: &[f32]) -> Vec<f32> {
-    let (inp, out) = (r.inp, r.out);
-    for block in 0..inp / 128 {
-        for col in 0..out {
-            hadamard(&mut t, 128 * block * out + col, out);
-        }
-    }
-    for (row, s) in suh.iter().enumerate() {
-        t[row * out..(row + 1) * out]
-            .iter_mut()
-            .for_each(|v| *v *= s);
-    }
-    for row in 0..inp {
-        for block in 0..out / 128 {
-            hadamard(&mut t, row * out + 128 * block, 1);
-        }
-    }
-    let mut w = vec![0.0; inp * out];
-    for row in 0..inp {
-        for (col, s) in svh.iter().enumerate() {
-            w[col * inp + row] = t[row * out + col] * s;
-        }
-    }
-    w
-}
-
-/// `diag(suh) H T H diag(svh)` for a `[out][in]` matrix `t`.
-pub fn rotated(t: &[f32], inp: usize, out: usize, suh: &[f32], svh: &[f32]) -> Vec<f32> {
-    let r = Record {
-        format: TRELLIS,
-        out,
-        inp,
-        k: 0,
-        side: 0,
-    };
-    rotate(transpose(t, out, inp), &r, suh, svh)
-}
-
 /// Matrix `name` as f32 `[out][in]`, decoded by its record.
 fn matrix(f: &File, name: &str) -> Result<Vec<f32>, Error> {
     let r = record(f, name)?;
@@ -125,8 +68,8 @@ fn matrix(f: &File, name: &str) -> Result<Vec<f32>, Error> {
         TRELLIS => {
             let suh = halves(f, &format!("{name}.suh"))?;
             let svh = halves(f, &format!("{name}.svh"))?;
-            let t = transpose(&decoded(f, name, &r)?, r.out, r.inp);
-            Ok(rotate(t, &r, &suh, &svh))
+            let t = decoded(f, name, &r)?;
+            Ok(trellis::rotated(&t, r.inp, r.out, &suh, &svh))
         }
         other => plain(f, name, &r, other),
     }
@@ -162,17 +105,6 @@ pub fn codes(f: &File, name: &str) -> Result<Vec<f32>, Error> {
         TRELLIS => decoded(f, name, &r),
         other => plain(f, name, &r, other),
     }
-}
-
-/// The transpose of `t`, `rows` by `cols`.
-fn transpose(t: &[f32], rows: usize, cols: usize) -> Vec<f32> {
-    let mut w = vec![0.0; rows * cols];
-    for row in 0..rows {
-        for col in 0..cols {
-            w[col * rows + row] = t[row * cols + col];
-        }
-    }
-    w
 }
 
 /// A matrix in a format other than trellis, as `[out][in]`.
