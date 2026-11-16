@@ -1,9 +1,9 @@
 //! Ranks over RDMA writes into each other's slots.
 
 use crate::fabric::{Fabric, HEADER, Lane, Peer, Wiring, parts};
-use crate::ibv::{self, Gid, Lib, Mr, QpAttr, QpInitAttr, SendWr, Sge, Wc, mask};
 use crate::reduce::{BYTES, CTL_WORDS, ERR, Pinned, Pinning, Reduce, SEQ};
 use crate::{Error, Transport};
+use gpukit::ibv::{self, Gid, Lib, Mr, QpAttr, QpInitAttr, SendWr, Sge, Wc, mask};
 use std::alloc::{Layout, alloc_zeroed, dealloc};
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -358,7 +358,7 @@ impl Engine {
                     &mut write
                 }
             };
-            let e = self.lib.post_send(link.qp, head);
+            let e = unsafe { self.lib.post_send(link.qp, head) };
             if e != 0 {
                 let why = std::io::Error::from_raw_os_error(e);
                 return Err(Error::Link(format!("post to rank {}: {why}", c.peer)));
@@ -388,7 +388,7 @@ impl Engine {
     fn poll(&self) -> Result<(), Error> {
         let mut wc = [unsafe { std::mem::zeroed::<Wc>() }; BATCH];
         for opened in &self.opened {
-            let n = self.lib.poll_cq(opened.cq, &mut wc);
+            let n = unsafe { self.lib.poll_cq(opened.cq, &mut wc) };
             for c in wc.iter().take(n.max(0) as usize) {
                 if c.status != ibv::WC_SUCCESS {
                     let what = format!("completion: {}", self.lib.status(c.status));
