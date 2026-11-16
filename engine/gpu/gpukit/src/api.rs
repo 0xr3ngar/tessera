@@ -2,7 +2,7 @@
 
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::ffi::{CStr, CString, c_int, c_void};
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::LocalKey;
 
@@ -29,6 +29,31 @@ pub type LaunchFn = unsafe extern "C" fn(
     *mut Handle,
     *mut Handle,
 ) -> c_int;
+
+/// Other entry point types CUDA and HIP share.
+pub(crate) mod entry {
+    use super::Handle;
+    use std::ffi::{c_char, c_int, c_void};
+
+    pub(crate) type Init = unsafe extern "C" fn(u32) -> c_int;
+    /// Writes one int, such as a count or version.
+    pub(crate) type Int = unsafe extern "C" fn(*mut c_int) -> c_int;
+    pub(crate) type Name = unsafe extern "C" fn(*mut c_char, c_int, c_int) -> c_int;
+    pub(crate) type Attribute = unsafe extern "C" fn(*mut c_int, c_int, c_int) -> c_int;
+    pub(crate) type Load = unsafe extern "C" fn(*mut Handle, *const c_void) -> c_int;
+    pub(crate) type Function = unsafe extern "C" fn(*mut Handle, Handle, *const c_char) -> c_int;
+    /// Unloads, destroys or synchronizes one handle.
+    pub(crate) type OnHandle = unsafe extern "C" fn(Handle) -> c_int;
+    pub(crate) type Alloc = unsafe extern "C" fn(*mut u64, usize) -> c_int;
+    pub(crate) type Free = unsafe extern "C" fn(u64) -> c_int;
+    pub(crate) type HostAlloc = unsafe extern "C" fn(*mut *mut c_void, usize, u32) -> c_int;
+    pub(crate) type HostMap = unsafe extern "C" fn(*mut u64, *mut c_void, u32) -> c_int;
+    pub(crate) type HostFree = unsafe extern "C" fn(*mut c_void) -> c_int;
+    pub(crate) type Stream = unsafe extern "C" fn(*mut Handle, u32) -> c_int;
+    pub(crate) type Capture = unsafe extern "C" fn(Handle, c_int) -> c_int;
+    pub(crate) type EndCapture = unsafe extern "C" fn(Handle, *mut Handle) -> c_int;
+    pub(crate) type Replay = unsafe extern "C" fn(Handle, Handle) -> c_int;
+}
 
 /// What a handle to free is.
 pub enum Kind {
@@ -126,6 +151,32 @@ pub trait Api: Sync + Sized + 'static {
         let mut handle = std::ptr::null_mut();
         let code = f(&mut handle);
         self.check(code, what).map(|_| handle)
+    }
+
+    /// Calls `f` with an int to fill, then checks it.
+    fn int(&self, what: &str, f: impl FnOnce(&mut c_int) -> c_int) -> Result<c_int, Error> {
+        let mut value = 0;
+        let code = f(&mut value);
+        self.check(code, what).map(|_| value)
+    }
+
+    /// Fails unless `ordinal` is below the count `f` reports.
+    fn visible(&self, f: entry::Int, what: &str, ordinal: usize, kind: &str) -> Result<(), Error> {
+        let count = self.int(what, |c| unsafe { f(c) })?;
+        if ordinal < count as usize {
+            return Ok(());
+        }
+        Err(Self::error(format!(
+            "device ordinal {ordinal} out of range ({count} visible {kind} devices)"
+        )))
+    }
+
+    /// The name `f` reports for `device`.
+    fn device_name(&self, f: entry::Name, what: &str, device: c_int) -> Result<String, Error> {
+        let mut buf = [0 as c_char; 256];
+        self.check(unsafe { f(buf.as_mut_ptr(), 256, device) }, what)?;
+        let name = unsafe { CStr::from_ptr(buf.as_ptr()) };
+        Ok(name.to_string_lossy().into_owned())
     }
 }
 
@@ -482,3 +533,135 @@ impl<A: Api> Device for Context<A> {
         self.compile_kernel(source, entry)
     }
 }
+
+/// The `Api` methods both backends share. Use inside `impl Api`.
+macro_rules! shared_api {
+    (
+        context: $ctx:ty,
+        error: $error:path,
+        check: $check:path,
+        synchronize: ($sync:ident, $sync_label:literal),
+        begin_capture: ($begin:ident, $begin_label:literal, $mode:expr),
+        end_capture: ($end:ident, $end_label:literal),
+        replay: ($replay:ident, $replay_label:literal),
+        unload: ($module:ident, $exec:ident, $graph:ident, $stream:ident),
+        load: ($load:ident, $load_label:literal),
+        function: ($func:ident, $func_label:literal),
+        alloc: ($alloc:ident, $alloc_label:literal),
+        free: $free:ident,
+        host_alloc: (
+            $host:ident, $host_label:literal, $flags:expr,
+            $map:ident, $map_label:literal
+        ),
+        host_free: $host_free:ident,
+        zero: ($zero:ident, $zero_label:literal) $(,)?
+    ) => {
+        fn error(msg: String) -> $crate::Error {
+            $error(msg)
+        }
+
+        fn describe(ctx: &$ctx) -> $crate::Platform {
+            ctx.platform()
+        }
+
+        fn open() -> Result<$ctx, $crate::Error> {
+            <$ctx>::new($crate::api::ContextConfig::default())
+        }
+
+        fn caches() -> &'static $crate::device::Caches<$ctx> {
+            static CACHES: $crate::device::Caches<$ctx> = $crate::device::Caches::new();
+            &CACHES
+        }
+
+        fn capturing() -> &'static ::std::thread::LocalKey<::std::cell::Cell<$crate::api::Handle>> {
+            ::std::thread_local! {
+                static CAPTURING: ::std::cell::Cell<$crate::api::Handle> =
+                    const { ::std::cell::Cell::new(::std::ptr::null_mut()) };
+            }
+            &CAPTURING
+        }
+
+        fn check(&self, code: ::std::ffi::c_int, what: &str) -> Result<(), $crate::Error> {
+            $check(self, code, what)
+        }
+
+        fn synchronize(&self) -> Result<(), $crate::Error> {
+            let code = unsafe { (self.$sync)(::std::ptr::null_mut()) };
+            self.check(code, $sync_label)
+        }
+
+        fn begin_capture(&self, stream: $crate::api::Handle) -> Result<(), $crate::Error> {
+            let code = unsafe { (self.$begin)(stream, $mode) };
+            self.check(code, $begin_label)
+        }
+
+        fn end_capture(
+            &self,
+            stream: $crate::api::Handle,
+            graph: &mut $crate::api::Handle,
+        ) -> Result<(), $crate::Error> {
+            let code = unsafe { (self.$end)(stream, graph) };
+            self.check(code, $end_label)
+        }
+
+        fn replay(&self, exec: $crate::api::Handle) -> Result<(), $crate::Error> {
+            let code = unsafe { (self.$replay)(exec, ::std::ptr::null_mut()) };
+            self.check(code, $replay_label)
+        }
+
+        fn destroy(&self, kind: $crate::api::Kind, handle: $crate::api::Handle) {
+            let free = match kind {
+                $crate::api::Kind::Module => self.$module,
+                $crate::api::Kind::Exec => self.$exec,
+                $crate::api::Kind::Graph => self.$graph,
+                $crate::api::Kind::Stream => self.$stream,
+            };
+            unsafe { free(handle) };
+        }
+
+        fn load(&self, image: &[u8]) -> Result<$crate::api::Handle, $crate::Error> {
+            self.out($load_label, |m| unsafe {
+                (self.$load)(m, image.as_ptr().cast())
+            })
+        }
+
+        fn function(
+            &self,
+            module: $crate::api::Handle,
+            name: &::std::ffi::CStr,
+        ) -> Result<$crate::api::Handle, $crate::Error> {
+            self.out($func_label, |f| unsafe {
+                (self.$func)(f, module, name.as_ptr())
+            })
+        }
+
+        fn alloc(&self, size: usize) -> Result<u64, $crate::Error> {
+            let mut ptr = 0;
+            self.check(unsafe { (self.$alloc)(&mut ptr, size) }, $alloc_label)?;
+            Ok(ptr)
+        }
+
+        fn free(&self, ptr: u64) {
+            unsafe { (self.$free)(ptr) };
+        }
+
+        fn host_alloc(&self, size: usize) -> Result<(u64, u64), $crate::Error> {
+            let mut host = ::std::ptr::null_mut();
+            let code = unsafe { (self.$host)(&mut host, size, $flags) };
+            self.check(code, $host_label)?;
+            let mut device = 0;
+            let code = unsafe { (self.$map)(&mut device, host, 0) };
+            self.check(code, $map_label)?;
+            Ok((host as u64, device))
+        }
+
+        fn host_free(&self, host: u64) {
+            unsafe { (self.$host_free)(host as *mut ::std::ffi::c_void) };
+        }
+
+        fn zero(&self, ptr: u64, size: usize) -> Result<(), $crate::Error> {
+            self.check(unsafe { (self.$zero)(ptr, 0, size) }, $zero_label)
+        }
+    };
+}
+pub(crate) use shared_api;

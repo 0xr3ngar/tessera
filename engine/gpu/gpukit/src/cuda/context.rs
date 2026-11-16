@@ -1,8 +1,7 @@
 //! The CUDA driver behind the shared context.
 
 use std::cell::Cell;
-use std::ffi::{CStr, c_char, c_int, c_void};
-use std::thread::LocalKey;
+use std::ffi::c_int;
 
 use super::driver::{
     self, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
@@ -11,11 +10,10 @@ use super::driver::{
     CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK, CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE,
     CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, CU_DEVICE_ATTRIBUTE_WARP_SIZE,
     CU_LAUNCH_ATTRIBUTE_PROGRAMMATIC_STREAM_SERIALIZATION, CU_STREAM_CAPTURE_MODE_RELAXED,
-    CU_STREAM_NON_BLOCKING, CUcontext, CUdevice, Driver, LaunchAttribute, LaunchConfig,
+    CU_STREAM_NON_BLOCKING, CUcontext, Driver, LaunchAttribute, LaunchConfig,
 };
-use crate::api::{self, Api, Call, Handle, Kind};
+use crate::api::{self, Api, Call, Handle};
 use crate::backend::Backend;
-use crate::device::Caches;
 use crate::platform::{self, Asked, Platform};
 use crate::{Error, Limits};
 
@@ -35,84 +33,48 @@ pub struct Own {
     platform: Platform,
 }
 
-/// The driver's version, `13.0` for 13000.
-fn driver_version(driver: &Driver) -> Result<String, Error> {
-    let mut v: c_int = 0;
-    driver.check(
-        unsafe { (driver.cu_driver_get_version)(&mut v) },
-        "cuDriverGetVersion",
-    )?;
-    Ok(format!("{}.{}", v / 1000, (v % 1000) / 10))
-}
-
-fn device_attr(driver: &Driver, device: CUdevice, attr: c_int) -> Result<i32, Error> {
-    let mut value: c_int = 0;
-    driver.check(
-        unsafe { (driver.cu_device_get_attribute)(&mut value, attr, device) },
-        "cuDeviceGetAttribute",
-    )?;
-    Ok(value)
-}
-
 impl Context {
     /// Initialize the driver and open a context on one device.
     pub fn new(config: ContextConfig) -> Result<Self, Error> {
         let driver = driver::driver()?;
         driver.check(unsafe { (driver.cu_init)(0) }, "cuInit")?;
-
-        let mut count: c_int = 0;
-        driver.check(
-            unsafe { (driver.cu_device_get_count)(&mut count) },
-            "cuDeviceGetCount",
-        )?;
-        if config.device_ordinal >= count as usize {
-            return Err(Error::Cuda(format!(
-                "device ordinal {} out of range ({count} visible CUDA devices)",
-                config.device_ordinal
-            )));
-        }
-
-        let mut device: CUdevice = 0;
-        driver.check(
-            unsafe { (driver.cu_device_get)(&mut device, config.device_ordinal as c_int) },
-            "cuDeviceGet",
-        )?;
+        let (count, ordinal) = (driver.cu_device_get_count, config.device_ordinal);
+        driver.visible(count, "cuDeviceGetCount", ordinal, "CUDA")?;
+        let device = driver.int("cuDeviceGet", |d| unsafe {
+            (driver.cu_device_get)(d, ordinal as c_int)
+        })?;
 
         let mut raw: CUcontext = std::ptr::null_mut();
         driver.check(
             unsafe { (driver.cu_ctx_create)(&mut raw, 0, device) },
             "cuCtxCreate",
         )?;
+        let get_name = driver.cu_device_get_name;
+        let name = driver.device_name(get_name, "cuDeviceGetName", device)?;
 
-        let mut name_buf = [0 as c_char; 256];
-        driver.check(
-            unsafe { (driver.cu_device_get_name)(name_buf.as_mut_ptr(), 256, device) },
-            "cuDeviceGetName",
-        )?;
-        let name = unsafe { CStr::from_ptr(name_buf.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
-
-        let major = device_attr(driver, device, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR)?;
-        let minor = device_attr(driver, device, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR)?;
+        let attr = |a| {
+            driver.int("cuDeviceGetAttribute", |v| unsafe {
+                (driver.cu_device_get_attribute)(v, a, device)
+            })
+        };
+        let major = attr(CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR)?;
+        let minor = attr(CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR)?;
         let limits = Limits {
-            lanes: device_attr(driver, device, CU_DEVICE_ATTRIBUTE_WARP_SIZE)? as usize,
-            group_bytes: device_attr(
-                driver,
-                device,
-                CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK,
-            )? as usize,
-            group_threads: device_attr(driver, device, CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK)?
-                as usize,
+            lanes: attr(CU_DEVICE_ATTRIBUTE_WARP_SIZE)? as usize,
+            group_bytes: attr(CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK)? as usize,
+            group_threads: attr(CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK)? as usize,
             compiler: true,
             pdl: false,
         };
-        let attr = |a| device_attr(driver, device, a);
+        let version = driver.int("cuDriverGetVersion", |v| unsafe {
+            (driver.cu_driver_get_version)(v)
+        });
         let platform = Platform::new(Asked {
             backend: "cuda",
             arch: format!("sm_{major}{minor}"),
             name: name.clone(),
-            driver: driver_version(driver)?,
+            // 13000 is `13.0`.
+            driver: version.map(|v| format!("{}.{}", v / 1000, (v % 1000) / 10))?,
             limits,
             units: attr(CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)? as usize,
             bandwidth: platform::bandwidth(
@@ -152,8 +114,6 @@ impl Context {
 }
 
 thread_local! {
-    /// This thread's capture stream, or null outside a capture.
-    static CAPTURING: Cell<Handle> = const { Cell::new(std::ptr::null_mut()) };
     /// Whether this thread's next launches may overlap the last.
     static PROGRAMMATIC: Cell<bool> = const { Cell::new(false) };
 }
@@ -187,25 +147,27 @@ impl Api for Driver {
 
     const BACKEND: Backend = Backend::Cuda;
 
-    fn error(msg: String) -> Error {
-        Error::Cuda(msg)
-    }
-
-    fn describe(ctx: &Context) -> Platform {
-        ctx.platform()
-    }
-
-    fn open() -> Result<Context, Error> {
-        Context::new(ContextConfig::default())
-    }
-
-    fn caches() -> &'static Caches<Context> {
-        static CACHES: Caches<Context> = Caches::new();
-        &CACHES
-    }
-
-    fn capturing() -> &'static LocalKey<Cell<Handle>> {
-        &CAPTURING
+    api::shared_api! {
+        context: Context,
+        error: Error::Cuda,
+        check: Driver::check,
+        synchronize: (cu_stream_synchronize, "cuStreamSynchronize"),
+        begin_capture: (
+            cu_stream_begin_capture, "cuStreamBeginCapture", CU_STREAM_CAPTURE_MODE_RELAXED
+        ),
+        end_capture: (cu_stream_end_capture, "cuStreamEndCapture"),
+        replay: (cu_graph_launch, "cuGraphLaunch"),
+        unload: (cu_module_unload, cu_graph_exec_destroy, cu_graph_destroy, cu_stream_destroy),
+        load: (cu_module_load_data, "cuModuleLoadData"),
+        function: (cu_module_get_function, "cuModuleGetFunction"),
+        alloc: (cu_mem_alloc, "cuMemAlloc"),
+        free: cu_mem_free,
+        host_alloc: (
+            cu_mem_host_alloc, "cuMemHostAlloc", driver::CU_MEMHOSTALLOC_DEVICEMAP,
+            cu_mem_host_get_device_pointer, "cuMemHostGetDevicePointer"
+        ),
+        host_free: cu_mem_free_host,
+        zero: (cu_memset_d8, "cuMemsetD8"),
     }
 
     fn programmatic(on: bool) {
@@ -216,18 +178,9 @@ impl Api for Driver {
         unsafe { (self.cu_ctx_destroy)(own.raw) };
     }
 
-    fn check(&self, code: c_int, what: &str) -> Result<(), Error> {
-        Driver::check(self, code, what)
-    }
-
     fn set_current(&self, own: &Own, _: c_int) -> Result<(), Error> {
         let code = unsafe { (self.cu_ctx_set_current)(own.raw) };
         self.check(code, "cuCtxSetCurrent")
-    }
-
-    fn synchronize(&self) -> Result<(), Error> {
-        let code = unsafe { (self.cu_stream_synchronize)(std::ptr::null_mut()) };
-        self.check(code, "cuStreamSynchronize")
     }
 
     fn stream(&self) -> Result<Handle, Error> {
@@ -236,47 +189,9 @@ impl Api for Driver {
         })
     }
 
-    fn begin_capture(&self, stream: Handle) -> Result<(), Error> {
-        let mode = CU_STREAM_CAPTURE_MODE_RELAXED;
-        let code = unsafe { (self.cu_stream_begin_capture)(stream, mode) };
-        self.check(code, "cuStreamBeginCapture")
-    }
-
-    fn end_capture(&self, stream: Handle, graph: &mut Handle) -> Result<(), Error> {
-        let code = unsafe { (self.cu_stream_end_capture)(stream, graph) };
-        self.check(code, "cuStreamEndCapture")
-    }
-
     fn instantiate(&self, graph: Handle) -> Result<Handle, Error> {
         self.out("cuGraphInstantiate", |e| unsafe {
             (self.cu_graph_instantiate)(e, graph, 0)
-        })
-    }
-
-    fn replay(&self, exec: Handle) -> Result<(), Error> {
-        let code = unsafe { (self.cu_graph_launch)(exec, std::ptr::null_mut()) };
-        self.check(code, "cuGraphLaunch")
-    }
-
-    fn destroy(&self, kind: Kind, handle: Handle) {
-        let free = match kind {
-            Kind::Module => self.cu_module_unload,
-            Kind::Exec => self.cu_graph_exec_destroy,
-            Kind::Graph => self.cu_graph_destroy,
-            Kind::Stream => self.cu_stream_destroy,
-        };
-        unsafe { free(handle) };
-    }
-
-    fn load(&self, image: &[u8]) -> Result<Handle, Error> {
-        self.out("cuModuleLoadData", |m| unsafe {
-            (self.cu_module_load_data)(m, image.as_ptr().cast())
-        })
-    }
-
-    fn function(&self, module: Handle, name: &CStr) -> Result<Handle, Error> {
-        self.out("cuModuleGetFunction", |f| unsafe {
-            (self.cu_module_get_function)(f, module, name.as_ptr())
         })
     }
 
@@ -288,31 +203,6 @@ impl Api for Driver {
         self.check(code, "cuLaunchKernel")
     }
 
-    fn alloc(&self, size: usize) -> Result<u64, Error> {
-        let mut ptr = 0;
-        self.check(unsafe { (self.cu_mem_alloc)(&mut ptr, size) }, "cuMemAlloc")?;
-        Ok(ptr)
-    }
-
-    fn free(&self, ptr: u64) {
-        unsafe { (self.cu_mem_free)(ptr) };
-    }
-
-    fn host_alloc(&self, size: usize) -> Result<(u64, u64), Error> {
-        let mut host = std::ptr::null_mut();
-        let flags = driver::CU_MEMHOSTALLOC_DEVICEMAP;
-        let code = unsafe { (self.cu_mem_host_alloc)(&mut host, size, flags) };
-        self.check(code, "cuMemHostAlloc")?;
-        let mut device = 0;
-        let code = unsafe { (self.cu_mem_host_get_device_pointer)(&mut device, host, 0) };
-        self.check(code, "cuMemHostGetDevicePointer")?;
-        Ok((host as u64, device))
-    }
-
-    fn host_free(&self, host: u64) {
-        unsafe { (self.cu_mem_free_host)(host as *mut c_void) };
-    }
-
     fn upload(&self, ptr: u64, bytes: &[u8]) -> Result<(), Error> {
         let code = unsafe { (self.cu_memcpy_htod)(ptr, bytes.as_ptr().cast(), bytes.len()) };
         self.check(code, "cuMemcpyHtoD")
@@ -321,10 +211,6 @@ impl Api for Driver {
     fn download(&self, ptr: u64, bytes: &mut [u8]) -> Result<(), Error> {
         let code = unsafe { (self.cu_memcpy_dtoh)(bytes.as_mut_ptr().cast(), ptr, bytes.len()) };
         self.check(code, "cuMemcpyDtoH")
-    }
-
-    fn zero(&self, ptr: u64, size: usize) -> Result<(), Error> {
-        self.check(unsafe { (self.cu_memset_d8)(ptr, 0, size) }, "cuMemsetD8")
     }
 
     fn compile(ctx: &Context, source: &str) -> Result<Vec<u8>, Error> {

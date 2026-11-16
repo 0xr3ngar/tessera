@@ -1,6 +1,7 @@
 //! CUDA driver and NVRTC bindings, loaded at runtime with dlopen.
 
 use crate::Error;
+use crate::api::{LaunchFn, entry};
 use crate::dl::{message, once};
 use crate::rtc::Rtc;
 use std::ffi::{c_char, c_int, c_void};
@@ -10,7 +11,6 @@ pub type CUresult = c_int;
 pub(crate) type CUdevice = c_int;
 pub(crate) type CUdeviceptr = u64;
 pub type CUcontext = *mut c_void;
-pub(crate) type CUmodule = *mut c_void;
 pub(crate) type CUfunction = *mut c_void;
 pub(crate) type CUstream = *mut c_void;
 pub(crate) type CUgraph = *mut c_void;
@@ -53,94 +53,58 @@ pub(crate) struct LaunchConfig {
 /// Other threads may still synchronize while a capture is open.
 pub(crate) const CU_STREAM_CAPTURE_MODE_RELAXED: c_int = 2;
 
-type CuInit = unsafe extern "C" fn(u32) -> CUresult;
-type CuDriverGetVersion = unsafe extern "C" fn(*mut c_int) -> CUresult;
-type CuDeviceGetCount = unsafe extern "C" fn(*mut c_int) -> CUresult;
 type CuDeviceGet = unsafe extern "C" fn(*mut CUdevice, c_int) -> CUresult;
-type CuDeviceGetName = unsafe extern "C" fn(*mut c_char, c_int, CUdevice) -> CUresult;
-type CuDeviceGetAttribute = unsafe extern "C" fn(*mut c_int, c_int, CUdevice) -> CUresult;
 type CuCtxCreate = unsafe extern "C" fn(*mut CUcontext, u32, CUdevice) -> CUresult;
 type CuCtxDestroy = unsafe extern "C" fn(CUcontext) -> CUresult;
 type CuCtxSetCurrent = unsafe extern "C" fn(CUcontext) -> CUresult;
-type CuModuleLoadData = unsafe extern "C" fn(*mut CUmodule, *const c_void) -> CUresult;
-type CuModuleUnload = unsafe extern "C" fn(CUmodule) -> CUresult;
-type CuModuleGetFunction =
-    unsafe extern "C" fn(*mut CUfunction, CUmodule, *const c_char) -> CUresult;
-type CuMemAlloc = unsafe extern "C" fn(*mut CUdeviceptr, usize) -> CUresult;
-type CuMemFree = unsafe extern "C" fn(CUdeviceptr) -> CUresult;
-type CuMemHostAlloc = unsafe extern "C" fn(*mut *mut c_void, usize, u32) -> CUresult;
-type CuMemHostGetDevicePointer =
-    unsafe extern "C" fn(*mut CUdeviceptr, *mut c_void, u32) -> CUresult;
-type CuMemFreeHost = unsafe extern "C" fn(*mut c_void) -> CUresult;
 type CuMemcpyHtoD = unsafe extern "C" fn(CUdeviceptr, *const c_void, usize) -> CUresult;
 type CuMemcpyDtoH = unsafe extern "C" fn(*mut c_void, CUdeviceptr, usize) -> CUresult;
 type CuMemsetD8 = unsafe extern "C" fn(CUdeviceptr, u8, usize) -> CUresult;
-type CuLaunchKernel = unsafe extern "C" fn(
-    CUfunction,
-    u32,
-    u32,
-    u32,
-    u32,
-    u32,
-    u32,
-    u32,
-    CUstream,
-    *mut *mut c_void,
-    *mut *mut c_void,
-) -> CUresult;
 type CuLaunchKernelEx = unsafe extern "C" fn(
     *const LaunchConfig,
     CUfunction,
     *mut *mut c_void,
     *mut *mut c_void,
 ) -> CUresult;
-type CuStreamCreate = unsafe extern "C" fn(*mut CUstream, u32) -> CUresult;
-type CuStreamDestroy = unsafe extern "C" fn(CUstream) -> CUresult;
-type CuStreamSynchronize = unsafe extern "C" fn(CUstream) -> CUresult;
-type CuStreamBeginCapture = unsafe extern "C" fn(CUstream, c_int) -> CUresult;
-type CuStreamEndCapture = unsafe extern "C" fn(CUstream, *mut CUgraph) -> CUresult;
 type CuGraphInstantiate = unsafe extern "C" fn(*mut CUgraphExec, CUgraph, u64) -> CUresult;
-type CuGraphLaunch = unsafe extern "C" fn(CUgraphExec, CUstream) -> CUresult;
-type CuGraphExecDestroy = unsafe extern "C" fn(CUgraphExec) -> CUresult;
-type CuGraphDestroy = unsafe extern "C" fn(CUgraph) -> CUresult;
 type CuGetErrorName = unsafe extern "C" fn(CUresult, *mut *const c_char) -> CUresult;
 type CuGetErrorString = unsafe extern "C" fn(CUresult, *mut *const c_char) -> CUresult;
 
 crate::dl::library! {
     /// Resolved driver entry points. The dlopen handle stays open.
     pub struct Driver as "CUDA driver" in ["libcuda.so.1"] {
-        pub(crate) cu_init: CuInit = "cuInit",
-        pub(crate) cu_driver_get_version: CuDriverGetVersion = "cuDriverGetVersion",
-        pub(crate) cu_device_get_count: CuDeviceGetCount = "cuDeviceGetCount",
+        pub(crate) cu_init: entry::Init = "cuInit",
+        pub(crate) cu_driver_get_version: entry::Int = "cuDriverGetVersion",
+        pub(crate) cu_device_get_count: entry::Int = "cuDeviceGetCount",
         pub(crate) cu_device_get: CuDeviceGet = "cuDeviceGet",
-        pub(crate) cu_device_get_name: CuDeviceGetName = "cuDeviceGetName",
-        pub(crate) cu_device_get_attribute: CuDeviceGetAttribute = "cuDeviceGetAttribute",
+        pub(crate) cu_device_get_name: entry::Name = "cuDeviceGetName",
+        pub(crate) cu_device_get_attribute: entry::Attribute = "cuDeviceGetAttribute",
         pub(crate) cu_ctx_create: CuCtxCreate = "cuCtxCreate_v2",
         pub(crate) cu_ctx_destroy: CuCtxDestroy = "cuCtxDestroy_v2",
         pub(crate) cu_ctx_set_current: CuCtxSetCurrent = "cuCtxSetCurrent",
-        pub(crate) cu_module_load_data: CuModuleLoadData = "cuModuleLoadData",
-        pub(crate) cu_module_unload: CuModuleUnload = "cuModuleUnload",
-        pub(crate) cu_module_get_function: CuModuleGetFunction = "cuModuleGetFunction",
-        pub(crate) cu_mem_alloc: CuMemAlloc = "cuMemAlloc_v2",
-        pub(crate) cu_mem_free: CuMemFree = "cuMemFree_v2",
-        pub(crate) cu_mem_host_alloc: CuMemHostAlloc = "cuMemHostAlloc",
-        pub(crate) cu_mem_host_get_device_pointer: CuMemHostGetDevicePointer =
+        pub(crate) cu_module_load_data: entry::Load = "cuModuleLoadData",
+        pub(crate) cu_module_unload: entry::OnHandle = "cuModuleUnload",
+        pub(crate) cu_module_get_function: entry::Function = "cuModuleGetFunction",
+        pub(crate) cu_mem_alloc: entry::Alloc = "cuMemAlloc_v2",
+        pub(crate) cu_mem_free: entry::Free = "cuMemFree_v2",
+        pub(crate) cu_mem_host_alloc: entry::HostAlloc = "cuMemHostAlloc",
+        pub(crate) cu_mem_host_get_device_pointer: entry::HostMap =
             "cuMemHostGetDevicePointer_v2",
-        pub(crate) cu_mem_free_host: CuMemFreeHost = "cuMemFreeHost",
+        pub(crate) cu_mem_free_host: entry::HostFree = "cuMemFreeHost",
         pub(crate) cu_memcpy_htod: CuMemcpyHtoD = "cuMemcpyHtoD_v2",
         pub(crate) cu_memcpy_dtoh: CuMemcpyDtoH = "cuMemcpyDtoH_v2",
         pub(crate) cu_memset_d8: CuMemsetD8 = "cuMemsetD8_v2",
-        pub(crate) cu_launch_kernel: CuLaunchKernel = "cuLaunchKernel",
+        pub(crate) cu_launch_kernel: LaunchFn = "cuLaunchKernel",
         pub(crate) cu_launch_kernel_ex: CuLaunchKernelEx = "cuLaunchKernelEx",
-        pub(crate) cu_stream_create: CuStreamCreate = "cuStreamCreate",
-        pub(crate) cu_stream_destroy: CuStreamDestroy = "cuStreamDestroy_v2",
-        pub(crate) cu_stream_synchronize: CuStreamSynchronize = "cuStreamSynchronize",
-        pub(crate) cu_stream_begin_capture: CuStreamBeginCapture = "cuStreamBeginCapture_v2",
-        pub(crate) cu_stream_end_capture: CuStreamEndCapture = "cuStreamEndCapture",
+        pub(crate) cu_stream_create: entry::Stream = "cuStreamCreate",
+        pub(crate) cu_stream_destroy: entry::OnHandle = "cuStreamDestroy_v2",
+        pub(crate) cu_stream_synchronize: entry::OnHandle = "cuStreamSynchronize",
+        pub(crate) cu_stream_begin_capture: entry::Capture = "cuStreamBeginCapture_v2",
+        pub(crate) cu_stream_end_capture: entry::EndCapture = "cuStreamEndCapture",
         pub(crate) cu_graph_instantiate: CuGraphInstantiate = "cuGraphInstantiateWithFlags",
-        pub(crate) cu_graph_launch: CuGraphLaunch = "cuGraphLaunch",
-        pub(crate) cu_graph_exec_destroy: CuGraphExecDestroy = "cuGraphExecDestroy",
-        pub(crate) cu_graph_destroy: CuGraphDestroy = "cuGraphDestroy",
+        pub(crate) cu_graph_launch: entry::Replay = "cuGraphLaunch",
+        pub(crate) cu_graph_exec_destroy: entry::OnHandle = "cuGraphExecDestroy",
+        pub(crate) cu_graph_destroy: entry::OnHandle = "cuGraphDestroy",
         cu_get_error_name: CuGetErrorName = "cuGetErrorName",
         cu_get_error_string: CuGetErrorString = "cuGetErrorString",
     }

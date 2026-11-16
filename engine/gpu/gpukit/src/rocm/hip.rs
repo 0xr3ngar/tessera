@@ -1,6 +1,7 @@
 //! HIP runtime and hiprtc bindings, loaded at runtime with dlopen.
 
 use crate::Error;
+use crate::api::{LaunchFn, entry};
 use crate::dl::{message, once};
 use crate::rtc::Rtc;
 use std::ffi::{c_char, c_int, c_void};
@@ -8,9 +9,6 @@ use std::sync::OnceLock;
 
 pub type HipError = c_int;
 pub(crate) type HipDeviceptr = u64;
-pub(crate) type HipModule = *mut c_void;
-pub(crate) type HipFunction = *mut c_void;
-pub(crate) type HipStream = *mut c_void;
 pub(crate) type HipGraph = *mut c_void;
 pub(crate) type HipGraphExec = *mut c_void;
 pub(crate) type HipGraphNode = *mut c_void;
@@ -30,42 +28,9 @@ pub(crate) const HIP_STREAM_NON_BLOCKING: u32 = 1;
 /// Other threads may still synchronize while a capture is open.
 pub(crate) const HIP_STREAM_CAPTURE_MODE_RELAXED: c_int = 2;
 
-type HipInit = unsafe extern "C" fn(u32) -> HipError;
-type HipRuntimeGetVersion = unsafe extern "C" fn(*mut c_int) -> HipError;
-type HipDeviceGetAttribute = unsafe extern "C" fn(*mut c_int, c_int, c_int) -> HipError;
-type HipGetDeviceCount = unsafe extern "C" fn(*mut c_int) -> HipError;
 type HipSetDevice = unsafe extern "C" fn(c_int) -> HipError;
-type HipDeviceGetName = unsafe extern "C" fn(*mut c_char, c_int, c_int) -> HipError;
-type HipModuleLoadData = unsafe extern "C" fn(*mut HipModule, *const c_void) -> HipError;
-type HipModuleUnload = unsafe extern "C" fn(HipModule) -> HipError;
-type HipModuleGetFunction =
-    unsafe extern "C" fn(*mut HipFunction, HipModule, *const c_char) -> HipError;
-type HipMalloc = unsafe extern "C" fn(*mut HipDeviceptr, usize) -> HipError;
-type HipFree = unsafe extern "C" fn(HipDeviceptr) -> HipError;
-type HipHostMalloc = unsafe extern "C" fn(*mut *mut c_void, usize, u32) -> HipError;
-type HipHostGetDevicePointer =
-    unsafe extern "C" fn(*mut HipDeviceptr, *mut c_void, u32) -> HipError;
-type HipHostFree = unsafe extern "C" fn(*mut c_void) -> HipError;
 type HipMemcpy = unsafe extern "C" fn(*mut c_void, *const c_void, usize, c_int) -> HipError;
 type HipMemset = unsafe extern "C" fn(HipDeviceptr, c_int, usize) -> HipError;
-type HipModuleLaunchKernel = unsafe extern "C" fn(
-    HipFunction,
-    u32,
-    u32,
-    u32,
-    u32,
-    u32,
-    u32,
-    u32,
-    HipStream,
-    *mut *mut c_void,
-    *mut *mut c_void,
-) -> HipError;
-type HipStreamCreate = unsafe extern "C" fn(*mut HipStream, u32) -> HipError;
-type HipStreamDestroy = unsafe extern "C" fn(HipStream) -> HipError;
-type HipStreamSynchronize = unsafe extern "C" fn(HipStream) -> HipError;
-type HipStreamBeginCapture = unsafe extern "C" fn(HipStream, c_int) -> HipError;
-type HipStreamEndCapture = unsafe extern "C" fn(HipStream, *mut HipGraph) -> HipError;
 type HipGraphInstantiate = unsafe extern "C" fn(
     *mut HipGraphExec,
     HipGraph,
@@ -73,9 +38,6 @@ type HipGraphInstantiate = unsafe extern "C" fn(
     *mut c_char,
     usize,
 ) -> HipError;
-type HipGraphLaunch = unsafe extern "C" fn(HipGraphExec, HipStream) -> HipError;
-type HipGraphExecDestroy = unsafe extern "C" fn(HipGraphExec) -> HipError;
-type HipGraphDestroy = unsafe extern "C" fn(HipGraph) -> HipError;
 type HipGetErrorName = unsafe extern "C" fn(HipError) -> *const c_char;
 type HipGetErrorString = unsafe extern "C" fn(HipError) -> *const c_char;
 
@@ -87,32 +49,32 @@ crate::dl::library! {
         "libamdhip64.so.6",
         "/opt/rocm/lib/libamdhip64.so",
     ] {
-        pub hip_init: HipInit = "hipInit",
-        pub hip_runtime_get_version: HipRuntimeGetVersion = "hipRuntimeGetVersion",
-        pub hip_device_get_attribute: HipDeviceGetAttribute = "hipDeviceGetAttribute",
-        pub hip_get_device_count: HipGetDeviceCount = "hipGetDeviceCount",
+        pub hip_init: entry::Init = "hipInit",
+        pub hip_runtime_get_version: entry::Int = "hipRuntimeGetVersion",
+        pub hip_device_get_attribute: entry::Attribute = "hipDeviceGetAttribute",
+        pub hip_get_device_count: entry::Int = "hipGetDeviceCount",
         pub hip_set_device: HipSetDevice = "hipSetDevice",
-        pub hip_device_get_name: HipDeviceGetName = "hipDeviceGetName",
-        pub hip_module_load_data: HipModuleLoadData = "hipModuleLoadData",
-        pub hip_module_unload: HipModuleUnload = "hipModuleUnload",
-        pub hip_module_get_function: HipModuleGetFunction = "hipModuleGetFunction",
-        pub hip_malloc: HipMalloc = "hipMalloc",
-        pub hip_free: HipFree = "hipFree",
-        pub hip_host_malloc: HipHostMalloc = "hipHostMalloc",
-        pub hip_host_get_device_pointer: HipHostGetDevicePointer = "hipHostGetDevicePointer",
-        pub hip_host_free: HipHostFree = "hipHostFree",
+        pub hip_device_get_name: entry::Name = "hipDeviceGetName",
+        pub hip_module_load_data: entry::Load = "hipModuleLoadData",
+        pub hip_module_unload: entry::OnHandle = "hipModuleUnload",
+        pub hip_module_get_function: entry::Function = "hipModuleGetFunction",
+        pub hip_malloc: entry::Alloc = "hipMalloc",
+        pub hip_free: entry::Free = "hipFree",
+        pub hip_host_malloc: entry::HostAlloc = "hipHostMalloc",
+        pub hip_host_get_device_pointer: entry::HostMap = "hipHostGetDevicePointer",
+        pub hip_host_free: entry::HostFree = "hipHostFree",
         pub hip_memcpy: HipMemcpy = "hipMemcpy",
         pub hip_memset: HipMemset = "hipMemset",
-        pub hip_module_launch_kernel: HipModuleLaunchKernel = "hipModuleLaunchKernel",
-        pub hip_stream_create: HipStreamCreate = "hipStreamCreateWithFlags",
-        pub hip_stream_destroy: HipStreamDestroy = "hipStreamDestroy",
-        pub hip_stream_synchronize: HipStreamSynchronize = "hipStreamSynchronize",
-        pub hip_stream_begin_capture: HipStreamBeginCapture = "hipStreamBeginCapture",
-        pub hip_stream_end_capture: HipStreamEndCapture = "hipStreamEndCapture",
+        pub hip_module_launch_kernel: LaunchFn = "hipModuleLaunchKernel",
+        pub hip_stream_create: entry::Stream = "hipStreamCreateWithFlags",
+        pub hip_stream_destroy: entry::OnHandle = "hipStreamDestroy",
+        pub hip_stream_synchronize: entry::OnHandle = "hipStreamSynchronize",
+        pub hip_stream_begin_capture: entry::Capture = "hipStreamBeginCapture",
+        pub hip_stream_end_capture: entry::EndCapture = "hipStreamEndCapture",
         pub hip_graph_instantiate: HipGraphInstantiate = "hipGraphInstantiate",
-        pub hip_graph_launch: HipGraphLaunch = "hipGraphLaunch",
-        pub hip_graph_exec_destroy: HipGraphExecDestroy = "hipGraphExecDestroy",
-        pub hip_graph_destroy: HipGraphDestroy = "hipGraphDestroy",
+        pub hip_graph_launch: entry::Replay = "hipGraphLaunch",
+        pub hip_graph_exec_destroy: entry::OnHandle = "hipGraphExecDestroy",
+        pub hip_graph_destroy: entry::OnHandle = "hipGraphDestroy",
         hip_get_error_name: HipGetErrorName = "hipGetErrorName",
         hip_get_error_string: HipGetErrorString = "hipGetErrorString",
     }

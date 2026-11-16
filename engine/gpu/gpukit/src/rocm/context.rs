@@ -1,14 +1,12 @@
 //! The HIP runtime behind the shared context.
 
-use std::cell::Cell;
-use std::ffi::{CStr, c_char, c_int, c_void};
+use std::ffi::c_int;
 use std::sync::OnceLock;
-use std::thread::LocalKey;
 
 use super::hip::{self, Runtime};
-use crate::api::{self, Api, Call, Handle, Kind};
+use crate::api::{self, Api, Call, Handle};
 use crate::backend::Backend;
-use crate::device::{Caches, Device};
+use crate::device::Device;
 use crate::platform::{self, Asked, Platform};
 use crate::{Error, Limits};
 
@@ -31,28 +29,11 @@ impl Context {
     pub fn new(config: ContextConfig) -> Result<Self, Error> {
         let runtime = hip::runtime()?;
         runtime.check(unsafe { (runtime.hip_init)(0) }, "hipInit")?;
-
-        let mut count: c_int = 0;
-        runtime.check(
-            unsafe { (runtime.hip_get_device_count)(&mut count) },
-            "hipGetDeviceCount",
-        )?;
-        if config.device_ordinal >= count as usize {
-            return Err(Error::Rocm(format!(
-                "device ordinal {} out of range ({count} visible HIP devices)",
-                config.device_ordinal
-            )));
-        }
-        let device = config.device_ordinal as c_int;
-
-        let mut name_buf = [0 as c_char; 256];
-        runtime.check(
-            unsafe { (runtime.hip_device_get_name)(name_buf.as_mut_ptr(), 256, device) },
-            "hipDeviceGetName",
-        )?;
-        let mut name = unsafe { CStr::from_ptr(name_buf.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
+        let (count, ordinal) = (runtime.hip_get_device_count, config.device_ordinal);
+        runtime.visible(count, "hipGetDeviceCount", ordinal, "HIP")?;
+        let device = ordinal as c_int;
+        let get_name = runtime.hip_device_get_name;
+        let mut name = runtime.device_name(get_name, "hipDeviceGetName", device)?;
         // APU GPU agents often report an empty marketing name.
         if name.is_empty() {
             name = format!("HIP device {device}");
@@ -69,13 +50,10 @@ impl Context {
 
     /// One `hipDeviceGetAttribute`.
     fn attr(&self, which: c_int) -> Result<i32, Error> {
-        let mut v: c_int = 0;
-        let r = self.runtime();
-        r.check(
-            unsafe { (r.hip_device_get_attribute)(&mut v, which, self.device()) },
-            "hipDeviceGetAttribute",
-        )?;
-        Ok(v)
+        let (r, device) = (self.runtime(), self.device());
+        r.int("hipDeviceGetAttribute", |v| unsafe {
+            (r.hip_device_get_attribute)(v, which, device)
+        })
     }
 
     /// The device as asked, with its row. Zero when unasked.
@@ -149,48 +127,36 @@ impl Context {
     }
 }
 
-thread_local! {
-    /// This thread's capture stream, or null outside a capture.
-    static CAPTURING: Cell<Handle> = const { Cell::new(std::ptr::null_mut()) };
-}
-
 impl Api for Runtime {
     type Own = Own;
 
     const BACKEND: Backend = Backend::Rocm;
 
-    fn error(msg: String) -> Error {
-        Error::Rocm(msg)
-    }
-
-    fn describe(ctx: &Context) -> Platform {
-        ctx.platform()
-    }
-
-    fn open() -> Result<Context, Error> {
-        Context::new(ContextConfig::default())
-    }
-
-    fn caches() -> &'static Caches<Context> {
-        static CACHES: Caches<Context> = Caches::new();
-        &CACHES
-    }
-
-    fn capturing() -> &'static LocalKey<Cell<Handle>> {
-        &CAPTURING
-    }
-
-    fn check(&self, code: c_int, what: &str) -> Result<(), Error> {
-        Runtime::check(self, code, what)
+    api::shared_api! {
+        context: Context,
+        error: Error::Rocm,
+        check: Runtime::check,
+        synchronize: (hip_stream_synchronize, "hipStreamSynchronize"),
+        begin_capture: (
+            hip_stream_begin_capture, "hipStreamBeginCapture", hip::HIP_STREAM_CAPTURE_MODE_RELAXED
+        ),
+        end_capture: (hip_stream_end_capture, "hipStreamEndCapture"),
+        replay: (hip_graph_launch, "hipGraphLaunch"),
+        unload: (hip_module_unload, hip_graph_exec_destroy, hip_graph_destroy, hip_stream_destroy),
+        load: (hip_module_load_data, "hipModuleLoadData"),
+        function: (hip_module_get_function, "hipModuleGetFunction"),
+        alloc: (hip_malloc, "hipMalloc"),
+        free: hip_free,
+        host_alloc: (
+            hip_host_malloc, "hipHostMalloc", hip::HOST_MALLOC_MAPPED,
+            hip_host_get_device_pointer, "hipHostGetDevicePointer"
+        ),
+        host_free: hip_host_free,
+        zero: (hip_memset, "hipMemset"),
     }
 
     fn set_current(&self, _: &Own, device: c_int) -> Result<(), Error> {
         self.check(unsafe { (self.hip_set_device)(device) }, "hipSetDevice")
-    }
-
-    fn synchronize(&self) -> Result<(), Error> {
-        let code = unsafe { (self.hip_stream_synchronize)(std::ptr::null_mut()) };
-        self.check(code, "hipStreamSynchronize")
     }
 
     fn stream(&self) -> Result<Handle, Error> {
@@ -200,17 +166,6 @@ impl Api for Runtime {
         })
     }
 
-    fn begin_capture(&self, stream: Handle) -> Result<(), Error> {
-        let mode = hip::HIP_STREAM_CAPTURE_MODE_RELAXED;
-        let code = unsafe { (self.hip_stream_begin_capture)(stream, mode) };
-        self.check(code, "hipStreamBeginCapture")
-    }
-
-    fn end_capture(&self, stream: Handle, graph: &mut Handle) -> Result<(), Error> {
-        let code = unsafe { (self.hip_stream_end_capture)(stream, graph) };
-        self.check(code, "hipStreamEndCapture")
-    }
-
     fn instantiate(&self, graph: Handle) -> Result<Handle, Error> {
         let (none, nothing) = (std::ptr::null_mut(), std::ptr::null_mut());
         self.out("hipGraphInstantiate", |e| unsafe {
@@ -218,60 +173,9 @@ impl Api for Runtime {
         })
     }
 
-    fn replay(&self, exec: Handle) -> Result<(), Error> {
-        let code = unsafe { (self.hip_graph_launch)(exec, std::ptr::null_mut()) };
-        self.check(code, "hipGraphLaunch")
-    }
-
-    fn destroy(&self, kind: Kind, handle: Handle) {
-        let free = match kind {
-            Kind::Module => self.hip_module_unload,
-            Kind::Exec => self.hip_graph_exec_destroy,
-            Kind::Graph => self.hip_graph_destroy,
-            Kind::Stream => self.hip_stream_destroy,
-        };
-        unsafe { free(handle) };
-    }
-
-    fn load(&self, image: &[u8]) -> Result<Handle, Error> {
-        self.out("hipModuleLoadData", |m| unsafe {
-            (self.hip_module_load_data)(m, image.as_ptr().cast())
-        })
-    }
-
-    fn function(&self, module: Handle, name: &CStr) -> Result<Handle, Error> {
-        self.out("hipModuleGetFunction", |f| unsafe {
-            (self.hip_module_get_function)(f, module, name.as_ptr())
-        })
-    }
-
     fn launch(&self, call: &Call) -> Result<(), Error> {
         let code = unsafe { api::plain(self.hip_module_launch_kernel, call) };
         self.check(code, "hipModuleLaunchKernel")
-    }
-
-    fn alloc(&self, size: usize) -> Result<u64, Error> {
-        let mut ptr = 0;
-        self.check(unsafe { (self.hip_malloc)(&mut ptr, size) }, "hipMalloc")?;
-        Ok(ptr)
-    }
-
-    fn free(&self, ptr: u64) {
-        unsafe { (self.hip_free)(ptr) };
-    }
-
-    fn host_alloc(&self, size: usize) -> Result<(u64, u64), Error> {
-        let mut host = std::ptr::null_mut();
-        let code = unsafe { (self.hip_host_malloc)(&mut host, size, hip::HOST_MALLOC_MAPPED) };
-        self.check(code, "hipHostMalloc")?;
-        let mut device = 0;
-        let code = unsafe { (self.hip_host_get_device_pointer)(&mut device, host, 0) };
-        self.check(code, "hipHostGetDevicePointer")?;
-        Ok((host as u64, device))
-    }
-
-    fn host_free(&self, host: u64) {
-        unsafe { (self.hip_host_free)(host as *mut c_void) };
     }
 
     fn upload(&self, ptr: u64, bytes: &[u8]) -> Result<(), Error> {
@@ -286,10 +190,6 @@ impl Api for Runtime {
         let to = hip::MEMCPY_DEVICE_TO_HOST;
         let code = unsafe { (self.hip_memcpy)(dst, src, bytes.len(), to) };
         self.check(code, "hipMemcpy to host")
-    }
-
-    fn zero(&self, ptr: u64, size: usize) -> Result<(), Error> {
-        self.check(unsafe { (self.hip_memset)(ptr, 0, size) }, "hipMemset")
     }
 
     fn compile(ctx: &Context, source: &str) -> Result<Vec<u8>, Error> {
