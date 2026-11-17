@@ -1,6 +1,7 @@
 //! What compiled lockstep kernels call: reads, shuffles and tiles.
 
 use crate::exec::{ArgVal, Grid};
+use crate::simd::{Level, dot_at, mix_at, tile_at};
 use codegen::form::{Load, Read};
 use codegen::numerics::Precision;
 use graph::{E2M1, E4M3, F16};
@@ -75,13 +76,7 @@ pub fn mix_f32(out: &mut [u8], at: usize, keep: f32, p: f32, b: &[u8], b_at: usi
     let (head, body, _) = unsafe { slice.align_to_mut::<f32>() };
     if head.is_empty() && body.len() == n {
         // A zero `keep` drops old values. They may be junk.
-        match keep == 0.0 {
-            true => body.iter_mut().zip(b).for_each(|(o, x)| *o = p * x),
-            false => body
-                .iter_mut()
-                .zip(b)
-                .for_each(|(o, x)| *o = *o * keep + p * x),
-        }
+        mix_at(Level::best(), body, b, keep, p);
         return;
     }
     for (i, x) in b.iter().enumerate() {
@@ -305,22 +300,9 @@ pub(crate) fn products(
     }
 }
 
-/// Eight running sums, so the loop vectorizes.
+/// The sum of `a` times `b`, on the widest vectors.
 pub fn dot(a: &[f32], b: &[f32]) -> f32 {
-    let mut acc = [0.0f32; 8];
-    let (whole, rest) = (a.len() / 8 * 8, a.len() % 8);
-    let (xs, _) = a[..whole].as_chunks::<8>();
-    let (ys, _) = b[..whole].as_chunks::<8>();
-    for (x, y) in xs.iter().zip(ys) {
-        for i in 0..8 {
-            acc[i] += x[i] * y[i];
-        }
-    }
-    let mut sum = acc.iter().sum::<f32>();
-    for i in 0..rest {
-        sum += a[whole + i] * b[whole + i];
-    }
-    sum
+    dot_at(Level::best(), a, b)
 }
 
 /// `n` floats of `bytes` from element `at`, copied when unaligned.
@@ -338,55 +320,15 @@ fn f32_row<'a>(bytes: &'a [u8], at: usize, n: usize, scratch: &'a mut Vec<f32>) 
 }
 
 /// Depth a block sums while its rows stay in cache.
-const SPAN: usize = 256;
+const SPAN: usize = 512;
 /// Rows and columns of one block of sums.
 pub const BLOCK: usize = 16;
-
-/// `a + x * y`, lane by lane.
-#[inline(always)]
-fn lanes(a: [f32; 4], x: [f32; 4], y: [f32; 4]) -> [f32; 4] {
-    // Fused only where one instruction does it.
-    match cfg!(any(target_arch = "aarch64", target_feature = "fma")) {
-        true => std::array::from_fn(|l| x[l].mul_add(y[l], a[l])),
-        false => std::array::from_fn(|l| a[l] + x[l] * y[l]),
-    }
-}
-
-/// `R` rows of `x` against four rows of `w`.
-fn tile<const R: usize>(x: [&[f32]; R], w: [&[f32]; 4]) -> [[f32; 4]; R] {
-    let len = w[0].len();
-    let steps = len / 4;
-    let xs = x.map(|r| &r[..steps * 4].as_chunks::<4>().0[..steps]);
-    let [w0, w1, w2, w3] = w.map(|r| &r[..steps * 4].as_chunks::<4>().0[..steps]);
-    // Four lanes per sum, so each load feeds four products.
-    let mut acc = [[[0.0f32; 4]; 4]; R];
-    for i in 0..steps {
-        let (a, b, c, d) = (w0[i], w1[i], w2[i], w3[i]);
-        for r in 0..R {
-            let xv = xs[r][i];
-            let row = &mut acc[r];
-            row[0] = lanes(row[0], xv, a);
-            row[1] = lanes(row[1], xv, b);
-            row[2] = lanes(row[2], xv, c);
-            row[3] = lanes(row[3], xv, d);
-        }
-    }
-    let mut out = [[0.0f32; 4]; R];
-    for r in 0..R {
-        for c in 0..4 {
-            out[r][c] = acc[r][c].iter().sum::<f32>();
-            for i in steps * 4..len {
-                out[r][c] += x[r][i] * w[c][i];
-            }
-        }
-    }
-    out
-}
 
 /// Rows `first..first + R` against columns `col..col + 4`.
 fn quad<const R: usize>(x: &[&[f32]], w: &[&[f32]], at: (usize, usize), sums: &mut Sums) {
     let (first, col) = at;
-    let got = tile::<R>(
+    let got = tile_at::<R>(
+        Level::best(),
         std::array::from_fn(|r| x[first + r]),
         std::array::from_fn(|c| w[col + c]),
     );
