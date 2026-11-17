@@ -158,7 +158,12 @@ pub(crate) fn select_upto(
     }
     let mut e = Emit::default();
     for (port, &(len, dtype)) in tree.ports.iter().enumerate() {
-        let val = e.value(len, Home::Input(port as u32), EDGE, form::of(dtype));
+        let val = e.value(
+            len,
+            Home::Input(port as u32),
+            EDGE,
+            codegen::form::of(dtype),
+        );
         e.out.inputs.push(val);
     }
     // In traced order, so equal graphs give equal plans.

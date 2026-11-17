@@ -3,7 +3,7 @@
 use codegen::kept;
 use codegen::prelude::*;
 use graph::Order;
-use kernels::Join;
+use lower::kernels::Join;
 use lower::sites;
 use lower::{Arg, Attn, Draft, Kernel, Launch, Needs, Read, Shape, Source, Step, T, Tree};
 

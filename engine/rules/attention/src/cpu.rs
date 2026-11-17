@@ -2,8 +2,8 @@
 
 use codegen::kept;
 use codegen::prelude::*;
-use cpu::{GUESS, small, source};
 use lower::{Arg, Attn, Draft, Kernel, Launch, Step, T, Tree, ZoneKind, sites};
+use lower::{GUESS, small, source};
 
 /// One pass per query, over its keys or listed `ids`.
 #[kernel]

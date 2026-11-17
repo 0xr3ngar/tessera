@@ -2,6 +2,7 @@
 
 mod abi;
 mod assign;
+mod body;
 mod cache;
 mod cost;
 mod cut;
@@ -20,25 +21,26 @@ mod tree;
 
 pub use abi::{Arg, Launch, Shape, Source, ToArg};
 pub use assign::assign;
+pub use body::{GUESS, small, source};
 pub use cache::Cache;
 pub use codegen::kept;
-pub use codegen::{Dialect, LANES, Precision, Terms, Text, float, hash, hip_tiles, terms};
+pub use codegen::{Dialect, Terms, hip_tiles, terms};
 pub use cost::Device;
 pub use cut::cut;
-pub use engine_settings::{Backend, Pick, Settings};
+pub use engine_settings::{Pick, Settings};
 pub use error::{Size, Unsupported};
 pub use extent::Extent;
 pub use form::{Pins, Weight};
 pub use kernel::{Kernel, KernelRef, Needs, UNPROVEN};
 pub use kernel_macro::Kernel;
-pub use mem::{Buffer, DType, Tensor, View, ViewMut};
+pub use mem::{Buffer, DType, Tensor, View};
 pub use plan::{Loaded, Output, Plan, Share, Slot, Step};
 pub use platform::{Limits, Platform};
 pub use recipe::{Launching, Recipe};
 pub use rule::{Attn, Draft, RULES, Read, Rule, linked, rules};
 pub use schedule::{peak, schedule};
 pub use select::{Home, Op, Selected, Val, Value, select};
-pub use sim::{Cluster, Fit, Link, Load, Ops, Zone, ZoneKind};
+pub use sim::{Cluster, Fit, Link, Load, Zone, ZoneKind};
 pub use tree::{Node, T, Term, Tree};
 
 use graph::{DimName, Graph};

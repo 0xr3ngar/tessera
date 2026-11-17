@@ -8,13 +8,12 @@ description = "Attention kernels for the CPU and the GPU, registered as lowering
 
 [dependencies]
 codegen = { workspace = true }
-cpu = { workspace = true }
 graph = { workspace = true }
-kernels = { workspace = true }
 lower = { workspace = true }
 
 [dev-dependencies]
 interp = { workspace = true }
+kernels = { workspace = true }
 run = { workspace = true }
 testkit = { workspace = true }
 trace = { workspace = true }

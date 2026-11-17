@@ -25,9 +25,7 @@ models = { workspace = true }
 trace = { workspace = true }
 lower = { workspace = true }
 sim = { workspace = true }
-attention = { workspace = true }
-kernels = { workspace = true }
-linear = { workspace = true }
+rules = { workspace = true }
 run = { workspace = true }
 
 [dev-dependencies]

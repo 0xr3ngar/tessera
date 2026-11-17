@@ -1,9 +1,7 @@
 //! Ranks on threads, joined over handles the front end opened.
 
 // Linking these registers their lowering rules.
-use attention as _;
-use kernels as _;
-use linear as _;
+use rules as _;
 
 use engine::comm::Transport;
 use frontend_comm::{shm, sockets};

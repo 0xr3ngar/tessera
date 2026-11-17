@@ -10,15 +10,13 @@ description = "Joins ranks over TCP or a shared file, then hands the handles to 
 engine = { workspace = true }
 
 [dev-dependencies]
-attention = { workspace = true }
 frontend-settings = { workspace = true }
 graph = { workspace = true }
 interp = { workspace = true }
-kernels = { workspace = true }
-linear = { workspace = true }
 lower = { workspace = true }
 mem = { workspace = true }
 models = { workspace = true }
+rules = { workspace = true }
 run = { workspace = true }
 testkit = { workspace = true }
 trace = { workspace = true }

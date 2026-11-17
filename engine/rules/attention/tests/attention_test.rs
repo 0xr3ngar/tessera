@@ -6,10 +6,10 @@ use kernels as _;
 use graph::DimName::{Context, HeadDim, Heads, KvHeads, Rows, Segments, Seqs};
 use graph::{DType, Dim, Graph, Size, TensorType};
 use interp::{Store, Tensor, run, run_kept};
-use lower::{Device, lower};
+use lower::{Device, Settings, View, lower, rules};
 use run::testing::{host, runs};
 use run::{Run, open};
-use testkit::{Noise, graphs, max_abs_diff};
+use testkit::{Noise, fill, graphs, max_abs_diff};
 use trace::{EntryKind, Mask, Model, Port, Role};
 
 /// Attention under `mask` over `heads` query heads of `width`.
@@ -199,4 +199,39 @@ fn attention_streams() {
     let plan = lower(&g, 0, &sizes, &Device::guess(&host())).unwrap();
     let streams = |s: &&lower::Step| matches!(s.kernel.name(), "attend" | "flash");
     assert_eq!(plan.steps.iter().filter(streams).count(), 1);
+}
+
+/// Largest gap between the interpreter and rule `name`.
+fn gap(g: &Graph, inputs: &[Tensor], name: &str, settings: &Settings) -> f32 {
+    let sizes = [(Seqs, 2), (Rows, 3), (Context, 5)];
+    let want = run(g, &[], 0, inputs).unwrap();
+    let device = Device::guess(settings).favoring(name);
+    let mut runner = open(lower(g, 0, &sizes, &device).unwrap(), settings).unwrap();
+    let feeds: Vec<View> = inputs.iter().map(Tensor::view).collect();
+    let got = runner.run(&feeds).unwrap().remove(0);
+    max_abs_diff(got.floats().unwrap(), want[0].floats().unwrap())
+}
+
+#[test]
+fn gpu_rules_match() {
+    let dims = [
+        Dim::bounded(Seqs, 4),
+        Dim::bounded(Rows, 8),
+        Dim::bounded(Context, 16),
+    ];
+    let g = graphs::attention(&dims, [2, 2, 16]);
+    let mut noise = Noise(7);
+    let inputs: Vec<Tensor> = g.entries[0]
+        .inputs
+        .iter()
+        .map(|p| fill(&g, &p.ty, &[(Seqs, 2), (Rows, 3), (Context, 5)], &mut noise).unwrap())
+        .collect();
+    // The CPU rules need a CPU zone.
+    let gpu = |m: &str| m.starts_with("attention::") && !m.starts_with("attention::cpu");
+    for rule in rules().into_iter().filter(|r| gpu(r.module)) {
+        for settings in runs() {
+            let off = gap(&g, &inputs, rule.name, &settings);
+            assert!(off < 1e-4, "{} is off by {off:e}", rule.name);
+        }
+    }
 }

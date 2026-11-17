@@ -1,7 +1,7 @@
 //! Joins rows of two inputs along the last axis.
 
+use crate::{Extent, Kernel};
 use codegen::prelude::*;
-use lower::{Extent, Kernel};
 
 /// One thread per output element, from whichever side holds it.
 #[kernel]
@@ -22,7 +22,7 @@ fn join(a: Buf<F32>, b: Buf<F32>, mut out: BufMut<F32>, left: u32, right: u32, r
 
 /// Each output row: a `left` row, then a `right` row.
 #[derive(Clone, Copy, Debug, Kernel)]
-#[launch(join, threads = self.rows.times(self.left + self.right), sizes = [self.left, self.right])]
+#[launch(join, crate = crate, threads = self.rows.times(self.left + self.right), sizes = [self.left, self.right])]
 pub struct Join {
     pub left: usize,
     pub right: usize,

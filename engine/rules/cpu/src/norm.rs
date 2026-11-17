@@ -1,8 +1,8 @@
 //! RMS norm, a thread per row in small groups.
 
-use crate::{GUESS, small, source};
 use codegen::prelude::*;
 use lower::{Draft, Kernel, Launch, Step, T, Tree, ZoneKind, sites};
+use lower::{GUESS, small, source};
 
 /// The squares in one sum, then each element scaled.
 #[kernel]

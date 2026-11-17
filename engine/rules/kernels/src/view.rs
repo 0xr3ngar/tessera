@@ -1,9 +1,9 @@
 //! Slices, repeats, swaps and joins, copied into a new buffer.
 
-use crate::join::Join;
 use codegen::prelude::*;
 use graph::{Op, View};
 use lower::form::F32_FORM;
+use lower::kernels::Join;
 use lower::{Draft, Extent, Home, Kernel, T, Term, Tree};
 
 /// One thread per output `[outer, mid, inner]`, read through strides.
