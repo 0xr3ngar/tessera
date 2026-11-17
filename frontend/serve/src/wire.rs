@@ -1,9 +1,7 @@
 //! Request bodies, their checks, and the OpenAI error object.
 
 use crate::Model;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
-use axum::{Json, body::Bytes};
+use crate::http::Response;
 use bundle::Message;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -13,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Why a request was refused, as OpenAI reports it.
 #[derive(Debug)]
 pub(crate) struct Refusal {
-    pub(crate) status: StatusCode,
+    pub(crate) status: u16,
     pub(crate) message: String,
     pub(crate) param: Option<String>,
 }
@@ -21,31 +19,27 @@ pub(crate) struct Refusal {
 impl Refusal {
     pub(crate) fn body(&self) -> Value {
         let kind = match self.status {
-            StatusCode::NOT_FOUND => "NotFoundError",
-            StatusCode::SERVICE_UNAVAILABLE => "ServiceUnavailableError",
-            StatusCode::INTERNAL_SERVER_ERROR => "InternalServerError",
+            404 => "NotFoundError",
+            503 => "ServiceUnavailableError",
+            500 => "InternalServerError",
             _ => "BadRequestError",
         };
         json!({"error": {
             "message": self.message,
             "type": kind,
             "param": self.param,
-            "code": self.status.as_u16(),
+            "code": self.status,
         }})
     }
 }
 
-impl IntoResponse for Refusal {
-    fn into_response(self) -> Response {
-        (self.status, Json(self.body())).into_response()
+impl From<Refusal> for Response {
+    fn from(refused: Refusal) -> Response {
+        Response::json(refused.status, &refused.body())
     }
 }
 
-pub(crate) fn refuse(
-    status: StatusCode,
-    message: impl Into<String>,
-    param: Option<&str>,
-) -> Refusal {
+pub(crate) fn refuse(status: u16, message: impl Into<String>, param: Option<&str>) -> Refusal {
     Refusal {
         status,
         message: message.into(),
@@ -54,7 +48,7 @@ pub(crate) fn refuse(
 }
 
 pub(crate) fn bad(message: impl Into<String>, param: &str) -> Refusal {
-    refuse(StatusCode::BAD_REQUEST, message, Some(param))
+    refuse(400, message, Some(param))
 }
 
 /// Seconds since 1970, for `created`.
@@ -100,21 +94,21 @@ fn paths(path: &str, bag: &Bag) -> impl Iterator<Item = String> {
 /// The body. Unknown fields warn, or refuse if strict.
 pub(crate) fn parse<T: DeserializeOwned + Bagged>(
     model: &Model,
-    body: &Bytes,
+    body: &[u8],
 ) -> Result<T, Refusal> {
-    let body: Map<String, Value> = serde_json::from_slice(body)
-        .map_err(|e| refuse(StatusCode::BAD_REQUEST, e.to_string(), None))?;
+    let body: Map<String, Value> =
+        serde_json::from_slice(body).map_err(|e| refuse(400, e.to_string(), None))?;
     match body.get("model") {
         None | Some(Value::Null) => {}
         Some(Value::String(m)) if *m == model.info.name => {}
         Some(m) => {
             let m = m.as_str().map_or_else(|| m.to_string(), str::to_string);
             let message = format!("The model `{m}` does not exist.");
-            return Err(refuse(StatusCode::NOT_FOUND, message, Some("model")));
+            return Err(refuse(404, message, Some("model")));
         }
     }
     let parsed: T = serde_json::from_value(Value::Object(body))
-        .map_err(|e| refuse(StatusCode::BAD_REQUEST, e.to_string(), None))?;
+        .map_err(|e| refuse(400, e.to_string(), None))?;
     let (top, nested) = parsed.bags();
     let mut unknown = Vec::new();
     for (key, value) in top {

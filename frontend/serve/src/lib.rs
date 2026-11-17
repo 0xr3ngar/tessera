@@ -3,20 +3,17 @@
 mod answer;
 #[cfg(test)]
 mod answer_test;
+pub mod http;
+#[cfg(test)]
+mod http_test;
 #[cfg(test)]
 mod lib_test;
 #[cfg(test)]
 mod mocks;
 mod wire;
 
-use axum::Json;
-use axum::Router;
-use axum::body::Bytes;
-use axum::extract::State;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
 use bundle::Message;
+use http::{Request, Response};
 use serde_json::{Value, json};
 use std::sync::{Arc, OnceLock};
 use tasks::api::{Chat, Embed, Generator, Info, Tokens};
@@ -36,23 +33,10 @@ pub struct Model {
 /// The model once it loads. Until then routes answer 503.
 pub type Slot = Arc<OnceLock<Model>>;
 
-/// Runs `f` on the model, off the async threads.
-async fn with_model<T: Send + 'static>(
-    slot: &Slot,
-    f: impl FnOnce(&Model) -> Result<T, Refusal> + Send + 'static,
-) -> Result<T, Refusal> {
-    let slot = slot.clone();
-    let loading = || {
-        refuse(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "the model is loading",
-            None,
-        )
-    };
-    let ran = tokio::task::spawn_blocking(move || f(slot.get().ok_or_else(loading)?));
-    let failed =
-        |e: tokio::task::JoinError| refuse(StatusCode::INTERNAL_SERVER_ERROR, e.to_string(), None);
-    ran.await.map_err(failed)?
+/// Runs `f` on the model, or refuses while it loads.
+fn with_model<T>(slot: &Slot, f: impl FnOnce(&Model) -> Result<T, Refusal>) -> Result<T, Refusal> {
+    let loading = || refuse(503, "the model is loading", None);
+    f(slot.get().ok_or_else(loading)?)
 }
 
 /// The messages as one prompt, by the model's template.
@@ -68,37 +52,26 @@ fn render(model: &Model, m: Messages) -> Result<String, Refusal> {
 }
 
 /// A JSON answer, or the refusal.
-async fn reply(
-    slot: &Slot,
-    f: impl FnOnce(&Model) -> Result<Value, Refusal> + Send + 'static,
-) -> Response {
-    match with_model(slot, f).await {
-        Ok(v) => Json(v).into_response(),
-        Err(refused) => refused.into_response(),
+fn reply(slot: &Slot, f: impl FnOnce(&Model) -> Result<Value, Refusal>) -> Response {
+    match with_model(slot, f) {
+        Ok(v) => Response::json(200, &v),
+        Err(refused) => refused.into(),
     }
 }
 
 /// Ready or loading, as llama.cpp reports it.
-async fn health(State(slot): State<Slot>) -> Response {
+fn health(slot: &Slot) -> Response {
     match slot.get() {
-        Some(_) => Json(json!({"status": "ok"})).into_response(),
+        Some(_) => Response::json(200, &json!({"status": "ok"})),
         None => {
             let error = json!({"code": 503, "message": "the model is loading", "type": "unavailable_error"});
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"error": error})),
-            )
-                .into_response()
+            Response::json(503, &json!({"error": error}))
         }
     }
 }
 
-async fn version() -> Json<Value> {
-    Json(json!({"version": env!("CARGO_PKG_VERSION")}))
-}
-
-async fn models(State(slot): State<Slot>) -> Response {
-    reply(&slot, |m| {
+fn models(slot: &Slot) -> Response {
+    reply(slot, |m| {
         let card = json!({
             "id": m.info.name,
             "object": "model",
@@ -109,12 +82,11 @@ async fn models(State(slot): State<Slot>) -> Response {
         });
         Ok(json!({"object": "list", "data": [card]}))
     })
-    .await
 }
 
-async fn tokenize(State(slot): State<Slot>, body: Bytes) -> Response {
-    reply(&slot, move |m| {
-        let text = match wire::parse(m, &body)? {
+fn tokenize(slot: &Slot, body: &[u8]) -> Response {
+    reply(slot, |m| {
+        let text = match wire::parse(m, body)? {
             Tokenize::Prompt { prompt, .. } => prompt,
             Tokenize::Chat { messages, .. } => render(m, messages)?,
         };
@@ -124,24 +96,22 @@ async fn tokenize(State(slot): State<Slot>, body: Bytes) -> Response {
             .map_err(|e| bad(e.to_string(), "prompt"))?;
         Ok(json!({"count": tokens.len(), "max_model_len": m.info.context, "tokens": tokens}))
     })
-    .await
 }
 
-async fn detokenize(State(slot): State<Slot>, body: Bytes) -> Response {
-    reply(&slot, move |m| {
-        let d: Detokenize = wire::parse(m, &body)?;
+fn detokenize(slot: &Slot, body: &[u8]) -> Response {
+    reply(slot, |m| {
+        let d: Detokenize = wire::parse(m, body)?;
         Ok(json!({"prompt": m.tokens.decode(&d.tokens)}))
     })
-    .await
 }
 
-async fn embeddings(State(slot): State<Slot>, body: Bytes) -> Response {
-    reply(&slot, move |m| {
+fn embeddings(slot: &Slot, body: &[u8]) -> Response {
+    reply(slot, |m| {
         let embed = m
             .embed
             .as_ref()
-            .ok_or_else(|| refuse(StatusCode::NOT_FOUND, "the model does not embed text", None))?;
-        let e: Embeddings = wire::parse(m, &body)?;
+            .ok_or_else(|| refuse(404, "the model does not embed text", None))?;
+        let e: Embeddings = wire::parse(m, body)?;
         let texts = e.input.list();
         let got = embed
             .embed(&texts)
@@ -153,21 +123,20 @@ async fn embeddings(State(slot): State<Slot>, body: Bytes) -> Response {
         let usage = json!({"prompt_tokens": got.tokens, "total_tokens": got.tokens});
         Ok(json!({"object": "list", "data": data, "model": m.info.name, "usage": usage}))
     })
-    .await
 }
 
-pub fn router(slot: Slot) -> Router {
-    Router::new()
-        .route("/health", get(health))
-        .route("/v1/health", get(health))
-        .route("/v1/health/ready", get(health))
-        .route("/ping", get(health))
-        .route("/version", get(version))
-        .route("/v1/models", get(models))
-        .route("/tokenize", post(tokenize))
-        .route("/detokenize", post(detokenize))
-        .route("/v1/embeddings", post(embeddings))
-        .route("/v1/completions", post(answer::completions))
-        .route("/v1/chat/completions", post(answer::chat_completions))
-        .with_state(slot)
+/// Answers one request.
+pub fn route(slot: &Slot, request: &Request) -> Response {
+    let body = request.body.as_slice();
+    match (request.method.as_str(), request.path.as_str()) {
+        ("GET", "/health" | "/v1/health" | "/v1/health/ready" | "/ping") => health(slot),
+        ("GET", "/version") => Response::json(200, &json!({"version": env!("CARGO_PKG_VERSION")})),
+        ("GET", "/v1/models") => models(slot),
+        ("POST", "/tokenize") => tokenize(slot, body),
+        ("POST", "/detokenize") => detokenize(slot, body),
+        ("POST", "/v1/embeddings") => embeddings(slot, body),
+        ("POST", "/v1/completions") => answer::completions(slot, body),
+        ("POST", "/v1/chat/completions") => answer::chat_completions(slot, body),
+        _ => refuse(404, "no such route", None).into(),
+    }
 }

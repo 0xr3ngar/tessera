@@ -5,18 +5,15 @@ mod embed;
 mod generator;
 mod tokens;
 
-use crate::{Model, Slot, router};
-use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use crate::http::{Body, Request};
+use crate::{Model, Slot, route};
 use chat::MockChat;
 use embed::MockEmbed;
 pub use generator::MockGenerator;
-use http_body_util::BodyExt;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 use tasks::api::Info;
 use tokens::MockTokens;
-use tower::ServiceExt;
 
 /// The mocks as model `m`, 16 tokens of context.
 pub fn loaded(generator: &Arc<MockGenerator>, strict: bool) -> Slot {
@@ -36,22 +33,23 @@ pub fn loaded(generator: &Arc<MockGenerator>, strict: bool) -> Slot {
 }
 
 /// The status and body of a call. No body: GET.
-pub async fn call(slot: &Slot, path: &str, body: Option<Value>) -> (StatusCode, String) {
-    let request = match body {
-        Some(b) => Request::post(path).body(Body::from(b.to_string())),
-        None => Request::get(path).body(Body::empty()),
+pub fn call(slot: &Slot, path: &str, body: Option<Value>) -> (u16, String) {
+    let request = Request {
+        method: if body.is_some() { "POST" } else { "GET" }.into(),
+        path: path.into(),
+        query: String::new(),
+        body: body.map_or_else(Vec::new, |b| b.to_string().into_bytes()),
     };
-    let response = router(slot.clone())
-        .oneshot(request.unwrap())
-        .await
-        .unwrap();
-    let status = response.status();
-    let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    (status, String::from_utf8(bytes.to_vec()).unwrap())
+    let response = route(slot, &request);
+    let text = match response.body {
+        Body::Full { bytes, .. } => String::from_utf8(bytes).unwrap(),
+        Body::Events(events) => events.iter().map(|e| format!("data: {e}\n\n")).collect(),
+    };
+    (response.status, text)
 }
 
 /// The same, with the body as JSON.
-pub async fn json(slot: &Slot, path: &str, body: Option<Value>) -> (StatusCode, Value) {
-    let (status, text) = call(slot, path, body).await;
+pub fn json(slot: &Slot, path: &str, body: Option<Value>) -> (u16, Value) {
+    let (status, text) = call(slot, path, body);
     (status, serde_json::from_str(&text).unwrap())
 }

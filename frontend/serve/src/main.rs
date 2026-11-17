@@ -2,6 +2,7 @@
 
 use engine::{Batch, Engine, Fair, Pins, Recipe, Settings};
 use serve::{Model, Slot};
+use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
@@ -11,7 +12,7 @@ use tasks::{Generate, Job, Queued, Threaded};
 
 const USAGE: &str = "usage: tessera-serve --model <dir> [--host <addr>] [--port <n>] \
 [--max-model-len <tokens>] [--slots <n>] [--served-model-name <name>] \
-[--task generate|embed] [--reject-unknown-fields]";
+[--task generate|embed] [--max-connections <n>] [--reject-unknown-fields]";
 
 struct Args {
     model: PathBuf,
@@ -25,6 +26,7 @@ struct Args {
     embed: bool,
     /// Unknown request fields refuse the request.
     strict: bool,
+    max_connections: usize,
 }
 
 fn args() -> Option<Args> {
@@ -37,6 +39,7 @@ fn args() -> Option<Args> {
         name: None,
         embed: false,
         strict: false,
+        max_connections: 64,
     };
     let mut given = std::env::args().skip(1);
     while let Some(flag) = given.next() {
@@ -51,6 +54,7 @@ fn args() -> Option<Args> {
             "--port" => args.port = value.parse().ok()?,
             "--max-model-len" => args.max_model_len = value.parse().ok()?,
             "--slots" => args.slots = value.parse().ok()?,
+            "--max-connections" => args.max_connections = value.parse().ok()?,
             "--served-model-name" => args.name = Some(value),
             "--task" if value == "generate" => args.embed = false,
             "--task" if value == "embed" => args.embed = true,
@@ -158,20 +162,22 @@ fn main() -> ExitCode {
     };
     let slot: Slot = Arc::new(OnceLock::new());
     let (host, port) = (args.host.clone(), args.port);
+    let limits = serve::http::Limits {
+        max_connections: args.max_connections,
+        ..Default::default()
+    };
     let loading = slot.clone();
     std::thread::spawn(move || load(args, loading));
-    let served = tokio::runtime::Runtime::new().and_then(|runtime| {
-        runtime.block_on(async {
-            let listener = tokio::net::TcpListener::bind((host.as_str(), port)).await?;
-            eprintln!("listening on {host}:{port}");
-            axum::serve(listener, serve::router(slot)).await
-        })
-    });
-    match served {
-        Ok(()) => ExitCode::SUCCESS,
+    let listener = match TcpListener::bind((host.as_str(), port)) {
+        Ok(listener) => listener,
         Err(e) => {
             eprintln!("tessera-serve: {e}");
-            ExitCode::FAILURE
+            return ExitCode::FAILURE;
         }
-    }
+    };
+    eprintln!("listening on {host}:{port}");
+    serve::http::run(listener, limits, move |request| {
+        serve::route(&slot, request)
+    });
+    ExitCode::SUCCESS
 }

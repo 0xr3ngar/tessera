@@ -1,21 +1,12 @@
 //! Completions and chat completions, whole or streamed.
 
+use crate::http::{Body, Response};
 use crate::wire::{self, Chat, Common, Completion, Prompt, Refusal, bad, refuse};
 use crate::{Model, Slot, with_model};
-use axum::Json;
-use axum::body::Bytes;
-use axum::extract::State;
-use axum::http::StatusCode;
-use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
-use std::convert::Infallible;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::sync::mpsc;
 use tasks::api::{Finish, Params, Step};
-use tokio::sync::mpsc;
-use tokio_stream::StreamExt;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 
 /// Which OpenAI shape an answer takes.
 #[derive(Clone, Copy, PartialEq)]
@@ -32,7 +23,7 @@ struct Started {
     prompt_tokens: usize,
     stream: bool,
     usage: bool,
-    steps: mpsc::UnboundedReceiver<Step>,
+    steps: mpsc::Receiver<Step>,
 }
 
 fn finish(f: Finish) -> &'static str {
@@ -82,13 +73,10 @@ fn start(
     asked: Option<usize>,
     common: Common,
 ) -> Result<Started, Refusal> {
-    let generator = model.generator.as_ref().ok_or_else(|| {
-        refuse(
-            StatusCode::NOT_FOUND,
-            "the model does not generate text",
-            None,
-        )
-    })?;
+    let generator = model
+        .generator
+        .as_ref()
+        .ok_or_else(|| refuse(404, "the model does not generate text", None))?;
     if prompt.is_empty() {
         return Err(bad("the prompt is empty", "prompt"));
     }
@@ -96,7 +84,7 @@ fn start(
         max_tokens: budget(model, prompt.len(), asked)?,
         stop: common.stop.map(wire::Strings::list).unwrap_or_default(),
     };
-    let (sink, steps) = mpsc::unbounded_channel();
+    let (sink, steps) = mpsc::channel();
     let prompt_tokens = prompt.len();
     generator
         .generate(
@@ -104,7 +92,7 @@ fn start(
             params,
             Box::new(move |step| sink.send(step).is_ok()),
         )
-        .map_err(|e| refuse(StatusCode::SERVICE_UNAVAILABLE, e.to_string(), None))?;
+        .map_err(|e| refuse(503, e.to_string(), None))?;
     Ok(Started {
         kind,
         id: fresh_id(kind),
@@ -116,7 +104,7 @@ fn start(
     })
 }
 
-fn complete(model: &Model, body: &Bytes) -> Result<Started, Refusal> {
+fn complete(model: &Model, body: &[u8]) -> Result<Started, Refusal> {
     let c: Completion = wire::parse(model, body)?;
     let prompt = match c.prompt {
         Prompt::Ids(ids) => ids,
@@ -131,7 +119,7 @@ fn complete(model: &Model, body: &Bytes) -> Result<Started, Refusal> {
     start(model, Kind::Text, prompt, c.common.max_tokens, c.common)
 }
 
-fn chat(model: &Model, body: &Bytes) -> Result<Started, Refusal> {
+fn chat(model: &Model, body: &[u8]) -> Result<Started, Refusal> {
     let c: Chat = wire::parse(model, body)?;
     let prompt = crate::render(model, c.messages)?;
     let prompt = model
@@ -193,9 +181,9 @@ impl Started {
     }
 
     /// Waits for the end and answers in one body.
-    async fn whole(mut self) -> Response {
+    fn whole(self) -> Response {
         let mut text = String::new();
-        while let Some(step) = self.steps.recv().await {
+        while let Ok(step) = self.steps.recv() {
             match step {
                 Step::Token { text: piece, .. } => text += &piece,
                 Step::Done {
@@ -205,80 +193,73 @@ impl Started {
                 } => {
                     text += &rest;
                     let choice = self.choice(&text, Some(finish));
-                    return Json(self.body(json!([choice]), Some(tokens))).into_response();
+                    return Response::json(200, &self.body(json!([choice]), Some(tokens)));
                 }
             }
         }
-        let gone = refuse(StatusCode::SERVICE_UNAVAILABLE, "the engine stopped", None);
-        gone.into_response()
+        refuse(503, "the engine stopped", None).into()
     }
 
-    /// Streams each step as a chunk, then `[DONE]`.
-    fn streamed(mut self) -> Response {
-        let (out, events) = mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            let send = |v: Value| out.send(Event::default().data(v.to_string())).is_ok();
-            if self.kind == Kind::Chat {
-                let delta = json!([{"index": 0, "delta": {"role": "assistant", "content": ""},
-                    "logprobs": null, "finish_reason": null}]);
-                if !send(self.body(delta, None)) {
-                    return;
-                }
+    /// Sends each step as a chunk, then `[DONE]`.
+    fn forward(self, out: &mpsc::Sender<String>) {
+        let send = |v: Value| out.send(v.to_string()).is_ok();
+        if self.kind == Kind::Chat {
+            let delta = json!([{"index": 0, "delta": {"role": "assistant", "content": ""},
+                "logprobs": null, "finish_reason": null}]);
+            if !send(self.body(delta, None)) {
+                return;
             }
-            while let Some(step) = self.steps.recv().await {
-                let (text, end) = match step {
-                    Step::Token { text, .. } if text.is_empty() => continue,
-                    Step::Token { text, .. } => (text, None),
-                    Step::Done {
-                        text,
-                        finish,
-                        tokens,
-                    } => (text, Some((finish, tokens))),
-                };
-                let choice = self.choice(&text, end.map(|(f, _)| f));
-                if !send(self.body(json!([choice]), None)) {
-                    return;
-                }
-                if let Some((_, tokens)) = end {
-                    if self.usage {
-                        send(self.body(json!([]), Some(tokens)));
-                    }
-                    let _ = out.send(Event::default().data("[DONE]"));
-                    return;
-                }
+        }
+        while let Ok(step) = self.steps.recv() {
+            let (text, end) = match step {
+                Step::Token { text, .. } if text.is_empty() => continue,
+                Step::Token { text, .. } => (text, None),
+                Step::Done {
+                    text,
+                    finish,
+                    tokens,
+                } => (text, Some((finish, tokens))),
+            };
+            let choice = self.choice(&text, end.map(|(f, _)| f));
+            if !send(self.body(json!([choice]), None)) {
+                return;
             }
-            // The steps stopped before `Done`.
-            send(refuse(StatusCode::SERVICE_UNAVAILABLE, "the engine stopped", None).body());
-            let _ = out.send(Event::default().data("[DONE]"));
-        });
-        let events = UnboundedReceiverStream::new(events).map(Ok::<Event, Infallible>);
-        Sse::new(events)
-            .keep_alive(
-                KeepAlive::new()
-                    .interval(Duration::from_secs(5))
-                    .text("keep-alive"),
-            )
-            .into_response()
+            if let Some((_, tokens)) = end {
+                if self.usage {
+                    send(self.body(json!([]), Some(tokens)));
+                }
+                let _ = out.send("[DONE]".into());
+                return;
+            }
+        }
+        // The steps stopped before `Done`.
+        send(refuse(503, "the engine stopped", None).body());
+        let _ = out.send("[DONE]".into());
     }
 
-    async fn respond(self) -> Response {
-        match self.stream {
-            true => self.streamed(),
-            false => self.whole().await,
+    fn respond(self) -> Response {
+        if !self.stream {
+            return self.whole();
+        }
+        let (out, events) = mpsc::channel();
+        std::thread::spawn(move || self.forward(&out));
+        Response {
+            status: 200,
+            body: Body::Events(events),
         }
     }
 }
 
-pub(crate) async fn completions(State(slot): State<Slot>, body: Bytes) -> Response {
-    match with_model(&slot, move |m| complete(m, &body)).await {
-        Ok(started) => started.respond().await,
-        Err(refused) => refused.into_response(),
+pub(crate) fn completions(slot: &Slot, body: &[u8]) -> Response {
+    match with_model(slot, |m| complete(m, body)) {
+        Ok(started) => started.respond(),
+        Err(refused) => refused.into(),
     }
 }
 
-pub(crate) async fn chat_completions(State(slot): State<Slot>, body: Bytes) -> Response {
-    match with_model(&slot, move |m| chat(m, &body)).await {
-        Ok(started) => started.respond().await,
-        Err(refused) => refused.into_response(),
+pub(crate) fn chat_completions(slot: &Slot, body: &[u8]) -> Response {
+    match with_model(slot, |m| chat(m, body)) {
+        Ok(started) => started.respond(),
+        Err(refused) => refused.into(),
     }
 }
