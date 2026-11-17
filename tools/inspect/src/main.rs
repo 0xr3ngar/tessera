@@ -10,6 +10,7 @@ mod lowering;
 mod model;
 mod pump;
 mod ranks;
+mod shards;
 mod stages;
 
 #[cfg(test)]
@@ -133,7 +134,10 @@ fn run(args: &Args) -> Result<(), Box<dyn Error>> {
     let out = &args.out;
     std::fs::create_dir_all(out)?;
     std::fs::write(out.join("graph.json"), model.source.to_json())?;
-    let (source, sharded) = (dot::draw(&model, false), dot::draw(&model, true));
+    let (source, sharded) = (
+        dot::draw(&model, false, None),
+        dot::draw(&model, true, passes.first()),
+    );
     let graph = diagram::page(&model.name, &source, &sharded);
     std::fs::write(out.join("graph.html"), graph)?;
     std::fs::write(out.join("graph.dot"), source)?;
