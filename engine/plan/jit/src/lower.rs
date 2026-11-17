@@ -198,6 +198,44 @@ impl Lowerer<'_, '_> {
         Ok(slot)
     }
 
+    /// Whether element `at` fits in `len` bytes, and its address.
+    pub(crate) fn guarded(&mut self, [ptr, len, at]: [Value; 3], bytes: i64) -> [Value; 2] {
+        let size = self.iconst(self.ptr, bytes);
+        let off = self.b.ins().imul(at, size);
+        let end = self.b.ins().iadd(off, size);
+        let fits = self.b.ins().icmp(IntCC::UnsignedLessThanOrEqual, end, len);
+        [fits, self.b.ins().iadd(ptr, off)]
+    }
+
+    /// `fast` where the element fits, else the checking helper.
+    pub(crate) fn either(
+        &mut self,
+        fits: Value,
+        fast: impl FnOnce(&mut Self) -> Option<Value>,
+        slow: impl FnOnce(&mut Self) -> Option<Value>,
+        ty: Option<Type>,
+    ) -> Option<Value> {
+        let (yes, no, merge) = (
+            self.b.create_block(),
+            self.b.create_block(),
+            self.b.create_block(),
+        );
+        if let Some(ty) = ty {
+            self.b.append_block_param(merge, ty);
+        }
+        self.b.ins().brif(fits, yes, &[], no, &[]);
+        self.b.switch_to_block(yes);
+        let v = fast(self);
+        let args: Vec<_> = v.into_iter().map(Into::into).collect();
+        self.b.ins().jump(merge, &args);
+        self.b.switch_to_block(no);
+        let v = slow(self);
+        let args: Vec<_> = v.into_iter().map(Into::into).collect();
+        self.b.ins().jump(merge, &args);
+        self.b.switch_to_block(merge);
+        self.b.block_params(merge).first().copied()
+    }
+
     /// A lane array's element `t` of `ty`.
     pub(crate) fn load_lane(&mut self, slot: StackSlot, ty: Ty, t: Value) -> Val {
         let addr = self.at(slot, t, elem_size(ty));
@@ -291,7 +329,14 @@ impl Lowerer<'_, '_> {
                         let Val::S(v) = self.expr_as(&combined, ty, t)? else {
                             return Err("a four-wide value stored by index".into());
                         };
-                        self.call(st, &[ptr, len, at, v]);
+                        // Stores in range skip the helper and its checks.
+                        let [fits, addr] = self.guarded([ptr, len, at], 4);
+                        let store = |s: &mut Self| {
+                            s.b.ins().store(MemFlagsData::new(), v, addr, 0);
+                            None
+                        };
+                        let check = |s: &mut Self| s.call(st, &[ptr, len, at, v]);
+                        self.either(fits, store, check, None);
                         Ok(())
                     }
                     Kind::Shared(ty, slot, _) => {

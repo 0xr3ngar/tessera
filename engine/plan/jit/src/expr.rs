@@ -163,9 +163,18 @@ impl Lowerer<'_, '_> {
         let idx = self.index(at, t)?;
         let at = self.b.ins().iadd(skip, idx);
         let rd = match form.read() {
-            Read::F32 => "rd_f32",
+            // Reads in range skip the helper and its checks.
+            Read::F32 | Read::U32 => {
+                let (rd, ty) = match form.read() {
+                    Read::F32 => ("rd_f32", types::F32),
+                    _ => ("rd_u32", types::I32),
+                };
+                let [fits, addr] = self.guarded([ptr, len, at], 4);
+                let load = |s: &mut Self| Some(s.b.ins().load(ty, MemFlagsData::new(), addr, 0));
+                let check = |s: &mut Self| s.call(rd, &[ptr, len, at]);
+                return Ok(self.either(fits, load, check, Some(ty)).expect("a value"));
+            }
             Read::Bf16 => "rd_bf16",
-            Read::U32 => "rd_u32",
             Read::U8 => "rd_u8",
             Read::Decode => {
                 let form = self.registered(form)?;
@@ -174,6 +183,38 @@ impl Lowerer<'_, '_> {
             }
         };
         Ok(self.call(rd, &[ptr, len, at]).expect("a value"))
+    }
+
+    /// `tanh(x)` as a rational polynomial, within 3e-7 of f32 `tanh`.
+    fn tanh(&mut self, x: Value) -> Value {
+        // Past this the result rounds to one.
+        const CLAMP: f32 = 7.905_311;
+        const P: [f32; 7] = [
+            4.893_524_6e-3,
+            6.372_619_3e-4,
+            1.485_722_4e-5,
+            5.122_297e-8,
+            -8.604_672e-11,
+            2.000_188e-13,
+            -2.760_768_5e-16,
+        ];
+        const Q: [f32; 4] = [4.893_525e-3, 2.268_434_6e-3, 1.185_347e-4, 1.198_258_4e-6];
+        let (lo, hi) = (self.b.ins().f32const(-CLAMP), self.b.ins().f32const(CLAMP));
+        let x = self.b.ins().fmax(x, lo);
+        let x = self.b.ins().fmin(x, hi);
+        let x2 = self.b.ins().fmul(x, x);
+        let mut horner = |coeffs: &[f32]| {
+            let mut acc = self.b.ins().f32const(coeffs[coeffs.len() - 1]);
+            for c in coeffs.iter().rev().skip(1) {
+                let c = self.b.ins().f32const(*c);
+                let scaled = self.b.ins().fmul(x2, acc);
+                acc = self.b.ins().fadd(scaled, c);
+            }
+            acc
+        };
+        let (p, q) = (horner(&P), horner(&Q));
+        let p = self.b.ins().fmul(x, p);
+        self.b.ins().fdiv(p, q)
     }
 
     /// The registry index of `form`, for helpers that decode it.
@@ -393,7 +434,10 @@ impl Lowerer<'_, '_> {
                 return Err("a lane shuffle outside a statement".into());
             }
             Intrinsic::Exp => math(self, "exp")?,
-            Intrinsic::Tanh => math(self, "tanh")?,
+            Intrinsic::Tanh => {
+                let x = self.floats(args, t)?[0];
+                Val::S(self.tanh(x))
+            }
             Intrinsic::Cos => math(self, "cos")?,
             Intrinsic::Sin => math(self, "sin")?,
             Intrinsic::Max => math(self, "max")?,

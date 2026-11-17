@@ -115,29 +115,36 @@ fn tiled_finish(mut body: Body, after: &After) -> Body {
         return body;
     }
     lower::kernels::add_operands(&mut body, 2, after.others());
-    let e = || Expr::var("e");
-    let (r, c) = (
-        Expr::bin(BinOp::Div, e(), Expr::lit(16)),
-        Expr::bin(BinOp::Rem, e(), Expr::lit(16)),
-    );
-    let offset = Expr::bin(
+    // Each of the thread's rows, then its 16 columns.
+    let line = Expr::bin(BinOp::Mul, Expr::var("r"), Expr::var("n"));
+    let first = Expr::bin(BinOp::Add, Expr::var("at"), Expr::cast(Ty::U64, line));
+    let at = Expr::bin(
         BinOp::Add,
-        Expr::bin(BinOp::Mul, r.clone(), Expr::var("n")),
-        c,
+        Expr::var("first"),
+        Expr::cast(Ty::U64, Expr::var("c")),
     );
-    let at = Expr::bin(BinOp::Add, Expr::var("at"), Expr::cast(Ty::U64, offset));
     let sum = Expr::index(Expr::var("out"), at.clone());
-    body.stmts.push(Stmt::For {
-        var: "e".into(),
+    let cols = Stmt::For {
+        var: "c".into(),
         from: Expr::lit(0),
-        to: Expr::lit(256),
+        to: Expr::lit(16),
         step: Expr::lit(1),
         unroll: 0,
-        body: vec![Stmt::If {
-            cond: Expr::bin(BinOp::Lt, r, Expr::var("rows")),
-            then: finish(after, sum, at),
-            els: Vec::new(),
-        }],
+        body: finish(after, sum, at),
+    };
+    body.stmts.push(Stmt::For {
+        var: "r".into(),
+        from: Expr::lit(0),
+        to: Expr::var("rows"),
+        step: Expr::lit(1),
+        unroll: 0,
+        body: vec![
+            Stmt::Let {
+                name: "first".into(),
+                init: first,
+            },
+            cols,
+        ],
     });
     body
 }
