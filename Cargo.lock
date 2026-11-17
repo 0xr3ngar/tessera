@@ -2066,10 +2066,13 @@ dependencies = [
  "bundle",
  "engine",
  "frontend-settings",
+ "http-body-util",
  "serde",
+ "serde_json",
  "tasks",
  "tokio",
  "tokio-stream",
+ "tower",
 ]
 
 [[package]]
