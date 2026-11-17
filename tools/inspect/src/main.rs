@@ -113,7 +113,12 @@ fn run(args: &Args) -> Result<(), Box<dyn Error>> {
             (args.model.clone(), g)
         }
     };
-    let model = Model::new(name, source)?;
+    let parts = graph::Parts(args.specs.iter().map(|s| s.part).collect());
+    let model = Model::new(name, source, &parts)?;
+    for w in &model.whole {
+        let path = &model.source.weights[w.weight as usize].path;
+        eprintln!("{path:?} stays whole: {}", w.why);
+    }
     let pins = match &args.form {
         Some(form) => {
             lower::Pins::all(lower::form::named(form).ok_or_else(|| format!("no form `{form}`"))?)

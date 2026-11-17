@@ -1,13 +1,13 @@
 //! The small graph over two ranks matches one rank.
 
 use super::{Spec, host, runs};
-use graph::{Placement, shard};
-use interp::{Tensor, run, run_ranks};
+use graph::{Graph, Parts, Placement, Sharded, shard};
+use interp::{Tensor, run, run_parts, run_ranks};
 use lower::form::BF16_FORM;
 use lower::{Cluster, Device, View, Weight, lower};
 use run::Loopback;
 use testkit::{Noise, fill, max_abs_diff};
-use trace::DimName::{Context, Seqs};
+use trace::DimName::{Context, Rows, Seqs};
 use trace::{DimName, TensorType};
 
 const SIZES: [(DimName, u64); 2] = [(Seqs, 1), (Context, 8)];
@@ -30,7 +30,7 @@ fn close(label: &str, got: &Tensor, want: &Tensor) {
 pub fn shards(spec: &Spec) {
     let Some(small) = spec.small else { return };
     let g = small();
-    let sharded = shard(&g).unwrap();
+    let sharded = shard(&g, &Parts::even(RANKS)).unwrap().graph;
     let mut noise = Noise(5);
     let mut draw = |ty: &TensorType| fill(&g, ty, &SIZES, &mut noise).unwrap();
     // As bf16, so each rank can load its part packed.
@@ -67,4 +67,45 @@ pub fn shards(spec: &Spec) {
         let label = format!("{} on {}", spec.name, ranks.rank(0).device());
         close(&label, &got[0], &want[0]);
     }
+}
+
+/// One launch of `n` rows in slot zero.
+fn launch(n: usize) -> [Tensor; 3] {
+    let column = |of: fn(u32) -> u32| Tensor::u32(vec![n], (0..n as u32).map(of).collect());
+    [column(|p| p * 7 % 32), column(|p| p), column(|_| 0)]
+}
+
+/// A step graph over `parts` matches one rank's logits.
+pub fn step_ranks(g: &Graph, parts: &Parts) -> Sharded {
+    let sharded = shard(g, parts).unwrap();
+    let mut noise = Noise(7);
+    let sizes = [(Seqs, 1), (Context, 8)];
+    let mut draw = |ty: &TensorType| fill(g, ty, &sizes, &mut noise).unwrap();
+    let weights: Vec<Tensor> = g.weights.iter().map(|w| draw(&w.ty)).collect();
+    let n = 6;
+    let inputs = launch(n);
+    let want = run(g, &weights, 0, &inputs).unwrap();
+    let got = run_parts(&sharded.graph, &weights, 0, &inputs, parts).unwrap();
+    close("step interpreted", &got[1], &want[1]);
+    let ranks: Vec<u32> = (0..parts.ranks() as u32).collect();
+    let host = host();
+    let device = Device::guess(&host).zoned(pair()).ranked(ranks.clone());
+    let device = device.uneven(parts.0.clone());
+    let sizes = [(Seqs, 1), (Rows, n as u64), (Context, 8)];
+    let lowered = |r: &u32| lower(&sharded.graph, 0, &sizes, &device.clone().as_rank(*r));
+    let plans: Vec<_> = ranks.iter().map(|r| lowered(r).unwrap()).collect();
+    for settings in runs() {
+        let mut ranks = Loopback::open(&plans, &settings).unwrap();
+        for (at, w) in weights.iter().enumerate() {
+            ranks.load(at as u32, w.view()).unwrap();
+        }
+        let feeds: Vec<View> = inputs.iter().map(Tensor::view).collect();
+        let got = ranks.run(&feeds).unwrap();
+        close(
+            &format!("step on {}", ranks.rank(0).device()),
+            &got[1],
+            &want[1],
+        );
+    }
+    sharded
 }

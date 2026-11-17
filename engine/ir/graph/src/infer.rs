@@ -231,8 +231,14 @@ fn matmul(dims: &[Dim], x: &TensorType, w: &TensorType) -> Result<TensorType, Ty
     })
 }
 
-/// Heads group over key heads, and one float dtype throughout.
+/// Keys match values, heads group, all whole or head-split.
 fn heads_fit(dims: &[Dim], [q, k, v]: [&TensorType; 3], q_heads: usize) -> Result<(), TypeError> {
+    // Values may be narrower than keys, as in MLA.
+    need(
+        same_shape(dims, &front(&k.shape, 3), &front(&v.shape, 3))?,
+        ErrorKind::Shape,
+        || format!("keys {} and values {} differ", k.shape, v.shape),
+    )?;
     let heads = poly(dims, &q.shape.0[q_heads])?.as_const();
     let kv_heads = poly(dims, &k.shape.0[2])?.as_const();
     if let (Some(h), Some(kv)) = (heads, kv_heads) {
@@ -244,6 +250,13 @@ fn heads_fit(dims: &[Dim], [q, k, v]: [&TensorType; 3], q_heads: usize) -> Resul
         q.dtype.is_float() && q.dtype == k.dtype && k.dtype == v.dtype,
         ErrorKind::DType,
         || "attention needs one float dtype".into(),
+    )?;
+    let p = [q.placement, k.placement, v.placement];
+    let split = [q_heads as u32, 2, 2].map(|axis| Placement::Split { axis });
+    need(
+        p == [Placement::Replicated; 3] || p == split,
+        ErrorKind::Placement,
+        || format!("attention needs whole or head-split tensors, got {p:?}"),
     )
 }
 
@@ -253,12 +266,6 @@ fn attend(dims: &[Dim], a: &[&TensorType]) -> Result<TensorType, TypeError> {
         a[..3].iter().all(|t| t.rank() == 4),
         ErrorKind::Shape,
         || "attention takes [Seqs, Context, Heads, HeadDim] tensors".into(),
-    )?;
-    // Values may be narrower than keys, as in MLA.
-    need(
-        same_shape(dims, &front(&k.shape, 3), &front(&v.shape, 3))?,
-        ErrorKind::Shape,
-        || format!("keys {} and values {} differ", k.shape, v.shape),
     )?;
     // Query and key lengths may differ, as in decode.
     for axis in [0, 3] {
@@ -274,17 +281,6 @@ fn attend(dims: &[Dim], a: &[&TensorType]) -> Result<TensorType, TypeError> {
         )?;
     }
     heads_fit(dims, [q, k, v], 2)?;
-    let p = q.placement;
-    need(
-        k.placement == p && v.placement == p,
-        ErrorKind::Placement,
-        || "queries, keys and values must share a placement".into(),
-    )?;
-    need(
-        matches!(p, Placement::Replicated | Placement::Split { axis: 2 }),
-        ErrorKind::Placement,
-        || format!("attention needs whole or head-split tensors, got {p:?}"),
-    )?;
     if let Some(ids) = a.get(3) {
         key_lists(dims, ids, q, 2)?;
     }
@@ -669,11 +665,6 @@ fn attend_rows(dims: &[Dim], a: &[&TensorType]) -> Result<TensorType, TypeError>
         || "ragged attention takes [Rows, Heads, HeadDim] queries over kept rows".into(),
     )?;
     need(
-        same_shape(dims, &front(&k.shape, 3), &front(&v.shape, 3))?,
-        ErrorKind::Shape,
-        || format!("keys {} and values {} differ", k.shape, v.shape),
-    )?;
-    need(
         same(dims, &q.shape.0[2], &k.shape.0[3])?,
         ErrorKind::Shape,
         || {
@@ -684,10 +675,6 @@ fn attend_rows(dims: &[Dim], a: &[&TensorType]) -> Result<TensorType, TypeError>
         },
     )?;
     heads_fit(dims, [q, k, v], 1)?;
-    let whole = [q.placement, k.placement, v.placement] == [Placement::Replicated; 3];
-    need(whole, ErrorKind::Placement, || {
-        "ragged attention needs replicated tensors".into()
-    })?;
     row_ids(dims, &q.shape, a[3], a[4])?;
     if let Some(ids) = a.get(5) {
         key_lists(dims, ids, q, 1)?;
@@ -709,9 +696,15 @@ fn append(dims: &[Dim], kept: &TensorType, a: &[&TensorType]) -> Result<TensorTy
     need(rows.dtype == kept.dtype, ErrorKind::DType, || {
         format!("rows are {:?}, kept rows {:?}", rows.dtype, kept.dtype)
     })?;
-    let whole = [rows.placement, kept.placement] == [Placement::Replicated; 2];
-    need(whole, ErrorKind::Placement, || {
-        "kept rows must be replicated".into()
-    })?;
+    // Kept rows have one more leading axis than new rows.
+    need(
+        kept.placement == shift(rows.placement, 1)
+            && !matches!(rows.placement, Placement::Partial | Placement::Routed),
+        ErrorKind::Placement,
+        || {
+            let (r, k) = (rows.placement, kept.placement);
+            format!("{r:?} rows cannot join {k:?} kept rows")
+        },
+    )?;
     Ok(kept.clone())
 }

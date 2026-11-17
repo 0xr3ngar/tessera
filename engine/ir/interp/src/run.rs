@@ -87,9 +87,15 @@ pub fn bind(g: &Graph, find: impl Fn(&[PathSeg]) -> Option<Tensor>) -> Result<Ve
         .collect()
 }
 
-/// Kept rows, held between launches.
+/// Kept rows, held between launches, per rank.
 #[derive(Clone, Debug, Default)]
 pub struct Store {
+    ranks: Vec<Held>,
+}
+
+/// One rank's kept rows.
+#[derive(Clone, Debug, Default)]
+struct Held {
     kept: Vec<Option<Tensor>>,
     /// Which slot and position each kept tensor has had written.
     written: Vec<Vec<bool>>,
@@ -98,10 +104,20 @@ pub struct Store {
 impl Store {
     /// Positions kept tensor `i` has room for in each slot.
     pub fn len(&self, i: usize) -> usize {
-        let kept = self.kept.get(i).and_then(Option::as_ref);
-        kept.map_or(0, |t| t.shape[1])
+        let kept = self.ranks.first().and_then(|h| h.kept.get(i));
+        kept.and_then(Option::as_ref).map_or(0, |t| t.shape[1])
     }
 
+    /// Rank `r`'s kept rows.
+    fn rank(&mut self, r: usize) -> &mut Held {
+        if self.ranks.len() <= r {
+            self.ranks.resize(r + 1, Held::default());
+        }
+        &mut self.ranks[r]
+    }
+}
+
+impl Held {
     /// Writes rows by slot and position. Returns `ctx` rows each.
     fn append(
         &mut self,
@@ -338,12 +354,15 @@ fn run_on(
             let first = first_row(g, n, &sizes, parts, r)?;
             outs.push(match &n.op {
                 Op::View(View::Reshape(_)) => args[0].reshaped(wants[r].clone()),
-                // Kept rows are whole, so every rank appends the same.
-                Op::Append(_) if r > 0 => outs[0].clone(),
+                // Whole kept rows are the same on every rank.
+                Op::Append(_) if r > 0 && n.ty.placement == Placement::Replicated => {
+                    outs[0].clone()
+                }
                 Op::Append(i) => {
                     let kept = &g.kept[*i as usize].shape.0;
                     let (seqs, ctx) = (sizes.expr(&kept[0])?, sizes.expr(&kept[1])?);
-                    store.append(*i as usize, [args[0], args[1], args[2]], seqs, ctx)?
+                    let rows = [args[0], args[1], args[2]];
+                    store.rank(r).append(*i as usize, rows, seqs, ctx)?
                 }
                 Op::Row(row) if row.0.contains(&Stage::AllReduce) => {
                     let at = row

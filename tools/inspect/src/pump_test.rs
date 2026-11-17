@@ -8,8 +8,9 @@ use crate::stages::Setup;
 
 #[test]
 fn uneven_ranks_meet() {
-    let model = Model::new("qwen3".into(), named("qwen3", false).unwrap()).unwrap();
     let specs = [spec("strix:3").unwrap(), spec("gb10:1").unwrap()];
+    let parts = graph::Parts(vec![3, 1]);
+    let model = Model::new("qwen3".into(), named("qwen3", false).unwrap(), &parts).unwrap();
     let setup = Setup {
         model: &model,
         specs: &specs,

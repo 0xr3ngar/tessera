@@ -1,31 +1,93 @@
 //! Tensor parallel splits matmuls. Expert parallel splits sets.
 
-use crate::infer::infer;
+use crate::infer::{infer, poly};
 use crate::node::{Graph, Node, NodeId, Op, Row, Select, Stage};
 use crate::numerics::Numerics;
+use crate::parts::Parts;
 use crate::types::Placement;
 use crate::verify::{VerifyError, verify};
 
-/// Splits residual-bound matmuls, and routes gathered sets by matrix.
-pub fn shard(g: &Graph) -> Result<Graph, VerifyError> {
+/// A split graph, and the splits it left out.
+#[derive(Clone, Debug)]
+pub struct Sharded {
+    pub graph: Graph,
+    pub whole: Vec<Whole>,
+}
+
+/// A weight a split would claim, kept whole, and why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Whole {
+    pub weight: u32,
+    pub why: String,
+}
+
+/// Splits residual-bound matmuls and gathered sets that `parts` divides.
+pub fn shard(g: &Graph, parts: &Parts) -> Result<Sharded, VerifyError> {
     let mut out = g.clone();
+    let mut whole = Vec::new();
     let mut at = 0;
     while at < out.nodes.len() {
         let id = NodeId(at as u32);
         at += 1;
-        if returns(&out, id)
-            && let Ok(typed) = retype(&split(&out, id))
-        {
-            out = typed;
-            // The sum is the new node behind this one.
+        if !returns(&out, id) {
+            continue;
+        }
+        let tried = split(&out, id);
+        // The sum is the new node behind this one.
+        if adopt(&mut out, tried, parts, &mut whole) {
             at += 1;
         }
     }
-    if let Ok(typed) = retype(&route(&out)) {
-        out = typed;
-    }
+    let routed = route(&out);
+    adopt(&mut out, routed, parts, &mut whole);
     verify(&out)?;
-    Ok(out)
+    Ok(Sharded { graph: out, whole })
+}
+
+/// Takes `tried` if it types and fits `parts`.
+fn adopt(out: &mut Graph, tried: Graph, parts: &Parts, whole: &mut Vec<Whole>) -> bool {
+    let why = match retype(&tried) {
+        Ok(typed) => match misfit(&typed, parts) {
+            None => {
+                *out = typed;
+                return true;
+            }
+            Some(why) => why,
+        },
+        Err(e) => e.to_string(),
+    };
+    let claimed = (out.weights.iter().zip(&tried.weights))
+        .enumerate()
+        .filter(|(_, (was, now))| was.ty.placement != now.ty.placement);
+    for (w, _) in claimed {
+        let why = why.clone();
+        whole.push(Whole {
+            weight: w as u32,
+            why,
+        });
+    }
+    false
+}
+
+/// The first split axis `parts` cannot divide.
+fn misfit(g: &Graph, parts: &Parts) -> Option<String> {
+    for n in &g.nodes {
+        let Placement::Split { axis } = n.ty.placement else {
+            continue;
+        };
+        let size = poly(&g.dims, &n.ty.shape.0[axis as usize]).ok()?;
+        if size
+            .as_const()
+            .and_then(|s| parts.counts(s as usize))
+            .is_none()
+        {
+            let (shape, parts) = (&n.ty.shape, &parts.0);
+            return Some(format!(
+                "axis {axis} of {shape} does not divide by {parts:?}"
+            ));
+        }
+    }
+    None
 }
 
 /// A matmul of a whole weight, read by an add.
@@ -175,16 +237,23 @@ fn insert(g: &mut Graph, at: NodeId, node: Node) {
     }
 }
 
-/// Records what every op now gives, in order.
-fn retype(g: &Graph) -> Result<Graph, ()> {
+/// Retypes every op in order. Kept rows follow their appends.
+fn retype(g: &Graph) -> Result<Graph, crate::infer::TypeError> {
     let mut out = g.clone();
     for i in 0..out.nodes.len() {
+        if let Op::Append(k) = out.nodes[i].op {
+            let rows = out.node(out.nodes[i].args[0]).ty.placement;
+            out.kept[k as usize].placement = match rows {
+                Placement::Split { axis } => Placement::Split { axis: axis + 1 },
+                p => p,
+            };
+        }
         let args: Vec<_> = out.nodes[i]
             .args
             .iter()
             .map(|a| &out.nodes[a.0 as usize].ty)
             .collect();
-        let ty = infer(&out, &out.nodes[i].op, &args).map_err(|_| ())?;
+        let ty = infer(&out, &out.nodes[i].op, &args)?;
         out.nodes[i].ty = ty;
     }
     Ok(out)

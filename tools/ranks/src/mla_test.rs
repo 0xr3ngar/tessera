@@ -98,7 +98,7 @@ fn mla_run() {
     let positions = Tensor::u32(vec![1, ROWS], (0..ROWS as u32).collect());
     let want = run(&g, &floats, 0, &[tokens.clone(), positions.clone()]).unwrap();
     let want = want[0].floats().unwrap();
-    let sharded = shard(&g).unwrap();
+    let sharded = shard(&g, &graph::Parts::even(2)).unwrap().graph;
     let settings = runs().pop().unwrap();
     let kind = match settings.gpu() {
         Some(_) => ZoneKind::Gpu,

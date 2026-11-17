@@ -4,8 +4,8 @@ use super::small;
 use graph::{Parts, Placement, Stage, shard};
 use interp::{Tensor, run, run_parts};
 use lower::{Device, lower};
-use models::decoder::{Config, Moe, Scales, program};
-use parity::pair;
+use models::decoder::{Config, Moe, Scales, program, stepper};
+use parity::{pair, step_ranks};
 use run::Loopback;
 use run::testing::host;
 use testkit::{Noise, fill, max_abs_diff};
@@ -14,7 +14,7 @@ use trace::{DimName, TensorType};
 
 #[test]
 fn routed_experts() {
-    let g = shard(&small()).unwrap();
+    let g = shard(&small(), &Parts::even(2)).unwrap().graph;
     let placed = |p: Placement| g.weights.iter().filter(|w| w.ty.placement == p).count();
     // Per layer: q, k, v and both sets, then o.
     assert_eq!(placed(Placement::Split { axis: 0 }), 10);
@@ -52,7 +52,8 @@ fn quarters() -> Config {
 #[test]
 fn uneven_ranks() {
     let g = program::<(), Moe>(&quarters());
-    let sharded = shard(&g).unwrap();
+    let parts = Parts(vec![3, 1]);
+    let sharded = shard(&g, &parts).unwrap().graph;
     let mut noise = Noise(9);
     let mut draw = |ty: &TensorType| fill(&g, ty, &SIZES, &mut noise).unwrap();
     let weights: Vec<Tensor> = g.weights.iter().map(|w| draw(&w.ty)).collect();
@@ -60,7 +61,6 @@ fn uneven_ranks() {
     let want = run(&g, &weights, 0, &inputs).unwrap();
     let want = want[0].floats().unwrap();
     let scale = want.iter().fold(0.0f32, |m, v| m.max(v.abs()));
-    let parts = Parts(vec![3, 1]);
     let got = run_parts(&sharded, &weights, 0, &inputs, &parts).unwrap();
     let off = max_abs_diff(got[0].floats().unwrap(), want) / scale;
     assert!(off < 1e-4, "interpreter off {off}");
@@ -88,4 +88,18 @@ fn uneven_ranks() {
     let got = ranks.run(&feeds).unwrap();
     let off = max_abs_diff(got[0].floats().unwrap(), want) / scale;
     assert!(off < 1e-3, "plans off {off}");
+}
+
+/// Six KV heads on one rank, two on the other.
+#[test]
+fn uneven_step_heads() {
+    let sharded = step_ranks(&stepper::<(), Moe>(&quarters()), &Parts(vec![3, 1]));
+    assert_eq!(sharded.whole, []);
+    let g = &sharded.graph;
+    let placed = |p: Placement| g.weights.iter().filter(|w| w.ty.placement == p).count();
+    // Per layer: q, k, v and both sets, then o.
+    assert_eq!(placed(Placement::Split { axis: 0 }), 10);
+    assert_eq!(placed(Placement::Split { axis: 1 }), 2);
+    let heads = Placement::Split { axis: 2 };
+    assert!(g.kept.iter().all(|k| k.placement == heads));
 }
