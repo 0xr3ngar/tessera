@@ -1,23 +1,29 @@
 //! The engine's decode loop against the interpreter.
 
 use engine::{Batch, Engine, Event, Fair, Reason, Request, Row};
-use graph::Graph;
+use graph::{Graph, Op};
 use interp::{Store, Tensor, run_kept};
 use lower::{Recipe, Settings, Weight, kept, rules};
-use models::decoder::{Config, Swiglu, stepper};
+use models::decoder::{Config, Moe, Swiglu, stepper};
+use models::{mla, small};
 use run::testing::runs;
 use testkit::{Noise, weights};
+use trace::DimName::Picks;
 use trace::Norm;
 
-/// The interpreter's likeliest id per row of one launch.
-fn step(g: &Graph, weights: &[Tensor], store: &mut Store, rows: &[Row]) -> Vec<u32> {
+/// Tokens, positions and slots of `rows`.
+fn feeds(rows: &[Row]) -> Vec<Tensor> {
     let column = |of: fn(&Row) -> u32| Tensor::u32(vec![rows.len()], rows.iter().map(of).collect());
-    let feeds = [
+    vec![
         column(|r| r.token),
         column(|r| r.position),
         column(|r| r.slot),
-    ];
-    let got = run_kept(g, weights, store, 0, &feeds).unwrap();
+    ]
+}
+
+/// The interpreter's likeliest id per row of one launch.
+fn step(g: &Graph, weights: &[Tensor], store: &mut Store, rows: &[Row]) -> Vec<u32> {
+    let got = run_kept(g, weights, store, 0, &feeds(rows)).unwrap();
     got[0]
         .indices()
         .unwrap()
@@ -231,5 +237,39 @@ fn batch_matches_single() {
         batched(19, 2, 2, None, &s);
         // Cancelled answers free their slots for the rest.
         batched(23, 2, 64, Some(2), &s);
+    }
+}
+
+/// Trimmed steps return the whole graph's rows at their picks.
+#[test]
+fn trim_keeps_picks() {
+    let graphs = [
+        stepper::<Norm, Swiglu>(&small::qwen3()),
+        stepper::<(), Moe>(&small::granite()),
+        mla::stepper::<mla::Moe>(&small::deepseek()),
+        mla::stepper::<mla::RotatedMoe>(&small::glm53()),
+    ];
+    let launches = [
+        (vec![row(1, 5, 0), row(1, 7, 1), row(0, 9, 0)], vec![1, 2]),
+        (vec![row(0, 4, 1), row(1, 3, 2)], vec![0, 1]),
+    ];
+    for g in graphs {
+        let trimmed = graph::trim(&g, 0).unwrap();
+        let picked = |n: &graph::Node| n.op == Op::Matmul && n.ty.shape.0[0] == Picks.into();
+        assert!(trimmed.nodes.iter().any(picked));
+        let weights = weights(&g, &mut Noise(3));
+        let (mut whole, mut cut) = (Store::default(), Store::default());
+        for (rows, picks) in &launches {
+            let mut feeds = feeds(rows);
+            let want = run_kept(&g, &weights, &mut whole, 0, &feeds).unwrap();
+            feeds.push(Tensor::u32(vec![picks.len()], picks.clone()));
+            let got = run_kept(&trimmed, &weights, &mut cut, 0, &feeds).unwrap();
+            let (want, got) = (want[1].floats().unwrap(), got[1].floats().unwrap());
+            let width = got.len() / picks.len();
+            for (at, p) in picks.iter().enumerate() {
+                let p = *p as usize;
+                assert_eq!(got[at * width..][..width], want[p * width..][..width]);
+            }
+        }
     }
 }
