@@ -140,11 +140,14 @@ impl Device {
     /// The samples stored for `platform`, or a guess.
     pub fn stored(platform: Platform, settings: &Settings) -> Result<Self, Error> {
         let loaded = Self::path(settings, &platform).map(|p| Self::load(&p));
-        let device = match loaded {
+        let mut device = match loaded {
             Some(Err(e)) if e.kind() == ErrorKind::NotFound => Self::guess(settings),
             Some(loaded) => loaded?,
             None => Self::guess(settings),
         };
+        // A runner runs one zone.
+        device.cluster.zones.truncate(1);
+        device.cluster.links.clear();
         Ok(device.on(platform))
     }
 
