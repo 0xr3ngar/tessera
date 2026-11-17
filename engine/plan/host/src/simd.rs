@@ -179,24 +179,29 @@ macro_rules! level {
                 super::mix_in::<true>(out, b, keep, p)
             }
 
-            /// Vectors in one row of 16 sums.
-            const V: usize = 16 / L;
+            /// Vectors per row in a pass, and their columns.
+            const V: usize = 2;
+            const PASS: usize = V * L;
 
-            /// `R` rows of `x` times packed `w`, added into `acc`.
+            /// Rows of `x` times packed `w` from `col`.
             #[target_feature(enable = $feature)]
-            unsafe fn rows<const R: usize>(x: [&[f32]; R], packed: &[f32], acc: &mut [[f32; 16]]) {
-                let k = packed.len() / 16;
+            unsafe fn rows<const R: usize>(
+                x: [&[f32]; R],
+                packed: &[f32],
+                (col, acc): (usize, &mut [[f32; super::WIDE]]),
+            ) {
+                let k = packed.len() / super::WIDE;
                 let mut held = [[$zero(); V]; R];
                 let mut wv = [$zero(); V];
                 // SAFETY: `panel` checks every length used here.
                 unsafe {
                     for r in 0..R {
                         for v in 0..V {
-                            held[r][v] = $load(acc[r].as_ptr().add(v * L));
+                            held[r][v] = $load(acc[r].as_ptr().add(col + v * L));
                         }
                     }
                     for kk in 0..k {
-                        let p = packed.as_ptr().add(kk * 16);
+                        let p = packed.as_ptr().add(kk * super::WIDE + col);
                         for v in 0..V {
                             wv[v] = $load(p.add(v * L));
                         }
@@ -209,7 +214,7 @@ macro_rules! level {
                     }
                     for r in 0..R {
                         for v in 0..V {
-                            $store(acc[r].as_mut_ptr().add(v * L), held[r][v]);
+                            $store(acc[r].as_mut_ptr().add(col + v * L), held[r][v]);
                         }
                     }
                 }
@@ -217,30 +222,35 @@ macro_rules! level {
 
             /// Every row of `x` times packed `w`, in groups.
             #[target_feature(enable = $feature)]
-            pub unsafe fn panel(x: &[&[f32]], packed: &[f32], acc: &mut [[f32; 16]]) {
-                let k = packed.len() / 16;
+            pub unsafe fn panel(x: &[&[f32]], packed: &[f32], acc: &mut [[f32; super::WIDE]]) {
+                let k = packed.len() / super::WIDE;
                 assert!(x.iter().all(|r| r.len() == k), "rows of one length");
                 assert_eq!(acc.len(), x.len(), "a sum row per row");
-                for first in (0..x.len()).step_by($group) {
+                for (col, first) in (0..super::WIDE)
+                    .step_by(PASS)
+                    .flat_map(|c| (0..x.len()).step_by($group).map(move |f| (c, f)))
+                {
                     let row = |r: usize| x[first + r];
-                    let acc = &mut acc[first..];
+                    let acc = (col, &mut acc[first..]);
                     // SAFETY: the features are this function's own.
                     unsafe {
                         match (x.len() - first).min($group) {
-                            1 => rows::<1>(std::array::from_fn(row), packed, acc),
-                            2 => rows::<2>(std::array::from_fn(row), packed, acc),
-                            3 => rows::<3>(std::array::from_fn(row), packed, acc),
-                            4 => rows::<4>(std::array::from_fn(row), packed, acc),
-                            5 => rows::<5>(std::array::from_fn(row), packed, acc),
-                            6 => rows::<6>(std::array::from_fn(row), packed, acc),
-                            7 => rows::<7>(std::array::from_fn(row), packed, acc),
-                            8 => rows::<8>(std::array::from_fn(row), packed, acc),
-                            9 => rows::<9>(std::array::from_fn(row), packed, acc),
-                            10 => rows::<10>(std::array::from_fn(row), packed, acc),
-                            11 => rows::<11>(std::array::from_fn(row), packed, acc),
-                            12 => rows::<12>(std::array::from_fn(row), packed, acc),
-                            13 => rows::<13>(std::array::from_fn(row), packed, acc),
-                            _ => rows::<14>(std::array::from_fn(row), packed, acc),
+                            1 => rows::<1>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1)),
+                            2 => rows::<2>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1)),
+                            3 => rows::<3>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1)),
+                            4 => rows::<4>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1)),
+                            5 => rows::<5>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1)),
+                            6 => rows::<6>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1)),
+                            7 => rows::<7>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1)),
+                            8 => rows::<8>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1)),
+                            9 => rows::<9>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1)),
+                            10 => {
+                                rows::<10>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1))
+                            }
+                            11 => {
+                                rows::<11>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1))
+                            }
+                            _ => rows::<12>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1)),
                         }
                     }
                 }
@@ -258,7 +268,7 @@ fn whole<const R: usize, const L: usize, const F: bool>(
     tile_in::<R, 4, L, F>(x, w)
 }
 
-// AVX2 holds 6 rows of sums, AVX-512 holds 14.
+// AVX2 holds 6 rows of two vectors, AVX-512 holds 12.
 #[cfg(target_arch = "x86_64")]
 level!(
     avx2,
@@ -278,7 +288,7 @@ level!(
     "avx512f,fma",
     __m512,
     16,
-    14,
+    12,
     _mm512_setzero_ps,
     _mm512_loadu_ps,
     _mm512_fmadd_ps,
@@ -354,20 +364,24 @@ pub(crate) fn reduce(acc: &Lanes) -> [[f32; 4]; 4] {
     acc.map(|line| line.map(|lanes| lanes.iter().sum()))
 }
 
+/// Columns one packed block holds.
+pub(crate) const WIDE: usize = 32;
+
 /// Depth one packed panel holds, so it stays in cache.
 #[cfg(target_arch = "x86_64")]
-const PANEL: usize = 256;
+const PANEL: usize = 128;
 
-/// 16 rows of `w` as `[depth][16]`, by eights.
+/// Rows of `w` as `[depth][WIDE]`, eight at a time.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn pack(w: &[&[f32]], packed: &mut [f32]) {
     use std::arch::x86_64::*;
     let len = w[0].len();
-    assert!(w.len() == 16 && w.iter().all(|r| r.len() == len) && packed.len() >= len * 16);
+    assert!(w.len() == WIDE && w.iter().all(|r| r.len() == len) && packed.len() >= len * WIDE);
     let whole = len / 8 * 8;
-    for half in 0..2 {
-        let rows = &w[half * 8..half * 8 + 8];
+    for group in 0..WIDE / 8 {
+        let rows = &w[group * 8..group * 8 + 8];
+        let at = |kk: usize| kk * WIDE + group * 8;
         for kk in (0..whole).step_by(8) {
             // SAFETY: the assert covers every index here.
             unsafe {
@@ -391,32 +405,32 @@ unsafe fn pack(w: &[&[f32]], packed: &mut [f32]) {
                 for j in 0..4 {
                     let lo = _mm256_permute2f128_ps::<0x20>(q[j], q[j + 4]);
                     let hi = _mm256_permute2f128_ps::<0x31>(q[j], q[j + 4]);
-                    _mm256_storeu_ps(packed.as_mut_ptr().add((kk + j) * 16 + half * 8), lo);
-                    _mm256_storeu_ps(packed.as_mut_ptr().add((kk + j + 4) * 16 + half * 8), hi);
+                    _mm256_storeu_ps(packed.as_mut_ptr().add(at(kk + j)), lo);
+                    _mm256_storeu_ps(packed.as_mut_ptr().add(at(kk + j + 4)), hi);
                 }
             }
         }
         for kk in whole..len {
             for (i, row) in rows.iter().enumerate() {
-                packed[kk * 16 + half * 8 + i] = row[kk];
+                packed[at(kk) + i] = row[kk];
             }
         }
     }
 }
 
 /// Rows of `x` by those of `w`, if `level` packs.
-pub(crate) fn panel_at(level: Level, x: &[&[f32]], w: &[&[f32]], acc: &mut [[f32; 16]]) -> bool {
+pub(crate) fn panel_at(level: Level, x: &[&[f32]], w: &[&[f32]], acc: &mut [[f32; WIDE]]) -> bool {
     #[cfg(target_arch = "x86_64")]
     if level != Level::Base {
         let k = w[0].len();
-        let mut packed = [0.0f32; PANEL * 16];
+        let mut packed = [0.0f32; PANEL * WIDE];
         for start in (0..k).step_by(PANEL) {
             let end = (start + PANEL).min(k);
             let (ws, xs): (Vec<&[f32]>, Vec<&[f32]>) = (
                 w.iter().map(|r| &r[start..end]).collect(),
                 x.iter().map(|r| &r[start..end]).collect(),
             );
-            let packed = &mut packed[..(end - start) * 16];
+            let packed = &mut packed[..(end - start) * WIDE];
             // SAFETY: `Level::all` found the features.
             unsafe {
                 pack(&ws, packed);

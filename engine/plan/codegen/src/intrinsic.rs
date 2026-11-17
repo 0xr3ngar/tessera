@@ -555,7 +555,7 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                     let rows = |out: &str| format!(
                         "f_fn void f_dots_rows({out} o, u32 stride, f_const(float) x, f_const(float) w, u32 k, u32 rows) {{
     for (u32 r = 0; r < rows; r++) {{
-        for (u32 c = 0; c < 16; c++) {{
+        for (u32 c = 0; c < 32; c++) {{
             float s = 0.0f;
             for (u32 i = 0; i < k; i++) {{
                 s += x[r * k + i] * w[c * k + i];
@@ -581,7 +581,7 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                         let (at, stride, x_at, w_at) = (v[0][t].l(), u64::from(v[1][t].u()), v[2][t].l(), v[3][t].l());
                         let (k, rows) = (u64::from(v[4][t].u()), u64::from(v[5][t].u()));
                         for r in 0..rows {
-                            for c in 0..16 {
+                            for c in 0..32 {
                                 let mut sum = 0.0;
                                 for i in 0..k {
                                     let a = g.load(&x, x_at + r * k + i).f();

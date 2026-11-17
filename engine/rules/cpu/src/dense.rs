@@ -29,7 +29,7 @@ fn cpu_dense(
     sums[0] += x.dot(row, w, col, k);
 }
 
-/// One thread per `chunk` rows by 16 columns.
+/// One thread per `chunk` rows by 32 columns.
 #[kernel]
 fn cpu_tiled(
     x: Buf<F32>,
@@ -42,9 +42,9 @@ fn cpu_tiled(
     #[build] form: &'static dyn Stored,
 ) {
     // Threads on one row chunk sit side by side.
-    let cols = n / 16;
+    let cols = n / 32;
     let row = gid() / cols * chunk;
-    let col = gid() % cols * 16;
+    let col = gid() % cols * 32;
     if row >= m {
         return;
     }
@@ -115,7 +115,7 @@ fn tiled_finish(mut body: Body, after: &After) -> Body {
         return body;
     }
     lower::kernels::add_operands(&mut body, 2, after.others());
-    // Each of the thread's rows, then its 16 columns.
+    // Each of the thread's rows, then its 32 columns.
     let line = Expr::bin(BinOp::Mul, Expr::var("r"), Expr::var("n"));
     let first = Expr::bin(BinOp::Add, Expr::var("at"), Expr::cast(Ty::U64, line));
     let per_row = |inner: Vec<Stmt>| {
@@ -146,7 +146,7 @@ fn tiled_finish(mut body: Body, after: &After) -> Body {
     let cols = Stmt::For {
         var: "c".into(),
         from: Expr::lit(0),
-        to: Expr::lit(16),
+        to: Expr::lit(32),
         step: Expr::lit(1),
         unroll: 0,
         body: finish(after, sum, at),
@@ -177,7 +177,7 @@ fn row_calls(after: &After) -> Option<Vec<Stmt>> {
         let args = vec![
             Expr::var("out"),
             Expr::var("first"),
-            Expr::lit(16),
+            Expr::lit(32),
             Expr::lit(row.code()),
             Expr::Float(f64::from(scale)),
             Expr::var(&operand),
@@ -190,7 +190,7 @@ fn row_calls(after: &After) -> Option<Vec<Stmt>> {
 
 /// Blocks need whole columns and f32 or bf16 weights.
 fn tiles(m: usize, n: usize, form: &dyn Stored) -> bool {
-    m >= 4 && n.is_multiple_of(16) && ["f32", "bf16"].contains(&form.name())
+    m >= 4 && n.is_multiple_of(32) && ["f32", "bf16"].contains(&form.name())
 }
 
 /// Weights read as stored. Rows and operands come as f32.
@@ -249,7 +249,7 @@ fn tiled_launches(k: &Tiled, step: &Step) -> Vec<Launch> {
     let chunk = d.m.div_ceil(chunks);
     // One thread a group: workers split by group.
     let shape = Shape::Grid {
-        across: chunks * (d.n / 16),
+        across: chunks * (d.n / 32),
         down: 1,
         threads: 1,
     };
