@@ -16,5 +16,6 @@ bundle = { workspace = true }
 engine = { workspace = true }
 
 [dev-dependencies]
+frontend-settings = { workspace = true }
 serde_json = "1"
 testkit = { workspace = true }
