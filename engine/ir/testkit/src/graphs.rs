@@ -189,7 +189,7 @@ pub fn neighbours(bounded: &[Dim], [rows, taps, width]: [u64; 3]) -> Graph {
         .cast(DType::U32);
     let x = Port {
         role: Role::Logits,
-        ty: TensorType::new([Seqs, Vocab, Hidden], DType::F32),
+        ty: TensorType::new([bounded[0].name, Vocab, Hidden], DType::F32),
     };
     let [x] = m.entry(EntryKind::Forward, [x]);
     let near = x.permute(&[1, 0, 2]).gather(&ids).permute(&[2, 1, 0, 3]);

@@ -7,7 +7,7 @@ use lower::{Device, Settings, Step, Tensor, View, lower};
 use run::{Run, open};
 use testkit::Noise;
 use testkit::graphs::{
-    attention, indexed, indexed_rows, linear, rotation, routed, rows, table, turned,
+    attention, indexed, indexed_rows, linear, neighbours, rotation, routed, rows, table, turned,
 };
 use trace::{Dim, Graph, TensorType};
 
@@ -154,6 +154,7 @@ impl Grid {
         );
         for &width in self.widths.iter().chain(&self.vocabs) {
             cases.push(by_rows(rows(&one, width)));
+            cases.push(by_rows(neighbours(&one, [16, 9, width])));
             cases.extend((self.vocabs.iter()).map(|v| by_rows(table(&one, *v, width))));
         }
         for &heads in &self.heads {

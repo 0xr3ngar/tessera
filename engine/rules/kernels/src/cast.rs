@@ -2,12 +2,17 @@
 
 use codegen::prelude::*;
 use graph::{DType, Op};
-use lower::form::F32_FORM;
+use lower::form::Load as Stored;
 use lower::{Draft, Kernel, T, Term, Tree};
 
 /// One thread per element. Negatives and NaN give zero.
 #[kernel]
-fn cast(x: Buf<F32>, mut out: BufMut<U32>, len: u32) {
+fn cast(
+    #[form(form)] x: Buf<Dyn>,
+    mut out: BufMut<U32>,
+    len: u32,
+    #[build] form: &'static dyn Stored,
+) {
     if gid() >= len {
         return;
     }
@@ -20,9 +25,15 @@ fn cast(x: Buf<F32>, mut out: BufMut<U32>, len: u32) {
 }
 
 #[derive(Clone, Copy, Debug, Kernel)]
-#[launch(cast, threads = self.len)]
+#[launch(cast(self.form), name = self.form.suffixed("cast"), threads = self.len, accepts = cast_accepts)]
 pub struct Cast {
     pub len: usize,
+    /// How the input is stored.
+    pub form: &'static dyn Stored,
+}
+
+fn cast_accepts(k: &Cast, input: usize, form: &dyn Stored) -> bool {
+    k.form.taken(input, 0, form)
 }
 
 fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
@@ -31,11 +42,12 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
         return None;
     }
     let x = node.args[0];
-    if tree.node(x).form.name() != F32_FORM.name() {
-        return None;
-    }
     let len = tree.elements(at);
-    Some(vec![Draft::new(Cast { len }, [x], len)])
+    let cast = Cast {
+        len,
+        form: tree.node(x).form,
+    };
+    Some(vec![Draft::new(cast, [x], len)])
 }
 
 lower::rule!("cast", propose);
