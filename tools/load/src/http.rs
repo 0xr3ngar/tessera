@@ -12,9 +12,14 @@ pub(crate) struct Sample {
     pub latency_ms: f64,
 }
 
-/// One `data:` event. Only the last has a reason.
+/// One `data:` chunk. Only the last has a reason.
 #[derive(Deserialize)]
 struct Piece {
+    choices: [Choice; 1],
+}
+
+#[derive(Deserialize)]
+struct Choice {
     finish_reason: Option<String>,
 }
 
@@ -57,12 +62,16 @@ pub(crate) fn complete(agent: &ureq::Agent, url: &str, body: &str) -> Result<Sam
         let Some(data) = line.strip_prefix("data:") else {
             continue;
         };
+        let data = data.trim_start();
+        if data == "[DONE]" {
+            break;
+        }
         if done.is_some() {
             return Err("data after stream completion".into());
         }
-        let piece: Piece = serde_json::from_str(data.trim_start())?;
+        let [choice] = serde_json::from_str::<Piece>(data)?.choices;
         let ms = start.elapsed().as_secs_f64() * 1e3;
-        match piece.finish_reason {
+        match choice.finish_reason {
             Some(_) => done = Some(ms),
             None => {
                 tokens += 1;

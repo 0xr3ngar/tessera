@@ -1,20 +1,24 @@
-//! `tessera-serve --model <dir> [--port 8080] [--context 4096] [--slots 4]`
+//! OpenAI-style HTTP routes over one loaded model.
 
 mod server;
+mod wire;
 
 use engine::{Batch, Engine, Fair, Pins, Recipe};
 use server::{Job, Shared};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Instant;
 use tasks::Generate;
 
-const USAGE: &str = "usage: tessera-serve --model <dir> [--host <addr>] [--port <n>] \
+const USAGE: &str = "usage: tessera-serve --model <dir> [--name <id>] [--host <addr>] [--port <n>] \
 [--context <rows>] [--slots <n>]";
 
 struct Args {
     model: PathBuf,
+    /// The model id clients see. Left out: `--model` as given.
+    name: Option<String>,
     host: String,
     port: u16,
     context: usize,
@@ -25,6 +29,7 @@ struct Args {
 fn args() -> Option<Args> {
     let mut args = Args {
         model: PathBuf::new(),
+        name: None,
         host: "127.0.0.1".into(),
         port: 8080,
         context: 4096,
@@ -35,6 +40,7 @@ fn args() -> Option<Args> {
         let value = given.next()?;
         match flag.as_str() {
             "--model" => args.model = value.into(),
+            "--name" => args.name = Some(value),
             "--host" => args.host = value,
             "--port" => args.port = value.parse().ok()?,
             "--context" => args.context = value.parse().ok()?,
@@ -92,6 +98,9 @@ fn engine_thread(
     let shared = Shared {
         generate,
         jobs: Mutex::new(queue),
+        model: (args.name.clone()).unwrap_or_else(|| args.model.display().to_string()),
+        created: server::now(),
+        answers: AtomicU64::new(0),
     };
     let _ = ready.send(Ok(Arc::new(shared)));
     let mut batch = Batch::new(&mut engine, Box::new(Fair));
