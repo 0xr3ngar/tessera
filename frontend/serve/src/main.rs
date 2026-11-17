@@ -11,7 +11,7 @@ use tasks::{Generate, Job, Queued, Threaded};
 
 const USAGE: &str = "usage: tessera-serve --model <dir> [--host <addr>] [--port <n>] \
 [--max-model-len <tokens>] [--slots <n>] [--served-model-name <name>] \
-[--task generate|embed]";
+[--task generate|embed] [--reject-unknown-fields]";
 
 struct Args {
     model: PathBuf,
@@ -23,6 +23,8 @@ struct Args {
     slots: usize,
     name: Option<String>,
     embed: bool,
+    /// Unknown request fields refuse the request.
+    strict: bool,
 }
 
 fn args() -> Option<Args> {
@@ -34,9 +36,14 @@ fn args() -> Option<Args> {
         slots: 4,
         name: None,
         embed: false,
+        strict: false,
     };
     let mut given = std::env::args().skip(1);
     while let Some(flag) = given.next() {
+        if flag == "--reject-unknown-fields" {
+            args.strict = true;
+            continue;
+        }
         let value = given.next()?;
         match flag.as_str() {
             "--model" => args.model = value.into(),
@@ -92,6 +99,7 @@ fn engine_thread(args: &Args, settings: &Settings, info: Info, slot: &Slot) -> R
         chat: Some(generate),
         generator: Some(Arc::new(queued)),
         embed: None,
+        strict: args.strict,
     };
     let _ = slot.set(model);
     let mut batch = Batch::new(&mut engine, Box::new(Fair));
@@ -120,6 +128,7 @@ fn load(args: Args, slot: Slot) {
         name: name.unwrap_or_else(|| args.model.display().to_string()),
         context: args.max_model_len,
     };
+    let strict = args.strict;
     let failed = match args.embed {
         false => engine_thread(&args, &settings, info, &slot),
         true => Threaded::open(args.model, settings)
@@ -131,6 +140,7 @@ fn load(args: Args, slot: Slot) {
                     chat: None,
                     generator: None,
                     embed: Some(embedder),
+                    strict,
                 });
             })
             .map_err(|e| e.to_string()),

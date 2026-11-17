@@ -42,11 +42,9 @@ fn send(request: ureq::Request, body: Option<&str>) -> Result<ureq::Response, Fa
 }
 
 pub(crate) fn health(agent: &ureq::Agent, url: &str) -> Result<(), Failure> {
-    let text = send(agent.get(&format!("{url}/health")), None)?.into_string()?;
-    match text == "ok" {
-        true => Ok(()),
-        false => Err("health response is not ok".into()),
-    }
+    // A status other than 200 is an error here.
+    send(agent.get(&format!("{url}/health")), None)?;
+    Ok(())
 }
 
 /// Streams one completion. Times the first token and the end.

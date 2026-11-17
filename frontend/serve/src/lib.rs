@@ -29,6 +29,8 @@ pub struct Model {
     pub chat: Option<Arc<dyn Chat>>,
     pub generator: Option<Arc<dyn Generator>>,
     pub embed: Option<Arc<dyn Embed>>,
+    /// Unknown request fields refuse the request. Else they warn.
+    pub strict: bool,
 }
 
 /// The model once it loads. Until then routes answer 503.
@@ -76,16 +78,23 @@ async fn reply(
     }
 }
 
+/// Ready or loading, as llama.cpp reports it.
 async fn health(State(slot): State<Slot>) -> Response {
     match slot.get() {
-        Some(_) => "ok".into_response(),
-        None => refuse(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "the model is loading",
-            None,
-        )
-        .into_response(),
+        Some(_) => Json(json!({"status": "ok"})).into_response(),
+        None => {
+            let error = json!({"code": 503, "message": "the model is loading", "type": "unavailable_error"});
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({"error": error})),
+            )
+                .into_response()
+        }
     }
+}
+
+async fn version() -> Json<Value> {
+    Json(json!({"version": env!("CARGO_PKG_VERSION")}))
 }
 
 async fn models(State(slot): State<Slot>) -> Response {
@@ -105,10 +114,9 @@ async fn models(State(slot): State<Slot>) -> Response {
 
 async fn tokenize(State(slot): State<Slot>, body: Bytes) -> Response {
     reply(&slot, move |m| {
-        let known = ["prompt", "messages", "chat_template_kwargs"];
-        let text = match wire::parse(&m.info, &body, &known)? {
-            Tokenize::Prompt { prompt } => prompt,
-            Tokenize::Chat(messages) => render(m, messages)?,
+        let text = match wire::parse(m, &body)? {
+            Tokenize::Prompt { prompt, .. } => prompt,
+            Tokenize::Chat { messages, .. } => render(m, messages)?,
         };
         let tokens = m
             .tokens
@@ -121,7 +129,7 @@ async fn tokenize(State(slot): State<Slot>, body: Bytes) -> Response {
 
 async fn detokenize(State(slot): State<Slot>, body: Bytes) -> Response {
     reply(&slot, move |m| {
-        let d: Detokenize = wire::parse(&m.info, &body, &["tokens"])?;
+        let d: Detokenize = wire::parse(m, &body)?;
         Ok(json!({"prompt": m.tokens.decode(&d.tokens)}))
     })
     .await
@@ -133,13 +141,7 @@ async fn embeddings(State(slot): State<Slot>, body: Bytes) -> Response {
             .embed
             .as_ref()
             .ok_or_else(|| refuse(StatusCode::NOT_FOUND, "the model does not embed text", None))?;
-        let e: Embeddings = wire::parse(&m.info, &body, &["input", "encoding_format", "user"])?;
-        if e.encoding_format.as_deref().is_some_and(|f| f != "float") {
-            return Err(bad(
-                "only the float encoding is supported",
-                "encoding_format",
-            ));
-        }
+        let e: Embeddings = wire::parse(m, &body)?;
         let texts = e.input.list();
         let got = embed
             .embed(&texts)
@@ -157,6 +159,10 @@ async fn embeddings(State(slot): State<Slot>, body: Bytes) -> Response {
 pub fn router(slot: Slot) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/v1/health", get(health))
+        .route("/v1/health/ready", get(health))
+        .route("/ping", get(health))
+        .route("/version", get(version))
         .route("/v1/models", get(models))
         .route("/tokenize", post(tokenize))
         .route("/detokenize", post(detokenize))

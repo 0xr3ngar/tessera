@@ -7,19 +7,20 @@ use std::sync::{Arc, OnceLock};
 #[tokio::test]
 async fn health_waits() {
     let empty: Slot = Arc::new(OnceLock::new());
-    assert_eq!(
-        call(&empty, "/health", None).await.0,
-        StatusCode::SERVICE_UNAVAILABLE
-    );
+    let (status, loading) = json(&empty, "/v1/health", None).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(loading["error"]["type"], "unavailable_error");
     let (status, _) = call(&empty, "/v1/completions", Some(json!({"prompt": "a"}))).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    let slot = loaded(&Arc::new(Mock::default()));
-    assert_eq!(call(&slot, "/health", None).await.0, StatusCode::OK);
+    let slot = loaded(&Arc::new(Mock::default()), false);
+    assert_eq!(json(&slot, "/ping", None).await.1, json!({"status": "ok"}));
+    let (_, version) = json(&slot, "/version", None).await;
+    assert_eq!(version["version"], env!("CARGO_PKG_VERSION"));
 }
 
 #[tokio::test]
 async fn small_routes() {
-    let slot = loaded(&Arc::new(Mock::default()));
+    let slot = loaded(&Arc::new(Mock::default()), false);
     let (_, models) = json(&slot, "/v1/models", None).await;
     assert_eq!(
         (

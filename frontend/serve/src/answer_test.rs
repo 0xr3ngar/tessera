@@ -6,7 +6,7 @@ use std::sync::Arc;
 #[tokio::test]
 async fn completion_whole() {
     let mock = Arc::new(Mock::default());
-    let slot = loaded(&mock);
+    let slot = loaded(&mock, false);
     let body = json!({"model": "m", "prompt": "abcd", "stop": "x", "temperature": 0});
     let (status, got) = json(&slot, "/v1/completions", Some(body)).await;
     assert_eq!(status, StatusCode::OK);
@@ -24,7 +24,7 @@ async fn completion_whole() {
 
 #[tokio::test]
 async fn chat_streamed() {
-    let slot = loaded(&Arc::new(Mock::default()));
+    let slot = loaded(&Arc::new(Mock::default()), false);
     let body = json!({
         "messages": [{"role": "user", "content": [{"type": "text", "text": "hi"}]}],
         "stream": true,
@@ -62,10 +62,10 @@ async fn chat_streamed() {
 
 #[tokio::test]
 async fn refusals() {
-    let slot = loaded(&Arc::new(Mock::default()));
+    let slot = loaded(&Arc::new(Mock::default()), false);
     let cases = [
         (json!({"model": "other", "prompt": "a"}), 404, "model"),
-        (json!({"prompt": "a", "tools": []}), 400, "tools"),
+        (json!({"prompt": "a", "tools": [{}]}), 400, "tools"),
         (
             json!({"prompt": "a", "temperature": 0.7}),
             400,
@@ -84,5 +84,17 @@ async fn refusals() {
             (status, &json!(param))
         );
         assert_eq!(error["error"]["code"], status);
+    }
+}
+
+#[tokio::test]
+async fn unknown_fields() {
+    let said = json!({"role": "user", "content": "hi", "name": "x", "reasoning": "r"});
+    let body = json!({"messages": [said]});
+    for (strict, status) in [(false, 200), (true, 400)] {
+        let slot = loaded(&Arc::new(Mock::default()), strict);
+        let (got, answer) = json(&slot, "/v1/chat/completions", Some(body.clone())).await;
+        assert_eq!(got.as_u16(), status);
+        assert_eq!(strict, answer["error"]["param"] == "messages[0].name");
     }
 }

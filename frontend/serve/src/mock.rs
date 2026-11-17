@@ -67,7 +67,7 @@ impl Embed for Mock {
 }
 
 /// The mock as model `m`, 16 tokens of context.
-pub fn loaded(mock: &Arc<Mock>) -> Slot {
+pub fn loaded(mock: &Arc<Mock>, strict: bool) -> Slot {
     let slot: Slot = Arc::new(OnceLock::new());
     let _ = slot.set(Model {
         info: Info {
@@ -78,6 +78,7 @@ pub fn loaded(mock: &Arc<Mock>) -> Slot {
         chat: Some(mock.clone()),
         generator: Some(mock.clone()),
         embed: Some(mock.clone()),
+        strict,
     });
     slot
 }

@@ -1,6 +1,6 @@
 //! Completions and chat completions, whole or streamed.
 
-use crate::wire::{self, COMMON, Chat, Common, Completion, Prompt, Refusal, bad, refuse};
+use crate::wire::{self, Chat, Common, Completion, Prompt, Refusal, bad, refuse};
 use crate::{Model, Slot, with_model};
 use axum::Json;
 use axum::body::Bytes;
@@ -11,6 +11,7 @@ use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tasks::api::{Finish, Params, Step};
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
@@ -116,7 +117,7 @@ fn start(
 }
 
 fn complete(model: &Model, body: &Bytes) -> Result<Started, Refusal> {
-    let c: Completion = wire::parse(&model.info, body, &[&COMMON[..], &["prompt"]].concat())?;
+    let c: Completion = wire::parse(model, body)?;
     let prompt = match c.prompt {
         Prompt::Ids(ids) => ids,
         Prompt::Text(texts) => match texts.list().as_slice() {
@@ -130,10 +131,8 @@ fn complete(model: &Model, body: &Bytes) -> Result<Started, Refusal> {
     start(model, Kind::Text, prompt, c.common.max_tokens, c.common)
 }
 
-const CHAT: [&str; 3] = ["messages", "chat_template_kwargs", "max_completion_tokens"];
-
 fn chat(model: &Model, body: &Bytes) -> Result<Started, Refusal> {
-    let c: Chat = wire::parse(&model.info, body, &[&COMMON[..], &CHAT].concat())?;
+    let c: Chat = wire::parse(model, body)?;
     let prompt = crate::render(model, c.messages)?;
     let prompt = model
         .tokens
@@ -248,10 +247,17 @@ impl Started {
                     return;
                 }
             }
+            // The steps stopped before `Done`.
+            send(refuse(StatusCode::SERVICE_UNAVAILABLE, "the engine stopped", None).body());
+            let _ = out.send(Event::default().data("[DONE]"));
         });
         let events = UnboundedReceiverStream::new(events).map(Ok::<Event, Infallible>);
         Sse::new(events)
-            .keep_alive(KeepAlive::default())
+            .keep_alive(
+                KeepAlive::new()
+                    .interval(Duration::from_secs(5))
+                    .text("keep-alive"),
+            )
             .into_response()
     }
 
