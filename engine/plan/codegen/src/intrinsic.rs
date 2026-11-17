@@ -507,7 +507,7 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                     for t in (0..g.threads).filter(|t| mask[*t]) {
                         let (at, stride, x_at, w_at) = (v[0][t].l(), u64::from(v[1][t].u()), v[2][t].l(), v[3][t].l());
                         let (k, rows) = (u64::from(v[4][t].u()), u64::from(v[5][t].u()));
-                        for r in 0..rows.min(16) {
+                        for r in 0..rows {
                             for c in 0..16 {
                                 let mut sum = 0.0;
                                 for i in 0..k {
