@@ -11,6 +11,7 @@ use crate::tree::{T, Tree};
 use codegen::hash;
 use codegen::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt};
 use codegen::prelude::*;
+use codegen::stage::Row;
 use graph::Act;
 use sim::Load;
 use std::cmp::Ordering;
@@ -56,6 +57,21 @@ pub enum MapStage {
     launches = map_launches,
 )]
 pub struct Map(pub Vec<MapStage>, pub Vec<Option<usize>>);
+
+impl MapStage {
+    /// The host row call for this stage, and its scale.
+    pub fn row(&self) -> (Row, f32) {
+        match self {
+            MapStage::Add => (Row::Add, 0.0),
+            MapStage::Mul => (Row::Mul, 0.0),
+            MapStage::Scale(by) => (Row::Scale, *by),
+            MapStage::Act(Act::GeluTanh) => (Row::GeluTanh, 0.0),
+            MapStage::Act(Act::Silu) => (Row::Silu, 0.0),
+            MapStage::Act(Act::Sigmoid) => (Row::Sigmoid, 0.0),
+            MapStage::Act(Act::Relu) => (Row::Relu, 0.0),
+        }
+    }
+}
 
 impl Map {
     /// Stages whose operands are as long as the input.

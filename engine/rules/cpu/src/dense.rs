@@ -4,7 +4,7 @@ use crate::{GUESS, source};
 use codegen::ir::{BinOp, Body, Expr, Intrinsic, Stmt, Ty};
 use codegen::prelude::*;
 use lower::form::Load as Stored;
-use lower::kernels::finish;
+use lower::kernels::{MapStage, finish};
 use lower::sites::{After, Picked as Pick};
 use lower::{Draft, Kernel, Launch, Shape, Step, T, Tree, ZoneKind, sites};
 
@@ -118,6 +118,25 @@ fn tiled_finish(mut body: Body, after: &After) -> Body {
     // Each of the thread's rows, then its 16 columns.
     let line = Expr::bin(BinOp::Mul, Expr::var("r"), Expr::var("n"));
     let first = Expr::bin(BinOp::Add, Expr::var("at"), Expr::cast(Ty::U64, line));
+    let per_row = |inner: Vec<Stmt>| {
+        let mut stmts = vec![Stmt::Let {
+            name: "first".into(),
+            init: first.clone(),
+        }];
+        stmts.extend(inner);
+        Stmt::For {
+            var: "r".into(),
+            from: Expr::lit(0),
+            to: Expr::var("rows"),
+            step: Expr::lit(1),
+            unroll: 0,
+            body: stmts,
+        }
+    };
+    if let Some(calls) = row_calls(after) {
+        body.stmts.push(per_row(calls));
+        return body;
+    }
     let at = Expr::bin(
         BinOp::Add,
         Expr::var("first"),
@@ -132,21 +151,41 @@ fn tiled_finish(mut body: Body, after: &After) -> Body {
         unroll: 0,
         body: finish(after, sum, at),
     };
-    body.stmts.push(Stmt::For {
-        var: "r".into(),
-        from: Expr::lit(0),
-        to: Expr::var("rows"),
-        step: Expr::lit(1),
-        unroll: 0,
-        body: vec![
-            Stmt::Let {
-                name: "first".into(),
-                init: first,
-            },
-            cols,
-        ],
-    });
+    body.stmts.push(per_row(vec![cols]));
     body
+}
+
+/// One row call per stage, where the sum can lead.
+fn row_calls(after: &After) -> Option<Vec<Stmt>> {
+    // Add and multiply commute: a second sum may lead.
+    let leads = after.sum == 0
+        || (after.sum == 1 && matches!(after.stages[0], MapStage::Add | MapStage::Mul));
+    if !leads {
+        return None;
+    }
+    let (mut calls, mut taken) = (Vec::new(), 0);
+    for stage in &after.stages {
+        let (row, scale) = stage.row();
+        // The k-th add or multiply reads operand `ak`.
+        let operand = match row.reads() {
+            true => {
+                taken += 1;
+                format!("a{}", taken - 1)
+            }
+            false => "out".into(),
+        };
+        let args = vec![
+            Expr::var("out"),
+            Expr::var("first"),
+            Expr::lit(16),
+            Expr::lit(row.code()),
+            Expr::Float(f64::from(scale)),
+            Expr::var(&operand),
+            Expr::var("first"),
+        ];
+        calls.push(Stmt::Expr(Expr::Call(Intrinsic::Stage, args)));
+    }
+    Some(calls)
 }
 
 /// Blocks need whole columns and f32 or bf16 weights.

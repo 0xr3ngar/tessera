@@ -190,6 +190,35 @@ tiles! {
     dots_bf16 = BF16_FORM;
 }
 
+/// One stage over a row. Only two stages read `b`.
+#[allow(clippy::too_many_arguments, reason = "two rows, a stage and a length")]
+pub unsafe extern "C" fn stage_f32(
+    out: *mut u8,
+    out_len: usize,
+    at: usize,
+    n: usize,
+    code: u32,
+    s: f32,
+    b: *const u8,
+    b_len: usize,
+    b_at: usize,
+) {
+    if unsafe { within(out, out_len, (at + n) * 4) }.is_none() {
+        return;
+    }
+    let reads = codegen::stage::Row::from_code(code).is_some_and(|r| r.reads());
+    let operand = match reads {
+        true => match unsafe { within(b, b_len, (b_at + n) * 4) } {
+            Some(b) => Some((b, b_at)),
+            None => return,
+        },
+        false => None,
+    };
+    // SAFETY: checked above. Operands never share the output's buffer.
+    let out = unsafe { std::slice::from_raw_parts_mut(out, out_len) };
+    lockstep::stage_f32(out, at, n, (code, s), operand);
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "two rows, two scales and a length"
