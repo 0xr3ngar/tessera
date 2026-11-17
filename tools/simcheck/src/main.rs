@@ -76,6 +76,10 @@ fn all_windows(root: &Path, s: &Settings) -> Result<Vec<Window>> {
         let Ok(text) = std::fs::read_to_string(root.join(path)) else {
             continue;
         };
+        // Both sides of a conflict match. tessera-lint reports the file.
+        if shape::conflict(&text).is_some() {
+            continue;
+        }
         out.extend(cut(path, &text, s.similar_window, s.similar_spacing));
     }
     Ok(out)

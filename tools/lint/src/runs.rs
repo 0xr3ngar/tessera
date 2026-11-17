@@ -80,7 +80,11 @@ type Done = Vec<(usize, usize, usize)>;
 
 /// Longest steps go first. Each region reports once.
 pub fn check(sources: &[Source], out: &mut Vec<Violation>) {
-    let files: Vec<Shaped> = sources.iter().map(shaped).collect();
+    // Both sides of a merge conflict match.
+    let resolved = sources
+        .iter()
+        .filter(|s| shape::conflict(&s.text).is_none());
+    let files: Vec<Shaped> = resolved.map(shaped).collect();
     let mut steps = LIMITS.shape_steps.clone();
     steps.sort_by(|a, b| b.cmp(a));
     let mut done = Done::new();
