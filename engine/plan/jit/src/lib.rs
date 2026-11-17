@@ -1,6 +1,8 @@
 //! Kernel bodies compiled for the host at plan time.
 
 mod expr;
+#[cfg(test)]
+mod lib_test;
 mod lower;
 mod runtime;
 
