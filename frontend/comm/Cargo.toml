@@ -13,10 +13,10 @@ engine = { workspace = true }
 frontend-settings = { workspace = true }
 graph = { workspace = true }
 interp = { workspace = true }
-rules = { workspace = true }
 lower = { workspace = true }
 mem = { workspace = true }
 models = { workspace = true }
+rules = { workspace = true }
 run = { workspace = true }
 testkit = { workspace = true }
 trace = { workspace = true }

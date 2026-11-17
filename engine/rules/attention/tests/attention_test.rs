@@ -213,7 +213,7 @@ fn gap(g: &Graph, inputs: &[Tensor], name: &str, settings: &Settings) -> f32 {
 }
 
 #[test]
-fn rules_match_cpu() {
+fn gpu_rules_match() {
     let dims = [
         Dim::bounded(Seqs, 4),
         Dim::bounded(Rows, 8),
