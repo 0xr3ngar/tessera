@@ -218,6 +218,7 @@ impl<F: Elems> BufMut<F> {
         _: u64,
         _: u32,
         _: u32,
+        _: u32,
     ) {
         device()
     }

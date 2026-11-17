@@ -367,6 +367,8 @@ pub struct Dots {
     pub x_at: usize,
     pub w_at: usize,
     pub k: usize,
+    /// Columns that exist. The rest read as zero.
+    pub cols: usize,
 }
 
 /// `rows` of `x` against `BLOCK` rows of `w`, into `out`.
@@ -381,6 +383,12 @@ pub fn dots_form(form: &dyn Load, out: &mut [u8], x: &[u8], w: &[u8], d: &Dots, 
     let mut wr: [&[f32]; BLOCK] = [&[]; BLOCK];
     for (c, h) in kept.iter_mut().enumerate() {
         let first = d.w_at + c * k;
+        if c >= d.cols {
+            h.resize(k, 0.0);
+            let h: &Vec<f32> = h;
+            wr[c] = h.as_slice();
+            continue;
+        }
         wr[c] = match form.read() {
             Read::F32 => f32_row(w, first, k, h),
             Read::Bf16 => {
@@ -403,7 +411,7 @@ pub fn dots_form(form: &dyn Load, out: &mut [u8], x: &[u8], w: &[u8], d: &Dots, 
         }
     }
     for (r, line) in acc.iter().enumerate() {
-        for (c, v) in line.iter().enumerate() {
+        for (c, v) in line.iter().enumerate().take(d.cols) {
             st_f32(out, d.at + r * d.stride + c, *v);
         }
     }

@@ -592,8 +592,8 @@ impl Lowerer<'_, '_> {
                 Val::S(sum.expect("a sum"))
             }
             Intrinsic::Dots => {
-                let [out, at, stride, x, x_at, w, w_at, k, rows] = args else {
-                    return Err("a dots takes nine arguments".into());
+                let [out, at, stride, x, x_at, w, w_at, k, rows, cols] = args else {
+                    return Err("a dots takes ten arguments".into());
                 };
                 let mut bufs = Vec::new();
                 for name in [out, x, w] {
@@ -627,7 +627,11 @@ impl Lowerer<'_, '_> {
                         call.push(self.index(more, t)?);
                     }
                 }
-                call.extend([self.index(k, t)?, self.index(rows, t)?]);
+                call.extend([
+                    self.index(k, t)?,
+                    self.index(rows, t)?,
+                    self.index(cols, t)?,
+                ]);
                 self.call(f, &call);
                 Val::S(self.iconst(types::I8, 0))
             }

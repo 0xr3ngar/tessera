@@ -36,12 +36,17 @@ struct Case {
 }
 
 /// Every name bounded far past any size the grid uses.
-fn bounded(names: &[DimName]) -> Vec<Dim> {
+pub(crate) fn bounded(names: &[DimName]) -> Vec<Dim> {
     names.iter().map(|n| Dim::bounded(*n, 1 << 20)).collect()
 }
 
 /// Noise for `ty` as one row. Ids stay below eight.
-fn fill(g: &Graph, ty: &TensorType, sizes: &Sizes, noise: &mut Noise) -> Result<Tensor, Error> {
+pub(crate) fn fill(
+    g: &Graph,
+    ty: &TensorType,
+    sizes: &Sizes,
+    noise: &mut Noise,
+) -> Result<Tensor, Error> {
     let unsized_shape = || Error::from(lower::Error::from(lower::Size::Shape(ty.shape.clone())));
     testkit::fill(g, ty, sizes, noise).ok_or_else(unsized_shape)
 }
@@ -63,7 +68,7 @@ impl Case {
             }
             let runner = match &mut runner {
                 Some(runner) => runner,
-                None => runner.insert(self.open(plan, noise, settings)?),
+                None => runner.insert(opened(&self.g, plan, noise, settings)?),
             };
             let ports = self.g.entries[0].inputs.iter();
             let fed: Result<Vec<Tensor>, Error> =
@@ -81,21 +86,21 @@ impl Case {
         }
         Ok(added)
     }
+}
 
-    /// A runner with noise for weights.
-    fn open(
-        &self,
-        plan: lower::Plan,
-        noise: &mut Noise,
-        settings: &Settings,
-    ) -> Result<Box<dyn Run>, Error> {
-        let mut runner = open(plan, settings)?;
-        for (at, w) in self.g.weights.iter().enumerate() {
-            let data = fill(&self.g, &w.ty, &Vec::new(), noise)?;
-            runner.load(at as u32, data.view())?;
-        }
-        Ok(runner)
+/// A runner for `plan` with noise for weights.
+pub(crate) fn opened(
+    g: &Graph,
+    plan: lower::Plan,
+    noise: &mut Noise,
+    settings: &Settings,
+) -> Result<Box<dyn Run>, Error> {
+    let mut runner = open(plan, settings)?;
+    for (at, w) in g.weights.iter().enumerate() {
+        let data = fill(g, &w.ty, &Vec::new(), noise)?;
+        runner.load(at as u32, data.view())?;
     }
+    Ok(runner)
 }
 
 impl Grid {

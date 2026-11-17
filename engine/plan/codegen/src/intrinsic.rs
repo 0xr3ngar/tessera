@@ -550,12 +550,12 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                 count: |c, _| c.tally(Ops { stores: 1.0, ..float(3.0) }, false),
             }
             /// `o.dots(..)`: a block of sums, rows of `x` by `w`.
-            Dots = method dots(self, u64, u32, Buf, u64, Buf, u64, u32, u32) {
+            Dots = method dots(self, u64, u32, Buf, u64, Buf, u64, u32, u32, u32) {
                 device: {
                     let rows = |out: &str| format!(
-                        "f_fn void f_dots_rows({out} o, u32 stride, f_const(float) x, f_const(float) w, u32 k, u32 rows) {{
+                        "f_fn void f_dots_rows({out} o, u32 stride, f_const(float) x, f_const(float) w, u32 k, u32 rows, u32 cols) {{
     for (u32 r = 0; r < rows; r++) {{
-        for (u32 c = 0; c < 32; c++) {{
+        for (u32 c = 0; c < cols; c++) {{
             float s = 0.0f;
             for (u32 i = 0; i < k; i++) {{
                 s += x[r * k + i] * w[c * k + i];
@@ -564,7 +564,7 @@ f_fn float f_e4m3(u32 w, u32 l) {{
         }}
     }}
 }}
-#define f_dots(o, a, s, x, i, w, j, k, r) f_dots_rows((o) + (a), s, (x) + (i), (w) + (j), k, r)
+#define f_dots(o, a, s, x, i, w, j, k, r, n) f_dots_rows((o) + (a), s, (x) + (i), (w) + (j), k, r, n)
 "
                     );
                     [rows("device float *"), rows("float *")]
@@ -576,12 +576,12 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                         panic!("a dots names its buffers");
                     };
                     let (out, x, w) = (g.arg(out), g.arg(x), g.arg(w));
-                    let v: Vec<Vec<Val>> = [1, 2, 4, 6, 7, 8].iter().map(|i| g.eval(&args[*i], mask)).collect();
+                    let v: Vec<Vec<Val>> = [1, 2, 4, 6, 7, 8, 9].iter().map(|i| g.eval(&args[*i], mask)).collect();
                     for t in (0..g.threads).filter(|t| mask[*t]) {
                         let (at, stride, x_at, w_at) = (v[0][t].l(), u64::from(v[1][t].u()), v[2][t].l(), v[3][t].l());
                         let (k, rows) = (u64::from(v[4][t].u()), u64::from(v[5][t].u()));
                         for r in 0..rows {
-                            for c in 0..32 {
+                            for c in 0..u64::from(v[6][t].u()) {
                                 let mut sum = 0.0;
                                 for i in 0..k {
                                     let a = g.load(&x, x_at + r * k + i).f();

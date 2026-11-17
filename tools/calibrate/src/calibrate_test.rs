@@ -1,3 +1,4 @@
+use crate::bench::{Mark, slower, text};
 use crate::probe::{Kind, Probe, Reading, fit, links, read, suite};
 use crate::{Grid, headroom, judge};
 use lower::{Device, Pick, Settings, rules};
@@ -59,6 +60,21 @@ fn cpu_matmuls_compete() {
     for rule in ["cpu_dense", "cpu_tiled"] {
         assert!(timed.iter().any(|(s, _)| s.rule == rule), "{rule} untimed");
     }
+}
+
+/// A saved bench reads back, and names what got slower.
+#[test]
+fn bench_baselines() {
+    let mark = |name: &str, seconds| Mark {
+        name: name.into(),
+        seconds,
+        flops: 1.0,
+    };
+    let base = text(&[mark("a", 1.0), mark("b", 1.0)]);
+    let now = [mark("a", 1.5), mark("b", 1.1)];
+    let got = slower(&now, &base, 0.2);
+    assert_eq!(got.len(), 1);
+    assert!(got[0].starts_with("a: "), "{got:?}");
 }
 
 /// A made-up chip's reading for one probe.
