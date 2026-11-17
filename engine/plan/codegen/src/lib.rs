@@ -10,6 +10,7 @@ pub mod ir;
 pub mod kept;
 pub mod numerics;
 pub mod prelude;
+pub mod stage;
 mod tile;
 pub mod trellis;
 

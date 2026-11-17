@@ -3,6 +3,7 @@
 use crate::lower::{Kind, Lowerer, Res};
 use codegen::form::{LOADS, Load, Read};
 use codegen::ir::{BinOp, Expr, Intrinsic, Ty};
+use codegen::stage::{TANH_CLAMP, TANH_P, TANH_Q};
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type, Value, types};
 
@@ -187,19 +188,10 @@ impl Lowerer<'_, '_> {
 
     /// `tanh(x)` as a rational polynomial, within 3e-7 of f32 `tanh`.
     fn tanh(&mut self, x: Value) -> Value {
-        // Past this the result rounds to one.
-        const CLAMP: f32 = 7.905_311;
-        const P: [f32; 7] = [
-            4.893_524_6e-3,
-            6.372_619_3e-4,
-            1.485_722_4e-5,
-            5.122_297e-8,
-            -8.604_672e-11,
-            2.000_188e-13,
-            -2.760_768_5e-16,
-        ];
-        const Q: [f32; 4] = [4.893_525e-3, 2.268_434_6e-3, 1.185_347e-4, 1.198_258_4e-6];
-        let (lo, hi) = (self.b.ins().f32const(-CLAMP), self.b.ins().f32const(CLAMP));
+        let (lo, hi) = (
+            self.b.ins().f32const(-TANH_CLAMP),
+            self.b.ins().f32const(TANH_CLAMP),
+        );
         let x = self.b.ins().fmax(x, lo);
         let x = self.b.ins().fmin(x, hi);
         let x2 = self.b.ins().fmul(x, x);
@@ -212,7 +204,7 @@ impl Lowerer<'_, '_> {
             }
             acc
         };
-        let (p, q) = (horner(&P), horner(&Q));
+        let (p, q) = (horner(&TANH_P), horner(&TANH_Q));
         let p = self.b.ins().fmul(x, p);
         self.b.ins().fdiv(p, q)
     }
@@ -637,6 +629,38 @@ impl Lowerer<'_, '_> {
                 }
                 call.extend([self.index(k, t)?, self.index(rows, t)?]);
                 self.call(f, &call);
+                Val::S(self.iconst(types::I8, 0))
+            }
+            Intrinsic::Stage => {
+                let [out, at, n, code, s, b, b_at] = args else {
+                    return Err("a stage takes seven arguments".into());
+                };
+                let mut bufs = Vec::new();
+                for name in [out, b] {
+                    let Expr::Var(name) = name else {
+                        return Err("a stage names its buffers".into());
+                    };
+                    let Kind::Buffer {
+                        form,
+                        ptr,
+                        len,
+                        skip,
+                    } = self.kind(name)?
+                    else {
+                        return Err(format!("`{name}` is not a buffer"));
+                    };
+                    if !matches!(form.read(), Read::F32) {
+                        return Err("a stage runs over f32 rows".into());
+                    }
+                    bufs.push((ptr, len, skip));
+                }
+                let (at, n, b_at) = (self.index(at, t)?, self.index(n, t)?, self.index(b_at, t)?);
+                let code = self.expr_as(code, Ty::U32, t)?.scalar()?;
+                let s = self.floats(std::slice::from_ref(s), t)?[0];
+                let ((po, lo, so), (pb, lb, sb)) = (bufs[0], bufs[1]);
+                let at = self.b.ins().iadd(so, at);
+                let b_at = self.b.ins().iadd(sb, b_at);
+                self.call("stage_f32", &[po, lo, at, n, code, s, pb, lb, b_at]);
                 Val::S(self.iconst(types::I8, 0))
             }
             Intrinsic::Mix => {

@@ -4,6 +4,7 @@ use crate::exec::{ArgVal, Grid};
 use crate::simd::{Level, dot_at, mix_at, tile_at};
 use codegen::form::{Load, Read};
 use codegen::numerics::Precision;
+use codegen::stage::{Row, apply};
 use graph::{E2M1, E4M3, F16};
 
 /// The most threads one compiled group holds.
@@ -65,6 +66,36 @@ pub fn st_f32(bytes: &mut [u8], at: usize, v: f32) {
 #[inline(always)]
 pub fn st_u32(bytes: &mut [u8], at: usize, v: u32) {
     bytes[at * 4..at * 4 + 4].copy_from_slice(&v.to_le_bytes());
+}
+
+/// `n` floats from `at` through stage `code`.
+pub fn stage_f32(
+    out: &mut [u8],
+    at: usize,
+    n: usize,
+    (code, s): (u32, f32),
+    b: Option<(&[u8], usize)>,
+) {
+    let Some(row) = Row::from_code(code) else {
+        return;
+    };
+    let mut other = Vec::new();
+    let operand: &[f32] = match b {
+        Some((bytes, b_at)) => f32_row(bytes, b_at, n, &mut other),
+        None => &[],
+    };
+    let slice = &mut out[at * 4..(at + n) * 4];
+    // SAFETY: f32 has no invalid bit patterns.
+    let (head, body, _) = unsafe { slice.align_to_mut::<f32>() };
+    if head.is_empty() && body.len() == n {
+        return apply(row, body, operand, s);
+    }
+    let words = slice.as_chunks::<4>().0;
+    let mut line: Vec<f32> = words.iter().map(|w| f32::from_le_bytes(*w)).collect();
+    apply(row, &mut line, operand, s);
+    for (i, v) in line.iter().enumerate() {
+        slice[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
 }
 
 /// `n` floats from `at` become `out * keep + p * b`.

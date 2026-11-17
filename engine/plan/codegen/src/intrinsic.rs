@@ -387,6 +387,56 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                 },
                 count: |c, _| c.tally(float(2.0), true),
             }
+            /// `o.stage(at, n, code, s, b, j)`: one row stage.
+            // `code` names a `stage::Row`. `b` and `s` are its arguments.
+            Stage = method stage(self, u64, u32, u32, f32, Buf, u64) {
+                device: {
+                    let rows = |out: &str| format!(
+                        "f_fn void f_stage_rows({out} o, f_const(float) b, u32 n, u32 code, float s) {{
+    for (u32 i = 0; i < n; i++) {{
+        float v = o[i];
+        if (code == 0u) {{ v = v + b[i]; }}
+        else if (code == 1u) {{ v = v * b[i]; }}
+        else if (code == 2u) {{ v = v * s; }}
+        else if (code == 3u) {{
+            float u = fmin(fmax(0.7978846f * (v + 0.044715f * (v * v * v)), -8.0f), 8.0f);
+            v = 0.5f * v * (1.0f + tanh(u));
+        }}
+        else if (code == 4u) {{ v = v / (1.0f + exp(-v)); }}
+        else if (code == 5u) {{ v = 1.0f / (1.0f + exp(-v)); }}
+        else {{ v = fmax(v, 0.0f); }}
+        o[i] = v;
+    }}
+}}
+#define f_stage(o, a, n, c, s, b, j) f_stage_rows((o) + (a), (b) + (j), n, c, s)
+"
+                    );
+                    [rows("device float *"), rows("float *")]
+                },
+                text: |p, args| p.spell("f_stage", args),
+                host: |g, args, mask| {
+                    let (Expr::Var(out), Expr::Var(b)) = (&args[0], &args[5]) else {
+                        panic!("a stage names its buffers");
+                    };
+                    let (out, b) = (g.arg(out), g.arg(b));
+                    let v: Vec<Vec<Val>> = [1, 2, 3, 4, 6].iter().map(|i| g.eval(&args[*i], mask)).collect();
+                    for t in (0..g.threads).filter(|t| mask[*t]) {
+                        let (at, n, b_at) = (v[0][t].l(), u64::from(v[1][t].u()), v[4][t].l());
+                        let row = codegen::stage::Row::from_code(v[2][t].u()).expect("a stage code");
+                        let mut line: Vec<f32> = (0..n).map(|i| g.load(&out, at + i).f()).collect();
+                        let operand: Vec<f32> = match row.reads() {
+                            true => (0..n).map(|i| g.load(&b, b_at + i).f()).collect(),
+                            false => Vec::new(),
+                        };
+                        codegen::stage::apply(row, &mut line, &operand, v[3][t].f());
+                        for (i, x) in line.into_iter().enumerate() {
+                            g.store(&out, at + i as u64, Val::F(x));
+                        }
+                    }
+                    vec![Val::B(false); g.threads]
+                },
+                count: |c, _| c.tally(Ops { stores: 1.0, ..float(8.0) }, false),
+            }
             /// `o.mix(at, keep, p, b, j, n)`: `o * keep + p * b`.
             // A zero `keep` drops old values, maybe junk.
             Mix = method mix(self, u64, f32, f32, Buf, u64, u32) {
