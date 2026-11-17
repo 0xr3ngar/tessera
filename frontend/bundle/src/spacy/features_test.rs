@@ -2,7 +2,7 @@
 // Ported from spaCy. Copyright ExplosionAI GmbH, see LICENSE.md.
 
 use super::features::{Features, hash_string, shape, thinc_hash};
-use bundle::tokenize::spacy::Word;
+use crate::tokenize::spacy::Word;
 use std::collections::HashMap;
 
 /// spaCy 3.8 and Thinc 8 give these values.

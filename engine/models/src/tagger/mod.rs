@@ -12,6 +12,10 @@ pub const KEYS: u64 = 4;
 pub const PIECES: u64 = 3;
 /// Thinc's zero rows on each side of a text.
 pub const PAD: u64 = 4;
+/// The fewest rows a launch carries.
+const LEAST: usize = 8;
+/// An id past every row. It gathers zeros.
+const NONE: u32 = u32::MAX;
 /// Layer norm's variance floor in Thinc.
 const EPS: f32 = 1e-8;
 
@@ -149,4 +153,47 @@ pub fn program(c: &Config) -> Graph {
     }
     let logits = x.matmul(&tag_w).add_vector(&tag_b);
     m.finish([(Role::Logits, &logits)])
+}
+
+/// The three graph inputs for one text, as flat ids.
+pub struct Input {
+    /// Token rows, rounded up to share plans.
+    pub rows: usize,
+    /// Ids per token: `KEYS` per feature.
+    pub width: usize,
+    /// `[rows, width]`: each token's table rows. Extra rows hold zeros.
+    pub keys: Vec<u32>,
+    /// `[padded]`: each padded row's token, or an id past them.
+    pub sources: Vec<u32>,
+    /// `[padded, 3]`: each padded row's previous, own and next row.
+    pub around: Vec<u32>,
+}
+
+/// Inputs for `tokens` tokens with `width` row ids each.
+pub fn input(ids: &[u32], tokens: usize, width: usize) -> Input {
+    let rows = tokens.next_power_of_two().max(LEAST);
+    let mut keys = vec![0; rows * width];
+    keys[..ids.len()].copy_from_slice(ids);
+    let pad = PAD as usize;
+    let padded = rows + 2 * pad;
+    let mut sources = Vec::with_capacity(padded);
+    let mut around = Vec::with_capacity(3 * padded);
+    for j in 0..padded {
+        let inside = (pad..pad + tokens).contains(&j);
+        sources.push(if inside { (j - pad) as u32 } else { NONE });
+        let prev = if j == 0 { NONE } else { (j - 1) as u32 };
+        let next = if j + 1 == padded {
+            NONE
+        } else {
+            (j + 1) as u32
+        };
+        around.extend([prev, j as u32, next]);
+    }
+    Input {
+        rows,
+        width,
+        keys,
+        sources,
+        around,
+    }
 }
