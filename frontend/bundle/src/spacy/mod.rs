@@ -3,13 +3,17 @@
 
 //! A spaCy pipeline folder: tokenizer, tagger graph, weights and tables.
 
+mod features;
+#[cfg(test)]
+mod features_test;
+mod symbols;
 mod thinc;
 
 use crate::tokenize::Error;
-use crate::tokenize::spacy::Spacy;
-use engine::tagger::{Config, PIECES, path, piece, program};
+use crate::tokenize::spacy::{Spacy, Word};
+use engine::tagger::{Config, KEYS, PIECES, path, piece, program};
 use engine::{Graph, PathSeg, Tensor, Weight, bind};
-use std::collections::HashMap;
+use features::{Features, thinc_hash};
 use std::path::Path;
 use thinc::{Array, Node};
 
@@ -18,15 +22,12 @@ pub const MAX_CONTEXT: u64 = 4096;
 
 pub struct Pipeline {
     pub tokenizer: Spacy,
-    pub graph: Graph,
-    pub weights: Vec<Weight>,
     pub tags: Vec<String>,
+    features: Features,
     /// Per feature: hash seed, rows, and first joined row.
-    pub seeds: Vec<u32>,
-    pub rows: Vec<u64>,
-    pub offsets: Vec<u64>,
-    /// The `lexeme_norm` table, by hash of the lower case.
-    pub lexeme: HashMap<u64, String>,
+    seeds: Vec<u32>,
+    rows: Vec<u64>,
+    offsets: Vec<u64>,
 }
 
 fn nodes(dir: &Path, part: &str) -> Result<Vec<Node>, Error> {
@@ -54,8 +55,8 @@ fn by_piece(a: &Array) -> Vec<f32> {
 }
 
 impl Pipeline {
-    /// Reads `dir`: tok2vec, tagger, tokenizer and vocab.
-    pub fn open(dir: &Path) -> Result<Self, Error> {
+    /// Reads `dir`. Also returns the tagger graph and weights.
+    pub fn open(dir: &Path) -> Result<(Self, Graph, Vec<Weight>), Error> {
         let t2v = nodes(dir, "tok2vec")?;
         let mut tables: Vec<&Node> = t2v.iter().filter(|n| n.name == "hashembed").collect();
         tables.sort_by_key(|n| n.attrs.get("column").copied());
@@ -119,15 +120,29 @@ impl Pipeline {
             .into_iter()
             .map(Weight::Floats)
             .collect();
-        Ok(Self {
+        let lexeme = thinc::lexeme_norms(&std::fs::read(dir.join("vocab/lookups.bin"))?)?;
+        let pipeline = Self {
             tokenizer: Spacy::open(dir)?,
-            graph,
-            weights,
             tags,
+            features: Features::new(lexeme),
             seeds,
             rows,
             offsets,
-            lexeme: thinc::lexeme_norms(&std::fs::read(dir.join("vocab/lookups.bin"))?)?,
-        })
+        };
+        Ok((pipeline, graph, weights))
+    }
+
+    /// Row ids per token: `KEYS` for each feature.
+    pub fn row_ids(&self, text: &str, words: &[Word]) -> Vec<u32> {
+        let mut ids = Vec::with_capacity(words.len() * self.seeds.len() * KEYS as usize);
+        for w in words {
+            let feats = self.features.of(&text[w.span.clone()], w);
+            for (c, f) in feats.iter().enumerate() {
+                for k in thinc_hash(*f, self.seeds[c]) {
+                    ids.push((u64::from(k) % self.rows[c] + self.offsets[c]) as u32);
+                }
+            }
+        }
+        ids
     }
 }
