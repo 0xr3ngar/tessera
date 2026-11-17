@@ -1,0 +1,22 @@
+:root { --bg: #fdfdfb; --fg: #1d1d1b; --line: #d8d8d0; --sum: #c0392b; --head: #f0efe8; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1b1b1a; --fg: #e8e8e2; --line: #3a3a36; --sum: #ff7b6b; --head: #262624; }
+}
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; margin: 24px; }
+table { border-collapse: collapse; margin: 8px 0 20px; font-size: 13px; }
+th, td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; vertical-align: top; }
+th { background: var(--head); position: sticky; top: 0; }
+pre { background: var(--head); padding: 10px; overflow-x: auto; font-size: 12px; }
+a { color: inherit; }
+.sum { color: var(--sum); font-weight: 600; }
+details { margin: 6px 0; }
+summary { cursor: pointer; }
+td:target, a:target { outline: 2px solid var(--sum); }
+#lanes { width: 100%; overflow-x: auto; border: 1px solid var(--line); }
+#lanes rect.k { fill: #7aa7d8; }
+#lanes rect.s { fill: var(--sum); }
+#lanes rect.now { stroke: var(--fg); stroke-width: 2; }
+#lanes text { fill: var(--fg); font-size: 12px; }
+#lanes line.wire { stroke: var(--sum); stroke-width: 3; }
+#info { min-height: 3em; font-family: ui-monospace, monospace; white-space: pre-wrap; }
+button, select { font: inherit; margin-right: 6px; }

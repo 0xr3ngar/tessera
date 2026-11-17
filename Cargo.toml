@@ -12,6 +12,7 @@ members = [
     "tools/calibrate",
     "tools/check",
     "tools/findings",
+    "tools/inspect",
     "tools/lint",
     "tools/load",
     "tools/parity",
