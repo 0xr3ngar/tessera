@@ -63,6 +63,6 @@ fn rotated_names_resolve() {
     assert!(
         slices
             .iter()
-            .any(|s| s.name == format!("{at}shared_experts.up_proj.codes"))
+            .any(|s| s.name == format!("{at}shared_experts.up_proj.weight"))
     );
 }

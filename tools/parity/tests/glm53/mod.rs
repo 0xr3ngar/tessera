@@ -23,7 +23,7 @@ const STEPPER: Stepper = Stepper {
 const SPEC: Spec = Spec {
     name: "glm53",
     release,
-    parameters: 743_851_643_904,
+    parameters: 743_849_800_704,
     regions: &[(Attention, 78), (Mlp, 3), (Moe, 75)],
     stepper: Some(STEPPER),
     small: Some(small),

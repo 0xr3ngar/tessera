@@ -238,6 +238,10 @@ fn glm_experts() {
     // The shared expert's input scales carry the signs.
     let shared = read("shared_experts.gate_proj.suh");
     assert_eq!((shared[0], shared[1]), (-4.0, 4.0));
+    let gate = format!("{at}shared_experts.gate_proj.weight");
+    let file = release.packed(&gate, None).unwrap();
+    let parts = engine::trellis::TRELLIS_K3_ROT.split(&file).unwrap();
+    assert_eq!(parts[1][..8], [0, 0, 128, 192, 0, 0, 128, 64]);
     let down = release
         .packed(&format!("{at}experts.down.weight"), None)
         .unwrap();
