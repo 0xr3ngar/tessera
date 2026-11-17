@@ -10,9 +10,11 @@ pub mod ir;
 pub mod kept;
 pub mod numerics;
 pub mod prelude;
+mod print;
 pub mod stage;
 mod tile;
 pub mod trellis;
+pub mod wgsl;
 
 pub use dialect::{Dialect, Text, float, hash};
 pub use form::Load;

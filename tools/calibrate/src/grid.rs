@@ -1,6 +1,6 @@
 //! Small graphs that reach every rule, at many sizes.
 
-use crate::measure;
+use crate::{choices, measure};
 use engine::Error;
 use graph::DimName::{self, *};
 use lower::{Device, Settings, Step, Tensor, View, lower};
@@ -169,6 +169,19 @@ impl Grid {
             cases.push(Case { g, sizes });
         }
         cases
+    }
+
+    /// Each plan `run` times from `guess`, per competing rule.
+    pub fn plans(&self, guess: &dyn Fn() -> Device) -> Result<Vec<lower::Plan>, Error> {
+        let mut plans = Vec::new();
+        for case in self.cases() {
+            for sizes in &case.sizes {
+                for choice in choices((&case.g, 0), sizes, guess)? {
+                    plans.push(lower(&case.g, 0, sizes, &choice)?);
+                }
+            }
+        }
+        Ok(plans)
     }
 
     /// Times every case on this GPU. Returns the launches timed.

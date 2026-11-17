@@ -34,14 +34,7 @@ pub trait Load: Form {
 
     /// Kernel text: elements `index` to `index + 3` as a `wide()`.
     fn load4(&self, name: &str, index: &str) -> String {
-        let each = |i: u32| self.load(name, &format!("({index} + {i})"));
-        format!(
-            "f_make4({}, {}, {}, {})",
-            each(0),
-            each(1),
-            each(2),
-            each(3)
-        )
+        four("f_make4", |i| self.load(name, &format!("({index} + {i})")))
     }
 
     /// The kernel type of a `load4` result.
@@ -52,6 +45,32 @@ pub trait Load: Form {
     /// Kernel text: part `h` of a `wide()`, as a float.
     fn part(&self, wide: &str, h: char) -> String {
         format!("{wide}.{h}")
+    }
+
+    /// Its WGSL element type. None: WGSL cannot read it.
+    fn wgsl_ty(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// WGSL text: element `index` of `name` as a float.
+    fn wgsl_load(&self, name: &str, index: &str) -> String {
+        self.load(name, index)
+    }
+
+    /// WGSL text: elements `index` to `index + 3` as a `wgsl_wide()`.
+    fn wgsl_load4(&self, name: &str, index: &str) -> String {
+        four("vec4<f32>", |i| {
+            self.wgsl_load(name, &format!("({index} + {i}u)"))
+        })
+    }
+
+    fn wgsl_wide(&self) -> &'static str {
+        "vec4<f32>"
+    }
+
+    /// WGSL text: part `h` of a `wgsl_wide()`, as a float.
+    fn wgsl_part(&self, wide: &str, h: char) -> String {
+        self.part(wide, h)
     }
 
     /// Whether `input` reads as `form`, when `weight` is this form.
@@ -71,6 +90,11 @@ pub trait Load: Form {
             name => interned(format!("{base}_{name}")),
         }
     }
+}
+
+/// `make(a, b, c, d)`, with `each(i)` giving element `i`.
+fn four(make: &str, each: impl Fn(u32) -> String) -> String {
+    format!("{make}({}, {}, {}, {})", each(0), each(1), each(2), each(3))
 }
 
 /// Kernel names that outlive the forms that made them.
@@ -115,6 +139,9 @@ impl Load for F32 {
     fn load4(&self, name: &str, index: &str) -> String {
         format!("f_f32x4({name} + {index})")
     }
+    fn wgsl_ty(&self) -> Option<&'static str> {
+        Some("f32")
+    }
 }
 
 impl Load for Bf16 {
@@ -133,12 +160,34 @@ impl Load for Bf16 {
     }
     /// Two bf16 share each word: low half first.
     fn part(&self, wide: &str, h: char) -> String {
-        match h {
-            'x' => format!("f_bits({wide}.x << 16)"),
-            'y' => format!("f_bits({wide}.x & 0xffff0000u)"),
-            'z' => format!("f_bits({wide}.y << 16)"),
-            _ => format!("f_bits({wide}.y & 0xffff0000u)"),
-        }
+        bf16_part("f_bits", wide, h)
+    }
+    fn wgsl_ty(&self) -> Option<&'static str> {
+        Some("u32")
+    }
+    fn wgsl_load(&self, name: &str, index: &str) -> String {
+        let word = format!("{name}[({index}) >> 1u]");
+        format!("bitcast<f32>(({word} >> ((({index}) & 1u) << 4u)) << 16u)")
+    }
+    /// Four elements start a word, so two words hold them.
+    fn wgsl_load4(&self, name: &str, index: &str) -> String {
+        format!("vec2<u32>({name}[({index}) >> 1u], {name}[(({index}) >> 1u) + 1u])")
+    }
+    fn wgsl_wide(&self) -> &'static str {
+        "vec2<u32>"
+    }
+    fn wgsl_part(&self, wide: &str, h: char) -> String {
+        bf16_part("bitcast<f32>", wide, h)
+    }
+}
+
+/// Part `h` of four bf16 in two words.
+fn bf16_part(bits: &str, wide: &str, h: char) -> String {
+    match h {
+        'x' => format!("{bits}({wide}.x << 16)"),
+        'y' => format!("{bits}({wide}.x & 0xffff0000u)"),
+        'z' => format!("{bits}({wide}.y << 16)"),
+        _ => format!("{bits}({wide}.y & 0xffff0000u)"),
     }
 }
 
@@ -152,11 +201,25 @@ macro_rules! plain {
             fn load(&self, name: &str, index: &str) -> String {
                 format!("{name}[{index}]")
             }
+            fn wgsl_ty(&self) -> Option<&'static str> {
+                Some("u32")
+            }
+            fn wgsl_load(&self, name: &str, index: &str) -> String {
+                wgsl_plain($ty, name, index)
+            }
         }
     )*};
 }
 
 plain!(U32 = "u32", U8 = "u8");
+
+/// WGSL stores words, so a byte is a field.
+fn wgsl_plain(ty: &str, name: &str, index: &str) -> String {
+    match ty {
+        "u8" => format!("(({name}[({index}) >> 2u] >> ((({index}) & 3u) << 3u)) & 0xffu)"),
+        _ => format!("{name}[{index}]"),
+    }
+}
 
 form!(F32);
 form!(Bf16);

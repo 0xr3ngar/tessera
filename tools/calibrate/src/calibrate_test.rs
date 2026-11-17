@@ -1,8 +1,11 @@
 use crate::bench::{Mark, slower, text};
 use crate::probe::{Kind, Probe, Reading, fit, links, read, suite};
 use crate::{Grid, headroom, judge};
-use lower::{Device, Pick, Settings, rules};
+use lower::form::BF16_FORM;
+use lower::{Device, Pick, Pins, Settings, Source, rules};
+use naga::valid::{Capabilities, ValidationFlags, Validator};
 use sim::Chip;
+use std::collections::{BTreeMap, BTreeSet};
 use testkit::scratch;
 
 /// This build's GPU when ready, else the host.
@@ -144,4 +147,45 @@ fn probes_and_links_run() {
     let cluster = links(&settings).unwrap();
     assert_eq!(cluster.links.len(), 2);
     assert!(cluster.links.iter().all(|l| l.rate > 0.0));
+}
+
+/// Validates WGSL with naga.
+fn validated(text: &str) -> Result<(), String> {
+    let module = naga::front::wgsl::parse_str(text).map_err(|e| e.emit_to_string(text))?;
+    let (flags, caps) = (ValidationFlags::all(), Capabilities::all());
+    let mut validator = Validator::new(flags, caps);
+    validator.validate(&module).map_err(|e| format!("{e:?}"))?;
+    Ok(())
+}
+
+/// Grid kernels print as WGSL naga accepts, or refuse.
+#[test]
+fn grid_prints_wgsl() {
+    let settings = run::testing::host();
+    let mut plans = Vec::new();
+    for pins in [Pins::default(), Pins::all(BF16_FORM)] {
+        let guess = || Device::guess(&settings).pinned(pins.clone());
+        plans.extend(Grid::tiny().plans(&guess).unwrap());
+    }
+    let mut seen = BTreeSet::new();
+    let mut refused: BTreeMap<String, usize> = BTreeMap::new();
+    for plan in plans {
+        for step in &plan.steps {
+            let Source::Made(body) = step.kernel.source() else {
+                continue;
+            };
+            if !seen.insert(body.entry.clone()) {
+                continue;
+            }
+            match body.wgsl() {
+                Ok(module) => {
+                    let checked = validated(&module.text);
+                    checked.unwrap_or_else(|e| panic!("{}:\n{e}\n{}", step.rule, module.text));
+                }
+                Err(why) => *refused.entry(format!("{}: {why}", step.rule)).or_default() += 1,
+            }
+        }
+    }
+    println!("{} kernels, refused: {refused:#?}", seen.len());
+    assert!(seen.len() > refused.values().sum::<usize>());
 }
