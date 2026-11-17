@@ -124,8 +124,7 @@ fn codes_match_decode() {
             form = named(&format!("{}_rot", codes.name())).unwrap();
         }
         let weights = [Tensor::f32(vec![out, inp], form.unpack_all(&bytes))];
-        // Few rows take the lane kernel, many the tiled one.
-        // Rotated, few rows also take the fused kernel.
+        // Few rows take lane or fused kernels, many the tiled.
         let mut cases = Vec::new();
         for settings in runs() {
             for rows in [3usize, 40] {

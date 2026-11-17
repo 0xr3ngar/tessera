@@ -25,7 +25,7 @@ pub struct Four {
     pub d: f32,
 }
 
-/// A SIMD group's block, four values a lane, turned and scaled.
+/// A SIMD group's block, four values a lane, turned.
 #[kernel]
 pub fn spin(x: f32, y: f32, z: f32, w: f32) -> Four {
     // Distances one and two stay in the lane.

@@ -1,21 +1,21 @@
-//! A rotated matmul for few rows: scale, turn, codes, turn, scale.
+//! A rotated matmul for few rows, in one launch.
 
 use codegen::prelude::*;
 use graph::{Op, Order, Stage};
-use kernels::BLOCK;
+use kernels::{BLOCK, spin, spin_inline};
 use lower::form::Load as Stored;
 use lower::{Draft, Kernel, Load, Needs, Shape, T, Term, Tree};
 
 /// Its row limit: each thread keeps one sum per row.
 const ROWS: usize = 8;
 
-/// SIMD groups in a group, one 128-wide block of `x` each.
+/// SIMD groups in a group, a block of `x` each.
 const SIMDS: u32 = BLOCK / LANES as u32;
 
 /// Inputs one pass stages: a block per SIMD group.
 const SPAN: u32 = SIMDS * BLOCK;
 
-/// Each group owns a block of 128 outputs, a thread per output.
+/// Each group owns 128 outputs, a thread each.
 #[kernel]
 fn turned(
     x: Buf<F32>,
@@ -37,13 +37,13 @@ fn turned(
         sums[row as usize] = 0.0;
     }
     for k0 in (0..k).by(SPAN) {
-        // Each SIMD group scales and turns its block of each row.
+        // Each SIMD group turns its block of each row.
         let at = k0 + simd * BLOCK + four;
         for row in 0..m as u32 {
             let to = row * SPAN + simd * BLOCK + four;
             let v = x.load4((row * k + at) as u64);
             let s = suh.load4(at as u64);
-            let t = kernels::spin(v.x * s.x, v.y * s.y, v.z * s.z, v.w * s.w);
+            let t = spin(v.x * s.x, v.y * s.y, v.z * s.z, v.w * s.w);
             xs[to] = t.a;
             xs[to + 1] = t.b;
             xs[to + 2] = t.c;
@@ -67,7 +67,7 @@ fn turned(
     let s = svh.load4(first as u64);
     for row in (simd..m as u32).by(SIMDS) {
         let from = row * BLOCK + four;
-        let t = kernels::spin(xs[from], xs[from + 1], xs[from + 2], xs[from + 3]);
+        let t = spin(xs[from], xs[from + 1], xs[from + 2], xs[from + 3]);
         let mut o = F32x4::zero();
         o.x = t.a * s.x;
         o.y = t.b * s.y;
@@ -111,7 +111,7 @@ fn turned_needs() -> Needs {
     }
 }
 
-/// Each group reads all of `x` and `suh`, and its rows of `w`.
+/// Each group reads `x`, `suh` and its rows of `w`.
 fn turned_load(t: &Turned, _: usize) -> Option<Load> {
     let Turned { m, n, k, form } = *t;
     let groups = (n / BLOCK as usize) as f64;
