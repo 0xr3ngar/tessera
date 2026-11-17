@@ -189,8 +189,16 @@ fn row_calls(after: &After) -> Option<Vec<Stmt>> {
 }
 
 /// Blocks need whole columns and f32 or bf16 weights.
-fn tiles(m: usize, n: usize, form: &dyn Stored) -> bool {
-    m >= 4 && n.is_multiple_of(32) && ["f32", "bf16"].contains(&form.name())
+fn tiles(n: usize, form: &dyn Stored) -> bool {
+    n.is_multiple_of(32) && ["f32", "bf16"].contains(&form.name())
+}
+
+/// Multiply-adds one packed weight costs, as a guess.
+const PACKING: usize = 8;
+
+/// Multiply-adds, and each row chunk's packing of the weights.
+fn tiled_work(d: &Dense) -> usize {
+    d.m * d.n * d.k + PACKING * d.n * d.k * d.m.div_ceil(64)
 }
 
 /// Weights read as stored. Rows and operands come as f32.
@@ -233,7 +241,7 @@ fn dense_launches(k: &Dense, step: &Step) -> Vec<Launch> {
     crate = lower,
     name = "cpu_tiled",
     sizes = [self.0.m, self.0.n, self.0.k],
-    work = self.0.m * self.0.n * self.0.k,
+    work = tiled_work(&self.0),
     guess = GUESS / 4.0,
     runs_on = ZoneKind::Cpu,
     accepts = accepts(input, form),
@@ -305,16 +313,18 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
         ..
     } = site.product;
     let after = site.after.clone();
-    let dense = Dense {
-        m,
-        n,
-        k,
-        form,
-        after: after.clone(),
-    };
     let kernel = match picked {
-        None if tiles(m, n, form) => Draft::new(Tiled(dense), site.reads(), m * n),
-        None => Draft::new(dense, site.reads(), m * n),
+        None => Draft::new(
+            Dense {
+                m,
+                n,
+                k,
+                form,
+                after,
+            },
+            site.reads(),
+            m * n,
+        ),
         Some(pick) => Draft::new(
             Picked {
                 m,
@@ -331,4 +341,30 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![kernel])
 }
 
+/// Packed blocks, where the shape allows. Cost decides the rest.
+fn tiled(tree: &Tree, at: T) -> Option<Vec<Draft>> {
+    let site: sites::Finished = tree.site(at)?;
+    let sites::Matmul {
+        m,
+        n,
+        k,
+        form,
+        picked,
+        ..
+    } = site.product;
+    if picked.is_some() || !tiles(n, form) {
+        return None;
+    }
+    let after = site.after.clone();
+    let dense = Dense {
+        m,
+        n,
+        k,
+        form,
+        after,
+    };
+    Some(vec![Draft::new(Tiled(dense), site.reads(), m * n)])
+}
+
 lower::rule!("cpu_dense", propose);
+lower::rule!("cpu_tiled", tiled);
