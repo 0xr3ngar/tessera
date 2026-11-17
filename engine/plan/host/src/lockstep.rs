@@ -1,7 +1,7 @@
 //! What compiled lockstep kernels call: reads, shuffles and tiles.
 
 use crate::exec::{ArgVal, Grid};
-use crate::simd::{Block, Level, block_at, dot_at, mix_at, panel_at, reduce};
+use crate::simd::{Block, Level, WIDE, block_at, dot_at, mix_at, panel_at, reduce};
 use codegen::form::{Load, Read};
 use codegen::numerics::Precision;
 use codegen::stage::{Row, apply};
@@ -353,7 +353,7 @@ fn f32_row<'a>(bytes: &'a [u8], at: usize, n: usize, scratch: &'a mut Vec<f32>) 
 /// Depth the generic block sums in cache.
 const SPAN: usize = 512;
 /// Rows and columns of one block of sums.
-pub const BLOCK: usize = 16;
+pub const BLOCK: usize = WIDE;
 
 /// Where a block reads and writes, in elements.
 pub struct Dots {
@@ -389,8 +389,12 @@ pub fn dots_form(form: &dyn Load, out: &mut [u8], x: &[u8], w: &[u8], d: &Dots, 
     }
     let mut acc = vec![[0.0f32; BLOCK]; rows];
     if !panel_at(Level::best(), &xr, &wr, &mut acc) {
-        for (chunk, lines) in acc.chunks_mut(BLOCK).enumerate() {
-            block_rows(&xr[chunk * BLOCK..chunk * BLOCK + lines.len()], &wr, lines);
+        // The generic block holds 16 rows by 16 columns.
+        for (chunk, lines) in acc.chunks_mut(16).enumerate() {
+            let x = &xr[chunk * 16..chunk * 16 + lines.len()];
+            for col in (0..BLOCK).step_by(16) {
+                block_rows(x, &wr[col..col + 16], (col, &mut *lines));
+            }
         }
     }
     for (r, line) in acc.iter().enumerate() {
@@ -401,7 +405,7 @@ pub fn dots_form(form: &dyn Load, out: &mut [u8], x: &[u8], w: &[u8], d: &Dots, 
 }
 
 /// A few rows of `x` by `w`, span by span.
-fn block_rows(x: &[&[f32]], w: &[&[f32]], lines: &mut [[f32; BLOCK]]) {
+fn block_rows(x: &[&[f32]], w: &[&[f32]], (col, lines): (usize, &mut [[f32; BLOCK]])) {
     let k = w[0].len();
     // Each quad's partial sums, added up once at the end.
     let mut sums: Block = [[[[[0.0; 16]; 4]; 4]; 4]; 4];
@@ -413,7 +417,7 @@ fn block_rows(x: &[&[f32]], w: &[&[f32]], lines: &mut [[f32; BLOCK]]) {
     }
     for (r, line) in lines.iter_mut().enumerate() {
         for (cq, quad) in sums[r / 4].iter().enumerate() {
-            line[4 * cq..4 * cq + 4].copy_from_slice(&reduce(quad)[r % 4]);
+            line[col + 4 * cq..col + 4 * cq + 4].copy_from_slice(&reduce(quad)[r % 4]);
         }
     }
 }
