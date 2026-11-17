@@ -5,8 +5,8 @@ use crate::held::Held;
 use codegen::Precision;
 use gpukit::{Limits, Platform};
 use graph::DimName;
-use lower::form::Load;
-use lower::{Arg, Launch, Launching, Plan, Shape, Share, Slot, Weight};
+use lower::form::{F32_FORM, Load};
+use lower::{Arg, Launch, Launching, Loaded, Plan, Shape, Share, Slot, Weight};
 use mem::{Tensor, View, copy};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -129,12 +129,16 @@ pub trait Run {
             let Weight::Floats(t) = w else { unreachable!() };
             return self.load(weight, t.view());
         };
-        let slots: Vec<Slot> = (self.plan().weights.iter())
+        let loaded: Vec<Loaded> = (self.plan().weights.iter())
             .filter(|l| l.weight == weight)
-            .map(|l| l.slot)
+            .copied()
             .collect();
-        let loaded = self.plan().weights.iter().find(|l| l.weight == weight);
-        let part = match loaded.and_then(|l| l.share) {
+        if loaded.iter().any(|l| l.part.is_some()) {
+            return parts(self, weight, *form, bytes, &loaded);
+        }
+        // A file stored whole loads into other forms decoded.
+        let whole = form.split(bytes).is_some();
+        let part = match loaded.first().and_then(|l| l.share) {
             None => None,
             Some(share) => match share.of(*form, bytes) {
                 Some(part) => Some(part),
@@ -142,14 +146,18 @@ pub trait Run {
             },
         };
         let bytes = part.as_deref().unwrap_or(bytes);
-        for slot in slots {
-            if form.bytes(slot.len) != bytes.len() {
-                return Err(Error::WeightSize {
-                    weight,
-                    form: form.name(),
-                });
+        for l in loaded {
+            let slot = l.slot;
+            let same = slot.form.name() == form.name();
+            if !same && !slot.form.packs() {
+                let (form, into) = (form.name(), slot.form.name());
+                return Err(Error::WeightInto { weight, form, into });
             }
-            if slot.form.name() == form.name() {
+            if !whole && form.bytes(slot.len) != bytes.len() {
+                let form = form.name();
+                return Err(Error::WeightSize { weight, form });
+            }
+            if same {
                 self.held_mut().upload(slot, bytes)?;
                 continue;
             }
@@ -204,6 +212,11 @@ pub trait Run {
 
     /// Uploads one graph weight, or this rank's slice of it.
     fn load(&mut self, weight: u32, data: View) -> Result<(), Error> {
+        let split = |l: &Loaded| l.weight == weight && l.part.is_some();
+        if self.plan().weights.iter().any(split) {
+            let (form, why) = ("floats", "a split weight takes its file");
+            return Err(Error::WeightParts { weight, form, why });
+        }
         let data = self.share(weight, data)?;
         let slots: Vec<Slot> = (self.plan().weights.iter())
             .filter(|l| l.weight == weight)
@@ -257,12 +270,9 @@ fn unpacked<R: Run + ?Sized>(
     bytes: &[u8],
     share: Share,
 ) -> Result<(), Error> {
-    let n = form.elements(bytes.len());
-    let outer = n / (share.whole * share.inner).max(1);
-    let floats = Tensor::f32(
-        vec![outer, share.whole, share.inner],
-        form.unpack_all(bytes),
-    );
+    let all = form.unpack_all(bytes);
+    let outer = all.len() / (share.whole * share.inner).max(1);
+    let floats = Tensor::f32(vec![outer, share.whole, share.inner], all);
     let part = floats.view().slice(1, share.first, share.count);
     let slots: Vec<Slot> = (r.plan().weights.iter())
         .filter(|l| l.weight == weight)
@@ -274,6 +284,39 @@ fn unpacked<R: Run + ?Sized>(
             return Err(Error::WeightSplit { weight, form, axis });
         }
         r.write(slot, part.clone())?;
+    }
+    Ok(())
+}
+
+/// A file stored whole, split into its parts' slots.
+fn parts<R: Run + ?Sized>(
+    r: &mut R,
+    weight: u32,
+    form: &'static dyn Load,
+    bytes: &[u8],
+    loaded: &[Loaded],
+) -> Result<(), Error> {
+    let what = |why: &'static str| Error::WeightParts {
+        weight,
+        form: form.name(),
+        why,
+    };
+    let split = form.split(bytes).ok_or_else(|| what("no parts"))?;
+    let codes = form.codes().ok_or_else(|| what("no codes"))?;
+    for l in loaded {
+        let at = l.part.ok_or_else(|| what("a whole slot beside parts"))? as usize;
+        let into: &dyn Load = if at == 0 { codes } else { F32_FORM };
+        let data = match l.share {
+            Some(share) => share
+                .of(into, &split[at])
+                .ok_or_else(|| what("an uneven cut"))?,
+            None => split[at].clone(),
+        };
+        if into.bytes(l.slot.len) != data.len() || l.slot.form.name() != into.name() {
+            let form = into.name();
+            return Err(Error::WeightSize { weight, form });
+        }
+        r.held_mut().upload(l.slot, &data)?;
     }
     Ok(())
 }

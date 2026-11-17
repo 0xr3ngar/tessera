@@ -180,6 +180,8 @@ impl<'a> Tree<'a> {
         }
         // Each graph node's value, as a view node.
         let mut at: Vec<Option<T>> = vec![None; g.nodes.len()];
+        // A rotated weight's leaves: codes, `suh`, `svh`.
+        let mut turned: Vec<Option<[T; 3]>> = vec![None; g.nodes.len()];
         for i in (0..g.nodes.len()).filter(|i| needed[*i]) {
             let n = &g.nodes[i];
             let mut extents = sized(g, sizes, upto, &n.ty.shape)?;
@@ -230,6 +232,22 @@ impl<'a> Tree<'a> {
                 }
                 .into());
             }
+            let rotated = |a: &NodeId| turned[a.0 as usize].is_some();
+            let read = |(j, a): (usize, &NodeId)| rotated(a) && (n.op != Op::Matmul || j != 1);
+            if n.args.iter().enumerate().any(read) {
+                return Err(Unsupported::Turned { node: i }.into());
+            }
+            if let (Op::Weight(w), Some(codes)) = (&n.op, form.codes()) {
+                let parts = tree.turned(*w, (&shape, &extents), share, codes, from);
+                at[i] = Some(parts[0]);
+                turned[i] = Some(parts);
+                continue;
+            }
+            let weight = n.args.get(1).filter(|_| n.op == Op::Matmul);
+            if let Some(parts) = weight.and_then(|w| turned[w.0 as usize]) {
+                at[i] = Some(tree.turn(args[0], parts, (&shape, &extents), from));
+                continue;
+            }
             let mut push = |term: Term, args: Vec<T>| {
                 let (shape, extents) = (shape.clone(), extents.clone());
                 tree.nodes.push(Node {
@@ -279,6 +297,84 @@ impl<'a> Tree<'a> {
                 .push((t, shape.iter().map(Extent::most).collect()));
         }
         Ok(tree)
+    }
+
+    fn add(&mut self, node: Node, share: Option<Share>) -> T {
+        self.nodes.push(node);
+        self.shares.push(share);
+        T(self.nodes.len() as u32 - 1)
+    }
+
+    /// A rotated weight's leaves: codes, `suh` and `svh`.
+    fn turned(
+        &mut self,
+        weight: u32,
+        (shape, extents): (&[usize], &[Extent]),
+        share: Option<Share>,
+        codes: &'static dyn Load,
+        from: NodeId,
+    ) -> [T; 3] {
+        let leaf = |part: u8, axis: usize, form: &'static dyn Load| Node {
+            term: Term::Leaf(Home::Part(weight, part)),
+            args: Vec::new(),
+            shape: match part {
+                0 => shape.to_vec(),
+                _ => vec![shape[axis]],
+            },
+            extents: match part {
+                0 => extents.to_vec(),
+                _ => vec![extents[axis]],
+            },
+            form,
+            from,
+        };
+        let along = |axis: u32| {
+            let cut = |s: Share| Share {
+                axis: 0,
+                inner: 1,
+                ..s
+            };
+            share.filter(|s| s.axis == axis).map(cut)
+        };
+        let f32 = crate::form::F32_FORM;
+        [
+            self.add(leaf(0, 0, codes), share),
+            self.add(leaf(1, 1, f32), along(1)),
+            self.add(leaf(2, 0, f32), along(0)),
+        ]
+    }
+
+    /// `x` through a rotated matmul: scale, turn, codes, turn, scale.
+    fn turn(
+        &mut self,
+        x: T,
+        [codes, suh, svh]: [T; 3],
+        (shape, extents): (&[usize], &[Extent]),
+        from: NodeId,
+    ) -> T {
+        let (rows, wide) = (self.node(x).shape.clone(), self.node(x).extents.clone());
+        let turn = Stage::Hadamard { block: 128 };
+        let mut step = |term: Term, args: Vec<T>, out: bool| {
+            let (shape, extents) = match out {
+                true => (shape.to_vec(), extents.to_vec()),
+                false => (rows.clone(), wide.clone()),
+            };
+            let form = crate::form::F32_FORM;
+            let node = Node {
+                term,
+                args,
+                shape,
+                extents,
+                form,
+                from,
+            };
+            self.add(node, None)
+        };
+        let scaled = step(Term::Stage(Stage::Mul), vec![x, suh], false);
+        let turned = step(Term::Stage(turn.clone()), vec![scaled], false);
+        let product = step(Term::Op(Op::Matmul), vec![turned, codes], true);
+        let back = step(Term::Stage(turn), vec![product], true);
+        step(Term::Stage(Stage::Mul), vec![back, svh], true)
     }
 
     /// The part of a split weight this rank holds.

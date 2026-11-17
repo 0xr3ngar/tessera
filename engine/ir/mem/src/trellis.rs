@@ -223,9 +223,11 @@ impl<const K: u32> Form for Trellis<K> {
     /// Plain trellis codes, then `suh` and `svh` as f32.
     fn split(&self, bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
         let floats = |v: Vec<f32>| v.iter().flat_map(|x| x.to_le_bytes()).collect();
+        if !self.rotated {
+            return None;
+        }
         let (codes, suh, svh) = Self::parts(bytes);
-        self.rotated
-            .then(|| vec![codes.to_vec(), floats(suh), floats(svh)])
+        Some(vec![codes.to_vec(), floats(suh), floats(svh)])
     }
     fn pack(&self, _: &[f32]) -> Vec<u8> {
         panic!("{} codes are read from a release, never packed", self.name)

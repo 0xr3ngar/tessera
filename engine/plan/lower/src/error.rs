@@ -12,6 +12,8 @@ pub enum Unsupported {
     KeptRows,
     #[error("node {node} reads an unsupported node")]
     Unread { node: usize },
+    #[error("node {node} reads a rotated weight other than as a matmul")]
+    Turned { node: usize },
     #[error("node {node} in {form} needs rows of {align}")]
     Align {
         node: usize,

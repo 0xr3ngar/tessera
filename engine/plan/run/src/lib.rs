@@ -60,6 +60,18 @@ pub enum Error {
         form: &'static str,
         axis: u32,
     },
+    #[error("weight {weight} as {form} cannot fill a {into} slot")]
+    WeightInto {
+        weight: u32,
+        form: &'static str,
+        into: &'static str,
+    },
+    #[error("weight {weight} as {form}: {why}")]
+    WeightParts {
+        weight: u32,
+        form: &'static str,
+        why: &'static str,
+    },
     #[error("the input list does not match the plan")]
     InputCount,
     #[error("input {0} does not match the plan")]
