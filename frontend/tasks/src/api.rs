@@ -68,3 +68,38 @@ pub struct Embedded {
 pub trait Embed: Send + Sync {
     fn embed(&self, texts: &[String]) -> Result<Embedded, Error>;
 }
+
+/// One picture as row-major RGBA bytes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Image {
+    pub width: usize,
+    pub height: usize,
+    pub rgba: Vec<u8>,
+}
+
+impl Image {
+    /// Each pixel as a `k` by `k` block.
+    pub fn scaled(&self, k: usize) -> Image {
+        let width = self.width * k;
+        let mut rgba = Vec::with_capacity(self.rgba.len() * k * k);
+        for y in 0..self.height * k {
+            for x in 0..width {
+                let at = ((y / k) * self.width + x / k) * 4;
+                rgba.extend_from_slice(&self.rgba[at..at + 4]);
+            }
+        }
+        Image {
+            width,
+            height: self.height * k,
+            rgba,
+        }
+    }
+}
+
+/// Prompts to pictures. Calls can block.
+pub trait Paint: Send + Sync {
+    /// The side of a picture as painted, in pixels.
+    fn side(&self) -> usize;
+    /// `n` pictures of `prompt`. One seed gives the same pictures.
+    fn paint(&self, prompt: &str, n: usize, seed: u32) -> Result<Vec<Image>, Error>;
+}

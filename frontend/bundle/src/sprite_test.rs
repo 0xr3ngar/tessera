@@ -58,11 +58,11 @@ fn states(clip: &Path, r: &File) -> Vec<f32> {
 
 #[test]
 fn matches_torch() {
-    let (Some(dir), Some(clip)) = (testkit::reference("sprite"), testkit::reference("clip")) else {
-        return eprintln!("no sprite or clip reference here; skipped");
+    let Some(dir) = testkit::reference("sprite") else {
+        return eprintln!("no sprite reference here; skipped");
     };
     let r = File::open(&dir.join("ref.safetensors")).unwrap();
-    let states = states(&clip, &r);
+    let states = states(&dir.join("clip"), &r);
     let d = denoiser(&dir.join("sprite.safetensors"), 4).unwrap();
     let canvas = ints(&r, "den.canvas");
     let masked = |c: &[u32]| c.iter().filter(|&&t| t == MASK).count() as u32;
