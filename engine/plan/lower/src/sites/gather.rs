@@ -1,5 +1,5 @@
 use super::Pattern;
-use crate::form::Load;
+use crate::form::{F32_FORM, Load};
 use crate::tree::{T, Term, Tree};
 use graph::{Op, Select};
 
@@ -22,11 +22,12 @@ impl Pattern for Gather {
         }
         let (table, ids) = (node.args[0], node.args[1]);
         let rows = tree.elements(ids);
-        // Tables are matrices. Kept rows may have more axes.
+        // Stored tables are matrices. Others may have more axes.
         let kept = matches!(tree.node(table).term, Term::Op(Op::Append(_)));
+        let plain = tree.node(table).form.name() == F32_FORM.name();
         let table_rows = match tree.node(table).shape[..] {
             [rows, _] => rows,
-            [rows, _, ..] if kept => rows,
+            [rows, _, ..] if kept || plain => rows,
             _ => return None,
         };
         Some(Self {

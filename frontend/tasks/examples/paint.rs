@@ -1,6 +1,5 @@
 //! Writes sprites for a prompt to a PNG file.
 
-use engine::Settings;
 use std::time::Instant;
 use tasks::paint::{Options, Painter};
 
@@ -83,7 +82,7 @@ fn main() -> Result<(), tasks::Error> {
     let mut painter = Painter::open(
         clip.as_ref(),
         weights.as_ref(),
-        &Settings::default(),
+        &frontend_settings::read(),
         n as u64,
     )?;
     eprintln!("{}: opened in {:?}", painter.device(), started.elapsed());

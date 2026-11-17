@@ -3,6 +3,7 @@
 mod argmax;
 mod batched;
 mod by_sum;
+mod cast;
 mod causal;
 mod gather;
 mod hadamard;
