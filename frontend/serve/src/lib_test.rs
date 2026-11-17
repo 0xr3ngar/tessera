@@ -1,5 +1,5 @@
 use crate::Slot;
-use crate::mock::{Mock, call, json, loaded};
+use crate::mocks::{MockGenerator, call, json, loaded};
 use axum::http::StatusCode;
 use serde_json::json;
 use std::sync::{Arc, OnceLock};
@@ -12,7 +12,7 @@ async fn health_waits() {
     assert_eq!(loading["error"]["type"], "unavailable_error");
     let (status, _) = call(&empty, "/v1/completions", Some(json!({"prompt": "a"}))).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    let slot = loaded(&Arc::new(Mock::default()), false);
+    let slot = loaded(&Arc::new(MockGenerator::default()), false);
     assert_eq!(json(&slot, "/ping", None).await.1, json!({"status": "ok"}));
     let (_, version) = json(&slot, "/version", None).await;
     assert_eq!(version["version"], env!("CARGO_PKG_VERSION"));
@@ -20,7 +20,7 @@ async fn health_waits() {
 
 #[tokio::test]
 async fn small_routes() {
-    let slot = loaded(&Arc::new(Mock::default()), false);
+    let slot = loaded(&Arc::new(MockGenerator::default()), false);
     let (_, models) = json(&slot, "/v1/models", None).await;
     assert_eq!(
         (

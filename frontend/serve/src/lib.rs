@@ -6,7 +6,7 @@ mod answer_test;
 #[cfg(test)]
 mod lib_test;
 #[cfg(test)]
-mod mock;
+mod mocks;
 mod wire;
 
 use axum::Json;
