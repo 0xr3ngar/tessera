@@ -1,7 +1,7 @@
 //! Block forms: a scale, then codes it multiplies.
 
 use crate::form::{Form, Read, form};
-use graph::{DType, E2M1, E4M3, F16};
+use graph::{DType, E2M1, E4M3, E8M0, F16};
 
 /// A code: what one element stores, before its block's scale.
 pub trait Code: Sync {
@@ -45,6 +45,7 @@ macro_rules! scale {
 
 scale!(F16(u16), 2, 65504.0);
 scale!(E4M3(u8), 1, 448.0);
+scale!(E8M0(u8), 1, 1.7014118e38);
 
 /// Every e2m1 value, by code.
 const E2M1_VALUES: [f32; 16] = [
@@ -62,6 +63,17 @@ impl Code for E2M1 {
     }
 }
 
+impl Code for E4M3 {
+    const BITS: u32 = 8;
+    const MAX: f32 = 448.0;
+    fn encode(scaled: f32) -> u32 {
+        u32::from(E4M3::from(scaled).0)
+    }
+    fn decode(code: u32) -> f32 {
+        E4M3(code as u8).into()
+    }
+}
+
 /// A signed byte.
 pub struct I8;
 
@@ -76,7 +88,7 @@ impl Code for I8 {
     }
 }
 
-/// A nibble 8 below its value, as in GGUF Q4_0.
+/// Symmetric int4: a nibble 8 below its value.
 pub struct Nibble;
 
 impl Code for Nibble {
@@ -256,4 +268,24 @@ block! {
 block! {
     /// nvfp4: an f32 head, then e4m3 scales over e2m1 codes.
     NVFP4 = "nvfp4", E4M3, E2M1, 16, halves = false, head = true
+}
+
+block! {
+    /// OCP mxfp8: an e8m0 scale, then 32 e4m3 codes.
+    MXFP8 = "mxfp8", E8M0, E4M3, 32, halves = false, head = false
+}
+
+block! {
+    /// OCP mxfp4: an e8m0 scale, then 32 e2m1 codes.
+    MXFP4 = "mxfp4", E8M0, E2M1, 32, halves = false, head = false
+}
+
+block! {
+    /// Group-wise int4: an f16 scale, then 32 nibbles.
+    INT4_G32 = "int4_g32", F16, Nibble, 32, halves = false, head = false
+}
+
+block! {
+    /// `INT4_G32` with groups of 128.
+    INT4_G128 = "int4_g128", F16, Nibble, 128, halves = false, head = false
 }

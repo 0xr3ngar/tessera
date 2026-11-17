@@ -120,3 +120,29 @@ minifloat! {
     /// A 4-bit float, 6 at most. NaN saturates.
     E2M1(u8): 2, 1, inf = false, nan = false
 }
+
+/// OCP e8m0: `2^(n - 127)`, and 0xFF is NaN.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct E8M0(pub u8);
+
+/// Rounds up, so a block scale never clips.
+impl From<f32> for E8M0 {
+    fn from(x: f32) -> Self {
+        if x.is_nan() {
+            return E8M0(0xFF);
+        }
+        let x = x.abs();
+        let (exp, man) = ((x.to_bits() >> 23) as i32, x.to_bits() & 0x7F_FFFF);
+        let up = exp + i32::from(man != 0);
+        E8M0(up.clamp(0, 254) as u8)
+    }
+}
+
+impl From<E8M0> for f32 {
+    fn from(e: E8M0) -> f32 {
+        match e.0 {
+            0xFF => f32::NAN,
+            n => pow2(i32::from(n) - 127) as f32,
+        }
+    }
+}

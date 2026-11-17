@@ -5,10 +5,10 @@ use crate::form::{Load, form};
 use crate::inline::{Inline, Pass};
 use crate::ir::{Expr, Helper};
 use crate::prelude::{Bits, Buf, F32x4, U8, device, helper, kernel};
-use graph::{E2M1, E4M3, F16};
+use graph::{E2M1, E4M3, E8M0, F16};
 use mem::block::{Block, Code, I8, Nibble, Scale};
 
-pub use mem::block::{NVFP4, Q4_0, Q8_0};
+pub use mem::block::{INT4_G32, INT4_G128, MXFP4, MXFP8, NVFP4, Q4_0, Q8_0};
 
 /// A code as kernel text reads it.
 pub trait LoadCode: Code {
@@ -44,6 +44,18 @@ fn e4m3_scale(p: Buf<U8>) -> f32 {
     (p[0] as u32).e4m3(0)
 }
 
+/// An e8m0 scale: one byte, the f32 exponent.
+#[kernel]
+fn e8m0_scale(p: Buf<U8>) -> f32 {
+    f32::from_bits((p[0] as u32) << 23)
+}
+
+/// An e4m3 byte.
+#[kernel]
+fn e4m3_field(w: u32, low: u32) -> f32 {
+    w.e4m3(low)
+}
+
 /// An e2m1 nibble.
 #[kernel]
 fn e2m1_field(w: u32, low: u32) -> f32 {
@@ -76,6 +88,8 @@ macro_rules! reads {
 reads! {
     LoadScale::load_inline for F16 = f16_scale_inline(p);
     LoadScale::load_inline for E4M3 = e4m3_scale_inline(p);
+    LoadScale::load_inline for E8M0 = e8m0_scale_inline(p);
+    LoadCode::field_inline for E4M3 = e4m3_field_inline(w, low);
     LoadCode::field_inline for E2M1 = e2m1_field_inline(w, low);
     LoadCode::field_inline for I8 = i8_field_inline(w, low);
     LoadCode::field_inline for Nibble = nibble_field_inline(w, low);
@@ -190,3 +204,7 @@ impl<S: LoadScale, C: LoadCode, const B: usize, const HALVES: bool, const HEAD: 
 form!(Q8_0);
 form!(Q4_0);
 form!(NVFP4);
+form!(MXFP8);
+form!(MXFP4);
+form!(INT4_G32);
+form!(INT4_G128);

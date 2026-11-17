@@ -1,6 +1,6 @@
 use crate::exlr8::Release;
 use crate::{Offer, Stored};
-use engine::block::Q4_0;
+use engine::block::{INT4_G32, MXFP8};
 use engine::storage::Form;
 use engine::{E4M3, F16, trellis};
 use std::path::Path;
@@ -103,9 +103,15 @@ fn glm_dense_formats() {
     let found = |name: &str| slices.iter().find(|s| s.name == name).unwrap();
     let shape = |name: &str| found(name).shape.clone();
     // Each matrix comes in the most compact form tessera reads.
-    let repacked = Stored::Form(&Q4_0);
-    assert_eq!(found("model.layers.0.qi.weight").stored, repacked);
-    assert_eq!(found("model.layers.0.mx.weight").stored, Stored::Bf16);
+    assert_eq!(
+        found("model.layers.0.qi.weight").stored,
+        Stored::Form(&INT4_G32)
+    );
+    assert_eq!(
+        found("model.layers.0.mx.weight").stored,
+        Stored::Form(&MXFP8)
+    );
+    assert_eq!(found("model.layers.0.blk.weight").stored, Stored::Bf16);
     assert_eq!(found("lm_head.weight").stored, Stored::F32);
     let turned = Stored::Form(&engine::trellis::TRELLIS_K2_ROT);
     assert_eq!(found("model.layers.0.tr.weight").stored, turned);
@@ -155,13 +161,18 @@ fn glm_dense_formats() {
         file,
         [codes, halves(&[0.5; 128]), halves(&[2.0; 128])].concat()
     );
-    // int4 repacks as q4_0 bit for bit, from either side.
-    for (name, want) in [("q", &q), ("qi", &qi)] {
-        let bytes = release
-            .packed(&format!("model.layers.0.{name}.weight"), None)
-            .unwrap();
-        let back: Vec<f32> = (0..want.len()).map(|i| Q4_0.unpack(&bytes, i)).collect();
-        assert_eq!(&back, want, "{name}");
+    // Block formats stay packed, whole or by row.
+    let forms = [
+        ("q", &q, &INT4_G32 as &dyn Form),
+        ("qi", &qi, &INT4_G32),
+        ("mx", &mx, &MXFP8),
+    ];
+    for (name, want, form) in forms {
+        let name = format!("model.layers.0.{name}.weight");
+        let bytes = release.packed(&name, None).unwrap();
+        assert_eq!(&form.unpack_all(&bytes), want, "{name}");
+        let row = release.packed(&name, Some((1, 1))).unwrap();
+        assert_eq!(form.unpack_all(&row), want[want.len() / 2..], "{name} row");
     }
     std::fs::remove_dir_all(dir).unwrap();
 }
