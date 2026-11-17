@@ -149,9 +149,10 @@ impl Matcher {
 }
 
 impl engine::Guide for Matcher {
-    fn mask(&mut self, out: &mut [u32]) -> Result<bool, engine::Fault> {
-        Matcher::mask(self, out)?;
-        Ok(true)
+    fn allowed(&mut self) -> Result<engine::Allowed, engine::Fault> {
+        let mut bits = vec![0; self.words];
+        Matcher::mask(self, &mut bits)?;
+        Ok(engine::Allowed::from_bits(bits))
     }
 
     fn forced(&mut self) -> Vec<u32> {

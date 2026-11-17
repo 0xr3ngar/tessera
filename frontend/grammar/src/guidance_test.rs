@@ -1,4 +1,6 @@
 use crate::Vocab;
+use bundle::tokenize::hf::Hf;
+use engine::{Allowed, Guide};
 use serde_json::json;
 
 const EOS: u32 = 256;
@@ -54,4 +56,14 @@ fn schema_steps() {
     m.mask(&mut mask).unwrap();
     assert!(m.accepting() && allowed(&mask, EOS));
     assert!((EOS + 1..ROWS as u32).all(|id| !allowed(&mask, id)));
+}
+
+#[test]
+fn sets_pick_tiers() {
+    let json = tokenizer();
+    let digits: Vec<u32> = (b'0'..=b'9').map(u32::from).collect();
+    assert_eq!(Hf::from_json(&json).unwrap().digits(), digits);
+    let vocab = Vocab::new(&json, &[EOS], ROWS).unwrap();
+    let mut m = vocab.regex("[0-9]+").unwrap();
+    assert_eq!(m.allowed().unwrap(), Allowed::Few(digits));
 }

@@ -29,6 +29,22 @@ impl Hf {
     pub fn decode(&self, ids: &[u32]) -> String {
         self.0.decode(ids, true).unwrap_or_default()
     }
+
+    /// Each id whose text passes `keep`. Special tokens are empty.
+    pub fn matching(&self, keep: impl Fn(&str) -> bool) -> Vec<u32> {
+        let mut out = Vec::new();
+        for id in 0..self.0.get_vocab_size(true) as u32 {
+            if keep(&self.decode(&[id])) {
+                out.push(id);
+            }
+        }
+        out
+    }
+
+    /// Ids made only of ASCII digits.
+    pub fn digits(&self) -> Vec<u32> {
+        self.matching(|t| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit()))
+    }
 }
 
 impl Tokenizer for Hf {

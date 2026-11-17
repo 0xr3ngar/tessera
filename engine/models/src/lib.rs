@@ -10,4 +10,4 @@ pub mod small;
 pub mod sprite;
 pub mod tagger;
 
-pub use shared::{Attend, Dense, Rotated, Side, Stack};
+pub use shared::{Attend, Dense, FEW, Rotated, Side, Stack};

@@ -52,10 +52,12 @@ pub fn trim(g: &Graph, entry: usize) -> Result<Graph, VerifyError> {
         }
     }
     let mut out = rebuild(g, entry, &need, &anchors);
-    out.dims.push(Dim {
-        name: Picks,
-        size: rows.size,
-    });
+    if !out.dims.iter().any(|d| d.name == Picks) {
+        out.dims.push(Dim {
+            name: Picks,
+            size: rows.size,
+        });
+    }
     retype(&mut out)?;
     verify(&out)?;
     Ok(out)
@@ -132,7 +134,7 @@ fn sweep(g: &Graph, entry: usize, forced: &[bool]) -> Vec<Need> {
             rowwise(&n.op, j, ty) && !by_rows(ty) && ty.shape.0.iter().any(|e| mentions(e, Rows))
         };
         let fixed = matches!(n.op, Op::Input { .. } | Op::Weight(_) | Op::Append(_));
-        let fixed = fixed && !masks(g, &n.op);
+        let fixed = fixed && !follows(g, &n.op);
         if need[i] == Need::Picked
             && (fixed || !by_rows(&n.ty) || n.args.iter().enumerate().any(mixed))
         {
@@ -151,13 +153,13 @@ fn sweep(g: &Graph, entry: usize, forced: &[bool]) -> Vec<Need> {
     need
 }
 
-/// Whether `op` is a mask input. Masks follow their rows.
-fn masks(g: &Graph, op: &Op) -> bool {
+/// Whether `op` is a mask or candidate input.
+fn follows(g: &Graph, op: &Op) -> bool {
     let Op::Input { entry, port } = op else {
         return false;
     };
     let port = g.entries[*entry as usize].inputs.get(*port as usize);
-    port.is_some_and(|p| p.role == Role::Allowed)
+    port.is_some_and(|p| matches!(p.role, Role::Allowed | Role::Candidates))
 }
 
 /// Whether each result row reads only its row of `j`.
@@ -231,8 +233,8 @@ fn rebuild(g: &Graph, entry: usize, need: &[Need], anchors: &[Option<usize>]) ->
     let mut out = g.clone();
     out.nodes.clear();
     for (i, n) in g.nodes.iter().enumerate() {
-        if let (Op::Input { port, .. }, Need::Picked) = (&n.op, need[i]) {
-            let ty = &mut out.entries[entry].inputs[*port as usize].ty;
+        if let (Op::Input { entry, port }, Need::Picked) = (&n.op, need[i]) {
+            let ty = &mut out.entries[*entry as usize].inputs[*port as usize].ty;
             ty.shape = Shape(ty.shape.0.iter().map(renamed).collect());
         }
     }
