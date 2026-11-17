@@ -1,7 +1,8 @@
-//! exlr8 v2 releases: trellis and fp8 matrices decoded to f32.
+//! exlr8 v2 releases: trellis, block and fp8 matrices.
 
 use crate::file::{Error, File};
 use crate::offer::{Offer, Slice, Stored};
+use engine::storage::Form;
 pub use engine::trellis::rotated;
 use engine::{E4M3, F16, block, trellis};
 use std::cell::RefCell;
@@ -111,18 +112,14 @@ pub fn codes(f: &File, name: &str) -> Result<Vec<f32>, Error> {
 fn plain(f: &File, name: &str, r: &Record, format: i64) -> Result<Vec<f32>, Error> {
     let inp = r.inp;
     let fp8 = || f.bytes(&format!("{name}.fp8"));
+    if let Some(form) = block_form(format) {
+        return Ok(form.unpack_all(&blocks(f, name, r, (0, r.out))?));
+    }
     match format {
         FP8_ROW => {
             let scale = f.floats(&format!("{name}.scale"))?;
             let row = |(i, c): (usize, &u8)| e4m3(*c) * scale[i / inp];
             Ok(fp8()?.iter().enumerate().map(row).collect())
-        }
-        // One power of two per 32 inputs.
-        MXFP8 => {
-            let exp = f.bytes(&format!("{name}.e8m0"))?;
-            let at = |i: usize| exp[i / inp * inp.div_ceil(32) + i % inp / 32];
-            let value = |(i, c): (usize, &u8)| e4m3(*c) * 2f32.powi(i32::from(at(i)) - 127);
-            Ok(fp8()?.iter().enumerate().map(value).collect())
         }
         // One scale per 128 by 128 block.
         FP8_BLOCK => {
@@ -131,52 +128,50 @@ fn plain(f: &File, name: &str, r: &Record, format: i64) -> Result<Vec<f32>, Erro
             let value = |(i, c): (usize, &u8)| e4m3(*c) * at(i);
             Ok(fp8()?.iter().enumerate().map(value).collect())
         }
-        INT4 => int4(f, name, r),
         BF16 => f.floats(&format!("{name}.bf16")),
         FP32 => f.floats(&format!("{name}.fp32")),
         other => Err(Error::DType(format!("{name} is in exlr8 format {other}"))),
     }
 }
 
-/// Nibbles as `(n - 8) * s`, one scale per 32 inputs.
-fn int4(f: &File, name: &str, r: &Record) -> Result<Vec<f32>, Error> {
-    let q4 = f.bytes(&format!("{name}.q4"))?;
-    let s4 = halves(f, &format!("{name}.s4"))?;
-    let mut w = Vec::with_capacity(r.inp * r.out);
-    for o in 0..r.out {
-        for i in 0..r.inp {
-            let (byte, scale) = int4_at(r, o, i);
-            let n = (q4[byte] >> (4 * (i % 2))) & 0xF;
-            w.push((f32::from(n) - 8.0) * s4[scale]);
-        }
-    }
-    Ok(w)
-}
-
-/// Input `i` of output `o`: its byte and scale index.
-fn int4_at(r: &Record, o: usize, i: usize) -> (usize, usize) {
-    let (inp, outp) = (r.inp, r.out);
-    // Input-side shards lie in blocks of 128 inputs.
-    match r.side == trellis::INPUT_SIDE as i64 {
-        true => {
-            let (g, j) = (i / 128, i % 128);
-            ((g * outp + o) * 64 + j / 2, (g * outp + o) * 4 + j / 32)
-        }
-        false => (o * inp / 2 + i / 2, o * inp / 32 + i / 32),
+/// The block form a format's planes join into.
+fn block_form(format: i64) -> Option<&'static dyn Form> {
+    match format {
+        INT4 => Some(&block::INT4_G32),
+        MXFP8 => Some(&block::MXFP8),
+        _ => None,
     }
 }
 
-/// int4 g32 as q4_0, bit for bit, nibbles reordered.
-fn q4_0(f: &File, name: &str, r: &Record) -> Result<Vec<u8>, Error> {
-    let q4 = f.bytes(&format!("{name}.q4"))?;
-    let s4 = f.bytes(&format!("{name}.s4"))?;
-    let nibble = |o: usize, i: usize| (q4[int4_at(r, o, i).0] >> (4 * (i % 2))) & 0xF;
-    let mut out = Vec::with_capacity(r.out * r.inp / 32 * 18);
-    for o in 0..r.out {
-        for g in (0..r.inp).step_by(32) {
-            let scale = int4_at(r, o, g).1;
-            out.extend_from_slice(&s4[2 * scale..2 * scale + 2]);
-            out.extend((0..16).map(|j| nibble(o, g + j) | (nibble(o, g + j + 16) << 4)));
+/// Rows `first..first + count` of a block form matrix.
+fn blocks(
+    f: &File,
+    name: &str,
+    r: &Record,
+    (first, count): (usize, usize),
+) -> Result<Vec<u8>, Error> {
+    // One scale and 32 codes per 32 inputs.
+    let (scale_part, code_part, scale_bytes, code_bytes) = match r.format {
+        INT4 => ("s4", "q4", 2, 16),
+        _ => ("e8m0", "fp8", 1, 32),
+    };
+    let scales = f.bytes(&format!("{name}.{scale_part}"))?;
+    let codes = f.bytes(&format!("{name}.{code_part}"))?;
+    if !r.inp.is_multiple_of(32) || first + count > r.out {
+        return Err(Error::DType(format!("{name}: {count} rows of {}", r.inp)));
+    }
+    // Input-side int4 shards hold 128 inputs of every output.
+    let grouped = r.format == INT4 && r.side == trellis::INPUT_SIDE as i64;
+    let groups = r.inp / 32;
+    let mut out = Vec::with_capacity(count * groups * (scale_bytes + code_bytes));
+    for o in first..first + count {
+        for g in 0..groups {
+            let at = match grouped {
+                true => (g / 4 * r.out + o) * 4 + g % 4,
+                false => o * groups + g,
+            };
+            out.extend_from_slice(&scales[at * scale_bytes..(at + 1) * scale_bytes]);
+            out.extend_from_slice(&codes[at * code_bytes..(at + 1) * code_bytes]);
         }
     }
     Ok(out)
@@ -322,7 +317,9 @@ impl Release {
         let matrix = matrix.unwrap_or(&local).to_string();
         let whole = local.ends_with(".weight");
         self.with(&file, |f| match record(f, &matrix)? {
-            r if r.format == INT4 => q4_0(f, &matrix, &r),
+            r if block_form(r.format).is_some() => {
+                blocks(f, &matrix, &r, rows.unwrap_or((0, r.out)))
+            }
             r if r.format == TRELLIS && whole => turned(f, &matrix),
             _ => codes_packed(f, &matrix, rows),
         })
@@ -413,8 +410,7 @@ impl Release {
                 if let Ok(r) = record(f, matrix) {
                     let stored = match (glm, r.format) {
                         (false, _) | (true, FP32) => Stored::F32,
-                        (true, INT4) => Stored::Form(&block::Q4_0),
-                        (true, _) => Stored::Bf16,
+                        (true, format) => block_form(format).map_or(Stored::Bf16, Stored::Form),
                     };
                     out.push(Slice {
                         name: name("weight"),
