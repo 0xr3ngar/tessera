@@ -1,11 +1,11 @@
 //! Attention splits by tensor, the experts by matrix.
 
-use super::small;
+use super::{SPEC, STEPPER, small};
 use graph::{Parts, Placement, Stage, shard};
 use interp::{Tensor, run, run_parts};
 use lower::{Device, lower};
 use models::decoder::{Config, Moe, Scales, program, stepper};
-use parity::{pair, step_ranks};
+use parity::{Spec, Stepper, pair, step_ranks};
 use run::Loopback;
 use run::testing::host;
 use testkit::{Noise, fill, max_abs_diff};
@@ -102,4 +102,25 @@ fn uneven_step_heads() {
     assert_eq!(placed(Placement::Split { axis: 1 }), 2);
     let heads = Placement::Split { axis: 2 };
     assert!(g.kept.iter().all(|k| k.placement == heads));
+}
+
+fn one_expert() -> Config {
+    Config {
+        top_k: 1,
+        ..models::small::granite()
+    }
+}
+
+/// One expert per row keeps the top-k axis.
+#[test]
+fn steps_with_one_expert() {
+    let spec = Spec {
+        small: Some(|| program::<(), Moe>(&one_expert())),
+        stepper: Some(Stepper {
+            small: || stepper::<(), Moe>(&one_expert()),
+            ..STEPPER
+        }),
+        ..SPEC
+    };
+    parity::steps(&spec);
 }
