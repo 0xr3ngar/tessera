@@ -41,6 +41,7 @@ fn config(gguf: &Gguf, arch: &str, slots: u64, context: u64) -> Result<Config, F
             ffn: integer("feed_forward_length")?,
             max_seqs: slots,
             max_context: context,
+            masked: false,
         },
         kv_heads: integer("attention.head_count_kv")?,
         rope_theta: float("rope.freq_base")?,

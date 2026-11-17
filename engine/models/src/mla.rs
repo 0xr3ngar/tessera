@@ -1,6 +1,6 @@
 //! DeepSeek-style decoders: low-rank attention, MoE, indexed keys.
 
-use crate::shared::{Attend, Stack, rows, step_ports, swiglu, tokens};
+use crate::shared::{Attend, Stack, pick, rows, step_ports, swiglu, tokens};
 use trace::DimName::*;
 use trace::{
     Act, Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Linears, Mask, Model,
@@ -488,7 +488,7 @@ pub fn stepper<R: Routed>(c: &Config) -> Graph {
     dims.push(Dim { name: Rows, size });
     let m = Model::new(dims);
     let w: Mla<R> = trace::declare(&m);
-    let [tokens, positions, slots] = step_ports(&m);
+    let ([tokens, positions, slots], allowed) = step_ports(&m, c.stack.masked);
     let kept = |width: DimName| m.kept(TensorType::new(rows([width.into()]), DType::F32));
     let cache = |l| Cache {
         latent: kept(Latent),
@@ -502,6 +502,5 @@ pub fn stepper<R: Routed>(c: &Config) -> Graph {
         step: Some((&slots, (0..c.stack.layers).map(cache).collect())),
     };
     let logits = pass.logits(&w, &tokens);
-    let ids = logits.top_k(1u64).reshape([Rows]);
-    m.finish([(Role::Tokens, &ids), (Role::Logits, &logits)])
+    pick(&m, &logits, allowed.as_ref())
 }

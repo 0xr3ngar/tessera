@@ -147,3 +147,22 @@ impl Matcher {
         self.inner.is_stopped()
     }
 }
+
+impl engine::Guide for Matcher {
+    fn mask(&mut self, out: &mut [u32]) -> Result<bool, engine::Fault> {
+        Matcher::mask(self, out)?;
+        Ok(true)
+    }
+
+    fn forced(&mut self) -> Vec<u32> {
+        Matcher::forced(self)
+    }
+
+    fn accept(&mut self, id: u32) -> Result<(), engine::Fault> {
+        Matcher::accept(self, id)
+    }
+
+    fn done(&self) -> bool {
+        self.stopped()
+    }
+}

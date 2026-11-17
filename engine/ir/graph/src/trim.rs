@@ -132,6 +132,7 @@ fn sweep(g: &Graph, entry: usize, forced: &[bool]) -> Vec<Need> {
             rowwise(&n.op, j, ty) && !by_rows(ty) && ty.shape.0.iter().any(|e| mentions(e, Rows))
         };
         let fixed = matches!(n.op, Op::Input { .. } | Op::Weight(_) | Op::Append(_));
+        let fixed = fixed && !masks(g, &n.op);
         if need[i] == Need::Picked
             && (fixed || !by_rows(&n.ty) || n.args.iter().enumerate().any(mixed))
         {
@@ -148,6 +149,15 @@ fn sweep(g: &Graph, entry: usize, forced: &[bool]) -> Vec<Need> {
         }
     }
     need
+}
+
+/// Whether `op` is a mask input. Masks follow their rows.
+fn masks(g: &Graph, op: &Op) -> bool {
+    let Op::Input { entry, port } = op else {
+        return false;
+    };
+    let port = g.entries[*entry as usize].inputs.get(*port as usize);
+    port.is_some_and(|p| p.role == Role::Allowed)
 }
 
 /// Whether each result row reads only its row of `j`.
@@ -220,6 +230,12 @@ fn picked(op: &Op) -> Op {
 fn rebuild(g: &Graph, entry: usize, need: &[Need], anchors: &[Option<usize>]) -> Graph {
     let mut out = g.clone();
     out.nodes.clear();
+    for (i, n) in g.nodes.iter().enumerate() {
+        if let (Op::Input { port, .. }, Need::Picked) = (&n.op, need[i]) {
+            let ty = &mut out.entries[entry].inputs[*port as usize].ty;
+            ty.shape = Shape(ty.shape.0.iter().map(renamed).collect());
+        }
+    }
     let port = out.entries[entry].inputs.len() as u32;
     out.entries[entry].inputs.push(Port {
         role: Role::Picks,

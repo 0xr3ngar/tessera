@@ -276,16 +276,15 @@ fn forward(s: &Subject, settings: &Settings, misses: &mut Misses) -> Result<(), 
 fn rate(g: &Graph, w: &[Weight], recipe: &Recipe, settings: &Settings) -> Result<f64, Error> {
     let mut engine = Engine::open(g.clone(), CONTEXT, recipe, settings)?;
     engine.load(w)?;
-    let tokens = vec![1, 2, 3, 4, 5, 6, 7, 1];
-    let request = Request {
-        tokens,
+    let request = || Request {
+        tokens: vec![1, 2, 3, 4, 5, 6, 7, 1],
         max_tokens: NEW,
-        stop: Vec::new(),
+        ..Request::default()
     };
     // The first pass compiles what the plan newly picked.
-    engine.generate(&request, &mut |_| {})?;
+    engine.generate(request(), &mut |_| {})?;
     let start = Instant::now();
-    engine.generate(&request, &mut |_| {})?;
+    engine.generate(request(), &mut |_| {})?;
     Ok(NEW as f64 / start.elapsed().as_secs_f64())
 }
 

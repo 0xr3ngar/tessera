@@ -2,7 +2,7 @@
 
 use trace::DimName::*;
 use trace::{
-    Act, DType, Dim, DimExpr, DimName, EntryKind, Linear, Model, Pairs, PathSeg, Port, Role,
+    Act, DType, Dim, DimExpr, DimName, EntryKind, Graph, Linear, Model, Pairs, PathSeg, Port, Role,
     Tensor, TensorType, Vector, Weights,
 };
 
@@ -170,6 +170,8 @@ pub struct Stack {
     /// Most sequences one launch may carry.
     pub max_seqs: u64,
     pub max_context: u64,
+    /// Step entries also take a mask of allowed tokens.
+    pub masked: bool,
 }
 
 impl Stack {
@@ -188,6 +190,7 @@ impl Stack {
             ffn,
             max_seqs,
             max_context,
+            masked: false,
         }
     }
 
@@ -208,6 +211,9 @@ impl Stack {
             bounded(Context, self.max_context),
         ];
         dims.extend(shared.iter().chain(own).map(fixed));
+        if self.masked {
+            dims.push(Dim::fixed(VocabWords, self.vocab.div_ceil(32)));
+        }
         dims
     }
 }
@@ -227,15 +233,27 @@ pub(crate) fn ports(m: &Model, kind: EntryKind, rows: DimName) -> [Tensor; 2] {
     m.entry(kind, [port(Role::Tokens), port(Role::Positions)])
 }
 
-/// A step entry's rows: tokens, positions and slots, `[Rows]` each.
-pub(crate) fn step_ports(m: &Model) -> [Tensor; 3] {
-    let ty = TensorType::new([Rows], DType::U32);
-    let port = |role| Port {
-        role,
-        ty: ty.clone(),
-    };
-    let ports = [port(Role::Tokens), port(Role::Positions), port(Role::Slots)];
-    m.entry(EntryKind::Step, ports)
+/// A step entry's tokens, positions, slots and optional mask.
+pub(crate) fn step_ports(m: &Model, masked: bool) -> ([Tensor; 3], Option<Tensor>) {
+    let port = |role, ty| Port { role, ty };
+    let row = |role| port(role, TensorType::new([Rows], DType::U32));
+    let [t, p, s] = [Role::Tokens, Role::Positions, Role::Slots].map(row);
+    if !masked {
+        return (m.entry(EntryKind::Step, [t, p, s]), None);
+    }
+    let bits = port(
+        Role::Allowed,
+        TensorType::new([Rows, VocabWords], DType::U32),
+    );
+    let [t, p, s, bits] = m.entry(EntryKind::Step, [t, p, s, bits]);
+    ([t, p, s], Some(bits))
+}
+
+/// Each row's likeliest allowed token, and its logits.
+pub(crate) fn pick(m: &Model, logits: &Tensor, allowed: Option<&Tensor>) -> Graph {
+    let logits = allowed.map_or_else(|| logits.clone(), |bits| logits.allow(bits));
+    let ids = logits.top_k(1u64).reshape([Rows]);
+    m.finish([(Role::Tokens, &ids), (Role::Logits, &logits)])
 }
 
 /// `[Seqs, Context]` followed by `rest`.

@@ -337,6 +337,17 @@ pub(crate) fn stage(
                 }
             }
         }
+        (Stage::Allow, Some(bits)) => {
+            let bits = bits.indices()?;
+            let words = width.div_ceil(32);
+            for (row, mask) in out.chunks_mut(width).zip(bits.chunks(words)) {
+                for (i, v) in row.iter_mut().enumerate() {
+                    if mask[i / 32] >> (i % 32) & 1 == 0 {
+                        *v = f32::NEG_INFINITY;
+                    }
+                }
+            }
+        }
         (Stage::Center, _) => out.chunks_mut(width).for_each(|r| {
             let mean = acc.sum(r.iter().copied()) / width as f32;
             r.iter_mut().for_each(|v| *v -= mean);

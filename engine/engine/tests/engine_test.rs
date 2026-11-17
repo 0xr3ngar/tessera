@@ -1,12 +1,13 @@
 //! The engine's decode loop against the interpreter.
 
-use engine::{Batch, Engine, Event, Fair, Reason, Request, Row};
+use engine::{Batch, Engine, Event, Fair, Fault, Guide, Prefix, Reason, Request, Row};
 use graph::{Graph, Op};
 use interp::{Store, Tensor, run_kept};
 use lower::{Recipe, Settings, Weight, kept, rules};
 use models::decoder::{Config, Moe, Swiglu, stepper};
 use models::{mla, small};
 use run::testing::runs;
+use std::sync::{Arc, Mutex};
 use testkit::{Noise, weights};
 use trace::DimName::Picks;
 use trace::Norm;
@@ -51,18 +52,21 @@ fn reference(g: &Graph, weights: &[Tensor], prompt: &[u32], n: usize) -> Vec<u32
 
 /// A toy engine with `slots` lanes, its graph and weights.
 fn open(seed: u64, slots: u64, settings: &Settings) -> (Graph, Vec<Tensor>, Engine) {
-    open_on(seed, slots, Recipe::default(), settings)
+    open_on(seed, slots, false, Recipe::default(), settings)
 }
 
+/// The graph stays unmasked. The engine's takes masks if `masked`.
 fn open_on(
     seed: u64,
     slots: u64,
+    masked: bool,
     recipe: Recipe,
     settings: &Settings,
 ) -> (Graph, Vec<Tensor>, Engine) {
-    let c = Config::toy(slots, 16);
+    let mut c = Config::toy(slots, 16);
     let g = stepper::<Norm, Swiglu>(&c);
     let weights = weights(&g, &mut Noise(seed));
+    c.stack.masked = masked;
     let mut engine = Engine::open(stepper::<Norm, Swiglu>(&c), 16, &recipe, settings).unwrap();
     let stored: Vec<Weight> = weights.iter().cloned().map(Weight::Floats).collect();
     engine.load(&stored).unwrap();
@@ -70,7 +74,7 @@ fn open_on(
 }
 
 /// The events of one answer to `request`.
-fn events(engine: &mut Engine, request: &Request) -> Vec<Event> {
+fn events(engine: &mut Engine, request: Request) -> Vec<Event> {
     let mut events = Vec::new();
     engine.generate(request, &mut |e| events.push(e)).unwrap();
     events
@@ -104,33 +108,26 @@ fn answers_match(settings: &Settings) {
     let (g, weights, mut engine) = open(11, 1, settings);
     let prompt = [3u32, 9, 4];
     let want = reference(&g, &weights, &prompt, 6);
-    let request = Request {
+    let request = |max_tokens, stop| Request {
         tokens: prompt.to_vec(),
-        max_tokens: 6,
-        stop: Vec::new(),
+        max_tokens,
+        stop,
+        guide: None,
     };
-    let got = events(&mut engine, &request);
+    let got = events(&mut engine, request(6, Vec::new()));
     assert_eq!(
         (ids(&got), got.last()),
         (want.clone(), Some(&Event::Done(Reason::Length)))
     );
     // A stop id ends the answer, left out.
-    let stopped = Request {
-        stop: vec![want[2]],
-        ..request.clone()
-    };
-    let got = events(&mut engine, &stopped);
+    let got = events(&mut engine, request(6, vec![want[2]]));
     assert_eq!(
         (ids(&got).len(), got.last()),
         (2, Some(&Event::Done(Reason::Stop)))
     );
     // The context fills before a long answer ends.
-    let long = Request {
-        max_tokens: 100,
-        ..request
-    };
     assert_eq!(
-        events(&mut engine, &long).last(),
+        events(&mut engine, request(100, Vec::new())).last(),
         Some(&Event::Done(Reason::Context))
     );
 }
@@ -156,7 +153,7 @@ fn rows_mix_slots() {
         .iter()
         .flat_map(|s| recipes.iter().map(move |r| (s, r)));
     for (settings, recipe) in pairs {
-        let (g, weights, mut engine) = open_on(13, 4, recipe.clone(), settings);
+        let (g, weights, mut engine) = open_on(13, 4, false, recipe.clone(), settings);
         // Two prompts at once, decodes side by side, then alone.
         let launches = [
             vec![row(2, 5, 0), row(2, 7, 1), row(0, 9, 0)],
@@ -198,6 +195,7 @@ fn batched(seed: u64, slots: u64, budget: usize, cancel_after: Option<usize>, s:
             tokens: prompt.to_vec(),
             max_tokens: 3 + i,
             stop: Vec::new(),
+            guide: None,
         };
         let (events, receiver) = std::sync::mpsc::channel();
         let mut sent = 0;
@@ -271,5 +269,65 @@ fn trim_keeps_picks() {
                 assert_eq!(got[at * width..][..width], want[p * width..][..width]);
             }
         }
+    }
+}
+
+/// Allows one id, and keeps each id it accepts.
+struct Only(u32, Arc<Mutex<Vec<u32>>>);
+
+impl Guide for Only {
+    fn mask(&mut self, out: &mut [u32]) -> Result<bool, Fault> {
+        out.fill(0);
+        out[self.0 as usize / 32] = 1 << (self.0 % 32);
+        Ok(true)
+    }
+
+    fn accept(&mut self, id: u32) -> Result<(), Fault> {
+        self.1.lock().map_err(|_| "poisoned")?.push(id);
+        Ok(())
+    }
+}
+
+#[test]
+fn masks_limit_picks() {
+    let mut c = Config::toy(1, 16);
+    c.stack.masked = true;
+    let trimmed = graph::trim(&stepper::<Norm, Swiglu>(&c), 0).unwrap();
+    assert_eq!(trimmed.entries[0].inputs[3].ty.shape.0[0], Picks.into());
+    for s in runs() {
+        let (g, weights, mut engine) = open_on(29, 1, true, Recipe::default(), &s);
+        let rows = [row(0, 3, 0), row(0, 9, 1)];
+        let want = step(&g, &weights, &mut Store::default(), &rows);
+        assert_eq!(engine.step(&rows).unwrap(), want);
+        let only = (want[1] + 1) % 32;
+        assert_eq!(engine.last_masked(&rows, &[1 << only]).unwrap(), [only]);
+        // The guide limits each answer token and sees it.
+        let seen = Arc::default();
+        let request = Request {
+            tokens: vec![3, 9],
+            max_tokens: 3,
+            guide: Some(Box::new(Only(only, Arc::clone(&seen)))),
+            ..Request::default()
+        };
+        assert_eq!(ids(&events(&mut engine, request)), [only; 3]);
+        assert_eq!(*seen.lock().unwrap(), [only; 3]);
+    }
+}
+
+#[test]
+fn prefix_comes_first() {
+    for s in runs() {
+        let (g, weights, mut engine) = open(31, 1, &s);
+        let want = reference(&g, &weights, &[3, 9, 5, 7], 3);
+        let request = Request {
+            tokens: vec![3, 9],
+            max_tokens: 5,
+            guide: Some(Box::new(Prefix(vec![5, 7]))),
+            ..Request::default()
+        };
+        assert_eq!(
+            ids(&events(&mut engine, request)),
+            [&[5, 7], &want[..]].concat()
+        );
     }
 }

@@ -817,6 +817,7 @@ name = "grammar"
 version = "0.1.0"
 dependencies = [
  "bundle",
+ "engine",
  "llguidance",
  "serde_json",
  "toktrie",

@@ -1,7 +1,6 @@
 //! Many answers in flight, one step feeding them all.
 
-use crate::Error;
-use crate::{Engine, Event, Reason, Request, Row};
+use crate::{Engine, Error, Event, Fault, Reason, Request, Row};
 use std::collections::VecDeque;
 
 /// Takes each event. `false` ends the answer early.
@@ -14,7 +13,7 @@ pub struct Seq {
     sink: Sink,
     /// Tokens fed: the prompt, then each answer token.
     fed: usize,
-    /// Tokens to feed. One at a time after the prompt.
+    /// Tokens to feed: the prompt, then picked and forced tokens.
     pending: VecDeque<u32>,
     made: usize,
 }
@@ -34,31 +33,61 @@ impl Seq {
         self.pending.len()
     }
 
-    /// Whether the prompt is still going in.
+    /// Whether more than one token waits, as with a prompt.
     pub fn prefilling(&self) -> bool {
-        self.fed < self.request.tokens.len()
+        self.pending.len() > 1
     }
 
     /// Counts `n` tokens fed. `id` follows the last one.
-    fn advance(&mut self, n: usize, id: u32) -> Option<Reason> {
+    fn advance(&mut self, n: usize, id: u32) -> Result<Option<Reason>, Error> {
         self.pending.drain(..n);
         self.fed += n;
         if !self.pending.is_empty() {
-            return None;
+            return Ok(None);
+        }
+        if let Some(guide) = &mut self.request.guide {
+            guide.accept(id).map_err(fault)?;
         }
         if self.request.stop.contains(&id) {
-            return Some(Reason::Stop);
+            return Ok(Some(Reason::Stop));
         }
+        if let Some(reason) = self.emit(id) {
+            return Ok(Some(reason));
+        }
+        self.pending.push_back(id);
+        self.force()
+    }
+
+    /// Sends an answer token.
+    fn emit(&mut self, id: u32) -> Option<Reason> {
         self.made += 1;
         if !(self.sink)(Event::Token(id)) {
             return Some(Reason::Stop);
         }
-        if self.made >= self.request.max_tokens {
-            return Some(Reason::Length);
-        }
-        self.pending.push_back(id);
-        None
+        (self.made >= self.request.max_tokens).then_some(Reason::Length)
     }
+
+    /// Queues and sends the guide's forced tokens.
+    fn force(&mut self) -> Result<Option<Reason>, Error> {
+        let Some(guide) = &mut self.request.guide else {
+            return Ok(None);
+        };
+        let (forced, done) = (guide.forced(), guide.done());
+        for id in forced {
+            if self.request.stop.contains(&id) {
+                return Ok(Some(Reason::Stop));
+            }
+            if let Some(reason) = self.emit(id) {
+                return Ok(Some(reason));
+            }
+            self.pending.push_back(id);
+        }
+        Ok(done.then_some(Reason::Stop))
+    }
+}
+
+fn fault(e: Fault) -> Error {
+    Error::Guide(e.to_string())
 }
 
 /// Which rows the next step feeds, within a row budget.
@@ -140,21 +169,29 @@ impl<'a> Batch<'a> {
     }
 
     /// Admits waiting answers while slots are free.
-    fn admit(&mut self) {
+    fn admit(&mut self) -> Result<(), Error> {
         while let Some(slot) = self.free.pop() {
             let Some((request, sink)) = self.waiting.pop_front() else {
                 self.free.push(slot);
-                return;
+                return Ok(());
             };
-            self.active.push(Seq {
+            let mut seq = Seq {
                 slot,
                 pending: request.tokens.iter().copied().collect(),
                 request,
                 sink,
                 fed: 0,
                 made: 0,
-            });
+            };
+            match seq.force()? {
+                Some(reason) => {
+                    (seq.sink)(Event::Done(reason));
+                    self.free.push(slot);
+                }
+                None => self.active.push(seq),
+            }
         }
+        Ok(())
     }
 
     /// The most rows one step feeds.
@@ -167,13 +204,43 @@ impl<'a> Batch<'a> {
         let context = self.engine.context;
         let mut i = 0;
         while i < self.active.len() {
-            if self.active[i].fed < context {
+            let seq = &self.active[i];
+            if seq.fed + seq.pending() <= context {
                 i += 1;
                 continue;
             }
             (self.active[i].sink)(Event::Done(Reason::Context));
             self.finish(i);
         }
+    }
+
+    /// Each pick's mask, if any guide limits one.
+    fn masks(&mut self, rows: &[Row], ends: &[u32]) -> Result<Option<Vec<u32>>, Error> {
+        if self.active.iter().all(|s| s.request.guide.is_none()) {
+            return Ok(None);
+        }
+        let words = self.engine.words().unwrap_or_default();
+        let mut out = vec![u32::MAX; ends.len() * words];
+        let mut limited = false;
+        for seq in &mut self.active {
+            let Some(guide) = &mut seq.request.guide else {
+                continue;
+            };
+            let Some(k) = ends.iter().position(|&e| rows[e as usize].slot == seq.slot) else {
+                continue;
+            };
+            // Only when the answer keeps this pick.
+            let mine = rows.iter().filter(|r| r.slot == seq.slot).count();
+            if mine != seq.pending.len() {
+                continue;
+            }
+            let row = &mut out[k * words..(k + 1) * words];
+            limited |= guide.mask(row).map_err(fault)?;
+        }
+        if limited && words == 0 {
+            return Err(Error::Mask);
+        }
+        Ok(limited.then_some(out))
     }
 
     fn finish(&mut self, i: usize) {
@@ -183,14 +250,17 @@ impl<'a> Batch<'a> {
 
     /// One step of the policy's rows. False when nothing ran.
     pub fn step(&mut self) -> Result<bool, Error> {
-        self.admit();
+        self.admit()?;
         self.fit();
         let rows = self.policy.pick(&self.active, self.budget);
         if rows.is_empty() {
             return Ok(false);
         }
-        let ids = self.engine.last(&rows)?;
         let ends = crate::ends(&rows);
+        let ids = match self.masks(&rows, &ends)? {
+            Some(masks) => self.engine.last_masked(&rows, &masks)?,
+            None => self.engine.last(&rows)?,
+        };
         // Each answer takes its rows and its last id.
         let mut i = 0;
         while i < self.active.len() {
@@ -202,7 +272,7 @@ impl<'a> Batch<'a> {
                 .find(|(e, _)| rows[**e as usize].slot == slot);
             match mine {
                 None => i += 1,
-                Some((_, &last)) => match self.active[i].advance(n, last) {
+                Some((_, &last)) => match self.active[i].advance(n, last)? {
                     Some(reason) => {
                         (self.active[i].sink)(Event::Done(reason));
                         self.finish(i);

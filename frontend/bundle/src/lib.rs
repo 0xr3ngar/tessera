@@ -231,6 +231,7 @@ pub fn load_named(
             ffn: hf.intermediate_size,
             max_seqs: slots,
             max_context: context,
+            masked: false,
         },
         kv_heads: hf.num_key_value_heads,
         rope_theta: hf.rope_theta,

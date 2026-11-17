@@ -3,16 +3,18 @@
 // Linking the crates registers their rules.
 use rules as _;
 
-use graph::DimName::{Context, Picks, Rows, Segments, Seqs};
+use graph::DimName::{Context, Picks, Rows, Segments, Seqs, VocabWords};
 use lower::{Cache, Device};
 use run::{Run, open};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::mpsc;
 
+mod guide;
 mod model;
 mod schedule;
 
+pub use guide::{Fault, Guide, Prefix};
 pub use model::Model;
 pub use schedule::{Batch, Fair, Policy, Seq, Sink};
 
@@ -29,12 +31,15 @@ pub use run::gpu;
 pub use trace::{Linear, Norm};
 
 /// Tokens to continue, and when to stop.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Request {
     pub tokens: Vec<u32>,
     pub max_tokens: usize,
     /// Ids that end the answer, left out of it.
     pub stop: Vec<u32>,
+    /// Rules on each token. Masks need a mask port.
+    #[serde(skip)]
+    pub guide: Option<Box<dyn Guide>>,
 }
 
 /// Why an answer ended.
@@ -70,6 +75,10 @@ pub enum Error {
     InputAxis,
     #[error(transparent)]
     Graph(#[from] graph::VerifyError),
+    #[error("the masks do not fit the graph's mask port")]
+    Mask,
+    #[error("guide: {0}")]
+    Guide(String),
 }
 
 /// Rows in, picked rows' likeliest ids out, on one runner.
@@ -81,6 +90,8 @@ pub struct Engine {
     context: usize,
     /// Kept-row lanes the graph declares.
     slots: usize,
+    /// Mask words per pick, if the graph takes masks.
+    words: Option<usize>,
 }
 
 /// A token at a position, in a slot's sequence.
@@ -103,7 +114,7 @@ fn launch_of(
     rows: &[Row],
     picks: &[u32],
     slots: usize,
-) -> ([(graph::DimName, u64); 5], [Tensor; 4]) {
+) -> ([(graph::DimName, u64); 5], Vec<Tensor>) {
     let furthest = rows.iter().map(|r| r.position).max().unwrap_or(0);
     let mut seen: Vec<u32> = rows.iter().map(|r| r.slot).collect();
     seen.sort_unstable();
@@ -126,7 +137,7 @@ fn launch_of(
     };
     let tail = picks.last().copied().unwrap_or_default();
     let picked = picks.iter().copied().chain(std::iter::repeat(tail));
-    let feeds = [
+    let feeds = vec![
         column(|r| r.token),
         column(|r| r.position),
         column(|r| r.slot),
@@ -163,6 +174,8 @@ impl Engine {
         let device = Device::stored(runner.platform(), settings)
             .map_err(lower::Error::from)?
             .with(recipe);
+        let words = graph.dims.iter().find(|d| d.name == VocabWords);
+        let words = words.map(|d| d.size.max() as usize);
         Ok(Self {
             graph,
             runner,
@@ -170,6 +183,7 @@ impl Engine {
             plans,
             context,
             slots,
+            words,
         })
     }
 
@@ -195,19 +209,34 @@ impl Engine {
         by
     }
 
+    /// Mask words per pick, if the graph takes masks.
+    pub fn words(&self) -> Option<usize> {
+        self.words
+    }
+
     /// One launch of `rows`: the likeliest token after each.
     pub fn step(&mut self, rows: &[Row]) -> Result<Vec<u32>, Error> {
         let all: Vec<u32> = (0..rows.len() as u32).collect();
-        self.launch(rows, &all)
+        self.launch(rows, &all, None)
     }
 
     /// One launch: the likeliest token after each slot's last row.
     pub fn last(&mut self, rows: &[Row]) -> Result<Vec<u32>, Error> {
-        self.launch(rows, &ends(rows))
+        self.launch(rows, &ends(rows), None)
+    }
+
+    /// As `last`, each pick limited by its `words` of `masks`.
+    pub fn last_masked(&mut self, rows: &[Row], masks: &[u32]) -> Result<Vec<u32>, Error> {
+        self.launch(rows, &ends(rows), Some(masks))
     }
 
     /// One launch of `rows`, the likeliest ids after `picks`.
-    fn launch(&mut self, rows: &[Row], picks: &[u32]) -> Result<Vec<u32>, Error> {
+    fn launch(
+        &mut self,
+        rows: &[Row],
+        picks: &[u32],
+        masks: Option<&[u32]>,
+    ) -> Result<Vec<u32>, Error> {
         if rows.is_empty() {
             return Err(Error::Rows);
         }
@@ -217,7 +246,19 @@ impl Engine {
         {
             return Err(Error::RowPlace);
         }
-        let (sizes, feeds) = launch_of(rows, picks, self.slots);
+        let (sizes, mut feeds) = launch_of(rows, picks, self.slots);
+        if let Some(words) = self.words {
+            let mut bits = masks.unwrap_or_default().to_vec();
+            if !bits.is_empty() && bits.len() != picks.len() * words {
+                return Err(Error::Mask);
+            }
+            // Unmasked and filler picks allow everything.
+            let wanted = feeds[3].len();
+            bits.resize(wanted * words, u32::MAX);
+            feeds.insert(3, Tensor::u32(vec![wanted, words], bits));
+        } else if masks.is_some() {
+            return Err(Error::Mask);
+        }
         let (plan, bound) =
             self.plans
                 .upto(&self.graph, 0, &sizes, &[Context, Segments], &self.device)?;
@@ -233,14 +274,10 @@ impl Engine {
     }
 
     /// Decodes greedily after `request.tokens`, one event per token.
-    pub fn generate(
-        &mut self,
-        request: &Request,
-        emit: &mut dyn FnMut(Event),
-    ) -> Result<(), Error> {
+    pub fn generate(&mut self, request: Request, emit: &mut dyn FnMut(Event)) -> Result<(), Error> {
         let (events, taken) = mpsc::channel();
         let mut batch = Batch::new(self, Box::new(Fair));
-        batch.submit(request.clone(), Box::new(move |e| events.send(e).is_ok()));
+        batch.submit(request, Box::new(move |e| events.send(e).is_ok()));
         while batch.step()? {
             taken.try_iter().for_each(&mut *emit);
         }
