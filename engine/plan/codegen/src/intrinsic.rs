@@ -10,6 +10,7 @@ macro_rules! table {
             Gid = fn gid() -> u32 {
                 device: none(),
                 text: |_, _| "gid".into(),
+                wgsl: bare(),
                 host: |g, _, _| (0..g.threads).map(|t| Val::U((g.first + t) as u32)).collect(),
                 count: |_, _| false,
             }
@@ -17,6 +18,7 @@ macro_rules! table {
             Lid = fn lid() -> u32 {
                 device: none(),
                 text: |_, _| "lid".into(),
+                wgsl: bare(),
                 host: |g, _, _| (0..g.threads).map(|t| Val::U(t as u32)).collect(),
                 count: |_, _| false,
             }
@@ -27,6 +29,7 @@ macro_rules! table {
                     p.lane = true;
                     "lane".into()
                 },
+                wgsl: bare(),
                 host: |g, _, _| (0..g.threads).map(|t| Val::U((t % g.lanes) as u32)).collect(),
                 count: |_, _| false,
             }
@@ -41,6 +44,7 @@ macro_rules! table {
                     ),
                 ),
                 text: |p, args| p.spell("f_shfl_xor", args),
+                wgsl: call("f_shfl_xor(v: f32, m: u32)", "f32", "subgroupShuffleXor(v, m)"),
                 host: |g, args, mask| {
                     let (v, m) = (g.eval(&args[0], mask), g.eval(&args[1], mask));
                     let (n, lanes) = (g.threads, g.lanes);
@@ -62,6 +66,7 @@ macro_rules! table {
             Sum32 = fn sum32(f32) -> f32 {
                 device: none(),
                 text: |_, _| panic!("sum32 is a statement: `v = sum32(v)`"),
+                wgsl: bare(),
                 host: |g, args, mask| {
                     let v = g.eval(&args[0], mask);
                     let (n, lanes) = (g.threads, g.lanes);
@@ -78,18 +83,21 @@ macro_rules! table {
                         Exp = fn exp(f32) -> f32 {
                 device: define("f_exp(x)", "exp(x)", "expf(x)"),
                 text: |p, args| p.spell("f_exp", args),
+                wgsl: call("f_exp(x: f32)", "f32", "exp(x)"),
                 host: |g, args, mask| g.unary(args, mask, f32::exp),
                 count: |c, _| c.tally(special(1.0), true),
             }
             Tanh = fn tanh(f32) -> f32 {
                 device: define("f_tanh(x)", "tanh(x)", "tanhf(x)"),
                 text: |p, args| p.spell("f_tanh", args),
+                wgsl: call("f_tanh(x: f32)", "f32", "tanh(x)"),
                 host: |g, args, mask| g.unary(args, mask, f32::tanh),
                 count: |c, _| c.tally(special(1.0), true),
             }
             Max = fn max(f32, f32) -> f32 {
                 device: define("f_max(a, b)", "max(a, b)", "fmaxf(a, b)"),
                 text: |p, args| p.spell("f_max", args),
+                wgsl: call("f_max(a: f32, b: f32)", "f32", "max(a, b)"),
                 host: |g, args, mask| g.pair(args, mask, f32::max),
                 count: |c, _| c.tally(float(1.0), true),
             }
@@ -97,6 +105,7 @@ macro_rules! table {
             Clamp = fn clamp(f32, f32, f32) -> f32 {
                 device: define("f_clamp(x, lo, hi)", "clamp(x, lo, hi)", "fminf(fmaxf(x, lo), hi)"),
                 text: |p, args| p.spell("f_clamp", args),
+                wgsl: call("f_clamp(x: f32, lo: f32, hi: f32)", "f32", "min(max(x, lo), hi)"),
                 host: |g, args, mask| {
                     let v = g.eval(&args[0], mask);
                     let (lo, hi) = (g.eval(&args[1], mask), g.eval(&args[2], mask));
@@ -109,18 +118,21 @@ macro_rules! table {
             Pow = fn pow(f32, f32) -> f32 {
                 device: define("f_pow(a, b)", "precise::pow(a, b)", "powf(a, b)"),
                 text: |p, args| p.spell("f_pow", args),
+                wgsl: call("f_pow(a: f32, b: f32)", "f32", "pow(a, b)"),
                 host: |g, args, mask| g.pair(args, mask, f32::powf),
                 count: |c, _| c.tally(special(1.0), true),
             }
             Cos = fn cos(f32) -> f32 {
                 device: define("f_cos(x)", "precise::cos(x)", "cosf(x)"),
                 text: |p, args| p.spell("f_cos", args),
+                wgsl: call("f_cos(x: f32)", "f32", "cos(x)"),
                 host: |g, args, mask| g.unary(args, mask, f32::cos),
                 count: |c, _| c.tally(special(1.0), true),
             }
             Sin = fn sin(f32) -> f32 {
                 device: define("f_sin(x)", "precise::sin(x)", "sinf(x)"),
                 text: |p, args| p.spell("f_sin", args),
+                wgsl: call("f_sin(x: f32)", "f32", "sin(x)"),
                 host: |g, args, mask| g.unary(args, mask, f32::sin),
                 count: |c, _| c.tally(special(1.0), true),
             }
@@ -128,6 +140,7 @@ macro_rules! table {
             FromBits = assoc f32::from_bits(u32) -> f32 {
                 device: define("f_bits(x)", "as_type<float>(x)", "__uint_as_float(x)"),
                 text: |p, args| p.spell("f_bits", args),
+                wgsl: call("f_bits(x: u32)", "f32", "bitcast<f32>(x)"),
                 host: |g, args, mask| {
                     let v = g.eval(&args[0], mask);
                     v.into_iter().map(|x| Val::F(f32::from_bits(x.u()))).collect()
@@ -138,6 +151,7 @@ macro_rules! table {
             ToBits = method to_bits(self) -> u32 {
                 device: define("f_asbits(x)", "as_type<u32>(x)", "__float_as_uint(x)"),
                 text: |p, args| p.spell("f_asbits", args),
+                wgsl: call("f_asbits(x: f32)", "u32", "bitcast<u32>(x)"),
                 host: |g, args, mask| {
                     let v = g.eval(&args[0], mask);
                     v.into_iter().map(|x| Val::U(x.f().to_bits())).collect()
@@ -147,6 +161,7 @@ macro_rules! table {
             Rsqrt = fn rsqrt(f32) -> f32 {
                 device: define("f_rsqrt(x)", "rsqrt(x)", "rsqrtf(x)"),
                 text: |p, args| p.spell("f_rsqrt", args),
+                wgsl: call("f_rsqrt(x: f32)", "f32", "inverseSqrt(x)"),
                 host: |g, args, mask| g.unary(args, mask, |x| 1.0 / x.sqrt()),
                 count: |c, _| c.tally(special(1.0), true),
             }
@@ -158,8 +173,12 @@ macro_rules! table {
                     let Expr::Var(name) = &args[0] else {
                         unreachable!()
                     };
-                    form.load4(name, &at)
+                    match p.wgsl {
+                        true => form.wgsl_load4(&p.c_name(name), &at),
+                        false => form.load4(name, &at),
+                    }
                 },
+                wgsl: bare(),
                 host: |g, args, mask| {
                     let Expr::Var(name) = &args[0] else {
                         panic!("a load names its buffer");
@@ -196,8 +215,13 @@ macro_rules! table {
                     let Expr::Var(name) = &args[0] else {
                         panic!("a store names its buffer");
                     };
-                    format!("f_f32x4({name} + {}) = {}", p.expr(&args[1]), p.expr(&args[2]))
+                    let (at, v) = (p.expr(&args[1]), p.expr(&args[2]));
+                    match p.wgsl {
+                        true => store4(&p.c_name(name), &at, &v),
+                        false => format!("f_f32x4({name} + {at}) = {v}"),
+                    }
                 },
+                wgsl: bare(),
                 host: |g, args, mask| {
                     let Expr::Var(name) = &args[0] else {
                         panic!("a store names its buffer");
@@ -216,7 +240,11 @@ macro_rules! table {
             /// A zeroed `float4`.
             Zero4 = assoc F32x4::zero() -> F32x4 {
                 device: none(),
-                text: |_, _| "float4(0.0f, 0.0f, 0.0f, 0.0f)".into(),
+                text: |p, _| match p.wgsl {
+                    true => "vec4<f32>()".into(),
+                    false => "float4(0.0f, 0.0f, 0.0f, 0.0f)".into(),
+                },
+                wgsl: bare(),
                 host: |g, _, _| vec![Val::V([0.0; 4]); g.threads],
                 count: |_, _| false,
             }
@@ -224,6 +252,7 @@ macro_rules! table {
             Make4 = assoc F32x4::new(f32, f32, f32, f32) -> F32x4 {
                 device: define("f_make4(a, b, c, d)", "float4(a, b, c, d)", "make_float4(a, b, c, d)"),
                 text: |p, args| p.spell("f_make4", args),
+                wgsl: call("f_make4(a: f32, b: f32, c: f32, d: f32)", "vec4<f32>", "vec4<f32>(a, b, c, d)"),
                 host: |g, args, mask| {
                     let parts: Vec<Vec<Val>> = args.iter().map(|a| g.eval(a, mask)).collect();
                     (0..g.threads)
@@ -240,6 +269,7 @@ macro_rules! table {
                     let layout = p.layout.expect("a kernel reading kept rows names its layout");
                     layout.row(&slot, &position)
                 },
+                wgsl: bare(),
                 host: |g, args, mask| {
                     let layout = g.layout.expect("a kernel reading kept rows names its layout");
                     let values: Vec<u32> = (layout.params().iter())
@@ -259,6 +289,7 @@ macro_rules! table {
             Word = method word(self, u32) -> u32 {
                 device: define("f_u32(p)", "(*(device const u32 *)(p))", "(*(const u32 *)(p))"),
                 text: |p, args| format!("f_u32(({} + {}))", p.expr(&args[0]), p.expr(&args[1])),
+                wgsl: None,
                 host: |g, args, mask| g.read(args, mask, 4),
                 count: |_, _| false,
             }
@@ -266,6 +297,7 @@ macro_rules! table {
             Half = method half(self, u32) -> u32 {
                 device: define("f_u16(p)", "(*(device const u16 *)(p))", "(*(const u16 *)(p))"),
                 text: |p, args| format!("f_u16(({} + {}))", p.expr(&args[0]), p.expr(&args[1])),
+                wgsl: None,
                 host: |g, args, mask| g.read(args, mask, 2),
                 count: |_, _| false,
             }
@@ -285,6 +317,7 @@ macro_rules! table {
                     ),
                 ),
                 text: |p, args| p.spell("f_field", args),
+                wgsl: call("f_field(w: u32, l: u32, n: u32)", "u32", "extractBits(w, l, n)"),
                 host: |g, args, mask| g.fields(args, mask, |f, _| Val::U(f)),
                 count: |c, _| c.tally(int(1.0), false),
             }
@@ -304,6 +337,7 @@ macro_rules! table {
                     ),
                 ),
                 text: |p, args| p.spell("f_sfield", args),
+                wgsl: call("f_sfield(w: u32, l: u32, n: u32)", "f32", "f32(extractBits(bitcast<i32>(w), l, n))"),
                 host: |g, args, mask| g.fields(args, mask, |f, n| Val::F(sign_extend(f, n) as f32)),
                 count: |c, _| c.tally(Ops { int: 1.0, float: 1.0, ..Ops::default() }, true),
             }
@@ -325,6 +359,7 @@ macro_rules! table {
                     ),
                 ),
                 text: |p, args| p.spell("f_f16", args),
+                wgsl: call("f_f16(w: u32, l: u32)", "f32", "unpack2x16float(w >> l).x"),
                 host: |g, args, mask| g.narrow(args, mask, 16, |x| f32::from(F16(x as u16))),
                 count: |c, _| c.tally(Ops { f16: 1.0, ..Ops::default() }, true),
             }
@@ -349,6 +384,7 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                     [format!("{bits}{soft}"), format!("{bits}{cuda}")]
                 },
                 text: |p, args| p.spell("f_e4m3", args),
+                wgsl: None,
                 host: |g, args, mask| g.narrow(args, mask, 8, |x| f32::from(E4M3(x as u8))),
                 count: |c, _| c.tally(Ops { e4m3: 1.0, ..Ops::default() }, true),
             }
@@ -367,6 +403,7 @@ f_fn float f_e4m3(u32 w, u32 l) {{
 ",
                 ),
                 text: |p, args| p.spell("f_dot", args),
+                wgsl: None,
                 host: |g, args, mask| {
                     let (Expr::Var(a), Expr::Var(b)) = (&args[0], &args[2]) else {
                         panic!("a dot names its buffers");
@@ -414,6 +451,7 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                     [rows("device float *"), rows("float *")]
                 },
                 text: |p, args| p.spell("f_stage", args),
+                wgsl: None,
                 host: |g, args, mask| {
                     let (Expr::Var(out), Expr::Var(b)) = (&args[0], &args[5]) else {
                         panic!("a stage names its buffers");
@@ -473,6 +511,7 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                     [rows("device float *"), rows("float *")]
                 },
                 text: |p, args| p.spell("f_attend", args),
+                wgsl: None,
                 host: |g, args, mask| {
                     let names = [0, 2, 3, 4, 11].map(|i| match &args[i] {
                         Expr::Var(name) => g.arg(name),
@@ -526,6 +565,7 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                     [rows("device float *"), rows("float *")]
                 },
                 text: |p, args| p.spell("f_mix", args),
+                wgsl: None,
                 host: |g, args, mask| {
                     let (Expr::Var(out), Expr::Var(b)) = (&args[0], &args[4]) else {
                         panic!("a mix names its buffers");
@@ -570,6 +610,7 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                     [rows("device float *"), rows("float *")]
                 },
                 text: |p, args| p.spell("f_dots", args),
+                wgsl: None,
                 host: |g, args, mask| {
                     let (Expr::Var(out), Expr::Var(x), Expr::Var(w)) = (&args[0], &args[3], &args[5])
                     else {
@@ -602,6 +643,7 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                     widen("f_e2m1_bits", 2, 1)
                 )),
                 text: |p, args| p.spell("f_e2m1", args),
+                wgsl: None,
                 host: |g, args, mask| g.narrow(args, mask, 4, |x| f32::from(E2M1(x as u8))),
                 count: |c, _| c.tally(Ops { e2m1: 1.0, ..Ops::default() }, true),
             }

@@ -35,6 +35,22 @@ pub fn function(ret: &str, name: &str, params: &[String], lines: &[String]) -> S
     format!("f_fn {ret} {name}({params}) {{\n{lines}\n}}\n")
 }
 
+/// A WGSL function: `fn sig -> ret { lines }`.
+pub(crate) fn wgsl_function(sig: &str, ret: &str, lines: &str) -> String {
+    format!("fn {sig} -> {ret} {{\n{lines}\n}}\n")
+}
+
+/// A WGSL entry: `gid` counts threads over both group axes.
+pub(crate) fn wgsl_entry(entry: &str, lines: &str) -> String {
+    let groups = "@builtin(workgroup_id) f_group: vec3<u32>,\n    \
+                  @builtin(num_workgroups) f_groups: vec3<u32>,\n    \
+                  @builtin(local_invocation_index) lid: u32,";
+    let gid = "let gid = (f_group.y * f_groups.x + f_group.x) * f_threads + lid;";
+    format!(
+        "@compute @workgroup_size(f_threads)\nfn {entry}(\n    {groups}\n) {{\n    {gid}\n{lines}\n}}\n"
+    )
+}
+
 /// The names a body may use, spelled per dialect.
 const NAMES: &[(&str, &str, &str)] = &[
     ("u64", "unsigned long", "unsigned long long"),

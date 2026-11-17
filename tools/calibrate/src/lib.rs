@@ -50,10 +50,8 @@ fn measure(
     // The same pins, or the weights would load again.
     let pins = device.pins.clone();
     let guess = || Device::guess(settings).pinned(pins.clone());
-    let contested = select(g, entry, sizes, &guess())?.contested;
-    let favored = contested.into_iter().map(|r| guess().favoring(r));
     let mut added = Vec::new();
-    for choice in [guess()].into_iter().chain(favored) {
+    for choice in choices((g, entry), sizes, &guess)? {
         let plan = lower(g, entry, sizes, &choice)?;
         if plan.steps.iter().all(|s| device.known(s)) {
             continue;
@@ -66,6 +64,17 @@ fn measure(
     }
     device.name = runner.device();
     Ok(added)
+}
+
+/// The guess, then the guess favoring each rule that competes.
+fn choices(
+    (g, entry): (&Graph, usize),
+    sizes: &[(DimName, u64)],
+    guess: &dyn Fn() -> Device,
+) -> Result<Vec<Device>, Error> {
+    let contested = select(g, entry, sizes, &guess())?.contested;
+    let favored = contested.into_iter().map(|r| guess().favoring(r));
+    Ok([guess()].into_iter().chain(favored).collect())
 }
 
 /// A chip model against the timed launches of one kernel.

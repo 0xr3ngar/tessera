@@ -628,7 +628,7 @@ type Host = for<'a, 'b> fn(&mut Group<'a, 'b>, &[Expr], &[bool]) -> Vec<Val>;
 /// Runs each intrinsic per thread, from the table.
 macro_rules! hosts {
     ($($(#[$doc:meta])* $var:ident = $kind:ident $($name:ident)::+ ($($arg:tt)*) $(-> $ret:ident)?
-        { device: $dev:expr, text: $text:expr, host: $host:expr, count: $count:expr $(,)? })*) => {
+        { device: $dev:expr, text: $text:expr, wgsl: $wgsl:expr, host: $host:expr, count: $count:expr $(,)? })*) => {
         fn host(i: Intrinsic) -> Host {
             match i {
                 $(Intrinsic::$var => $host,)*
