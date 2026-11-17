@@ -7,6 +7,7 @@ use minijinja_contrib::pycompat::unknown_method_callback;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::Path;
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message {
@@ -20,6 +21,15 @@ struct TokenizerConfig {
     chat_template: Option<String>,
 }
 
+/// The time `strftime_now` reads. Tests and replays supply their own.
+pub type Clock = Arc<dyn Fn() -> jiff::Zoned + Send + Sync>;
+
+/// Hugging Face's `strftime_now`: the clock's time, formatted.
+fn strftime_now(clock: &Clock, format: &str) -> Result<String, minijinja::Error> {
+    jiff::fmt::strtime::format(format, &clock())
+        .map_err(|e| minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string()))
+}
+
 pub struct Template {
     env: Environment<'static>,
 }
@@ -27,6 +37,11 @@ pub struct Template {
 impl Template {
     /// Compiles a Jinja template written for Hugging Face.
     pub fn new(source: String) -> Result<Self, minijinja::Error> {
+        Self::with_clock(source, Arc::new(jiff::Zoned::now))
+    }
+
+    /// Like `new`, with `strftime_now` reading `clock`.
+    pub fn with_clock(source: String, clock: Clock) -> Result<Self, minijinja::Error> {
         let mut env = Environment::new();
         // Block tags swallow their line, as Hugging Face renders.
         let syntax = SyntaxConfig::builder()
@@ -36,6 +51,9 @@ impl Template {
         env.set_syntax(syntax);
         // Templates call Python string methods: split, strip, startswith.
         env.set_unknown_method_callback(unknown_method_callback);
+        env.add_function("strftime_now", move |format: &str| {
+            strftime_now(&clock, format)
+        });
         env.add_template_owned("chat", source)?;
         Ok(Self { env })
     }

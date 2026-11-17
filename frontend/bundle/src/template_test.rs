@@ -23,3 +23,11 @@ fn renders_turns() {
         format!("{want}<think>\n\n</think>\n\n")
     );
 }
+
+#[test]
+fn strftime_reads_clock() {
+    let fixed: jiff::Zoned = "2026-03-04T10:00:00+00:00[UTC]".parse().unwrap();
+    let clock = std::sync::Arc::new(move || fixed.clone());
+    let t = Template::with_clock("{{ strftime_now('%d %B %Y') }}".into(), clock).unwrap();
+    assert_eq!(t.render(&[], true).unwrap(), "04 March 2026");
+}

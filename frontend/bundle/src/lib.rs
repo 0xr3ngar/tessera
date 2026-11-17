@@ -16,7 +16,7 @@ mod template;
 mod template_test;
 pub mod tokenize;
 
-pub use template::{Message, Template};
+pub use template::{Clock, Message, Template};
 
 use checkpoint::{File, Offer, Stored};
 use engine::decoder::{self, Config, Moe, Scales, Swiglu};
