@@ -122,6 +122,17 @@ impl Grid {
         }
     }
 
+    /// Sizes where a host may beat its GPU.
+    pub fn host() -> Self {
+        Self {
+            rows: vec![1, 4, 16, 64],
+            widths: vec![256, 1024, 2048],
+            vocabs: vec![32_768],
+            heads: vec![[16, 8, 64]],
+            spans: vec![[1, 16], [1, 128], [16, 16], [64, 64]],
+        }
+    }
+
     /// Enough to reach every rule, in well under a second.
     pub fn tiny() -> Self {
         Self {
