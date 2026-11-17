@@ -1,6 +1,6 @@
 use crate::probe::{Kind, Probe, Reading, fit, links, read, suite};
 use crate::{Grid, headroom, judge};
-use lower::{Device, Settings, rules};
+use lower::{Device, Pick, Settings, rules};
 use sim::Chip;
 use testkit::scratch;
 
@@ -39,6 +39,26 @@ fn grid_reaches_rules() {
     let stored = Device::stored(device.platform.clone(), &costs).unwrap();
     assert!(stored == device, "a round trip");
     std::fs::remove_file(&file).unwrap();
+}
+
+/// On a CPU zone, packed and plain matmuls are timed.
+#[test]
+fn cpu_matmuls_compete() {
+    let cpu = Settings {
+        backend: Pick::Cpu,
+        ..run::testing::host()
+    };
+    let grid = Grid {
+        rows: vec![1, 8],
+        widths: vec![32],
+        vocabs: vec![64],
+        heads: vec![[4, 2, 16]],
+        spans: vec![[4, 4]],
+    };
+    let timed = grid.run(&mut Device::guess(&cpu), &cpu).unwrap();
+    for rule in ["cpu_dense", "cpu_tiled"] {
+        assert!(timed.iter().any(|(s, _)| s.rule == rule), "{rule} untimed");
+    }
 }
 
 /// A made-up chip's reading for one probe.
