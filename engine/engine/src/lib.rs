@@ -3,7 +3,7 @@
 // Linking the crates registers their rules.
 use rules as _;
 
-use graph::DimName::{Context, Rows, Segments, Seqs};
+use graph::DimName::{Context, Picks, Rows, Segments, Seqs};
 use lower::{Cache, Device};
 use run::{Run, open};
 use serde::{Deserialize, Serialize};
@@ -68,9 +68,11 @@ pub enum Error {
     RowPlace,
     #[error("an input has no axis for a bounded dimension")]
     InputAxis,
+    #[error(transparent)]
+    Graph(#[from] graph::VerifyError),
 }
 
-/// Rows in, each row's likeliest id out, on one runner.
+/// Rows in, picked rows' likeliest ids out, on one runner.
 pub struct Engine {
     graph: Graph,
     runner: Box<dyn Run>,
@@ -89,19 +91,32 @@ pub struct Row {
     pub position: u32,
 }
 
-/// The sizes and inputs one launch of `rows` needs.
-fn launch_of(rows: &[Row], slots: usize) -> ([(graph::DimName, u64); 4], [Tensor; 3]) {
+/// Each slot's last row in `rows`, in order.
+pub(crate) fn ends(rows: &[Row]) -> Vec<u32> {
+    let last = |(i, r): (usize, &Row)| !rows[i + 1..].iter().any(|o| o.slot == r.slot);
+    let at = rows.iter().enumerate().filter(|&p| last(p));
+    at.map(|(i, _)| i as u32).collect()
+}
+
+/// Sizes and inputs for a launch of `rows` returning `picks`.
+fn launch_of(
+    rows: &[Row],
+    picks: &[u32],
+    slots: usize,
+) -> ([(graph::DimName, u64); 5], [Tensor; 4]) {
     let furthest = rows.iter().map(|r| r.position).max().unwrap_or(0);
     let mut seen: Vec<u32> = rows.iter().map(|r| r.slot).collect();
     seen.sort_unstable();
     seen.dedup();
-    // Rows round up to a power of two.
+    // Rows and picks round up to a power of two.
     let filled = rows.len().next_power_of_two();
+    let wanted = picks.len().next_power_of_two();
     let sizes = [
         (Seqs, slots as u64),
         (Rows, filled as u64),
         (Context, furthest as u64 + 1),
         (Segments, seen.len() as u64),
+        (Picks, wanted as u64),
     ];
     // The last row fills out. Copies rewrite its kept row.
     let last = rows.last().copied().unwrap_or_default();
@@ -109,10 +124,13 @@ fn launch_of(rows: &[Row], slots: usize) -> ([(graph::DimName, u64); 4], [Tensor
         let values = rows.iter().chain(std::iter::repeat(&last));
         Tensor::u32(vec![filled], values.take(filled).map(of).collect())
     };
+    let tail = picks.last().copied().unwrap_or_default();
+    let picked = picks.iter().copied().chain(std::iter::repeat(tail));
     let feeds = [
         column(|r| r.token),
         column(|r| r.position),
         column(|r| r.slot),
+        Tensor::u32(vec![wanted], picked.take(wanted).collect()),
     ];
     (sizes, feeds)
 }
@@ -125,6 +143,7 @@ impl Engine {
         recipe: &Recipe,
         settings: &Settings,
     ) -> Result<Self, Error> {
+        let graph = graph::trim(&graph, 0)?;
         let device = Device::guess(settings).with(recipe);
         let mut plans = Cache::default();
         let slots = graph
@@ -137,7 +156,7 @@ impl Engine {
             token: 0,
             position: 0,
         }];
-        let (sizes, _) = launch_of(&first, slots);
+        let (sizes, _) = launch_of(&first, &[0], slots);
         let plan = plans.lower(&graph, 0, &sizes, &device)?;
         let mut runner = open(plan, settings)?;
         runner.launching(recipe.launch);
@@ -178,6 +197,17 @@ impl Engine {
 
     /// One launch of `rows`: the likeliest token after each.
     pub fn step(&mut self, rows: &[Row]) -> Result<Vec<u32>, Error> {
+        let all: Vec<u32> = (0..rows.len() as u32).collect();
+        self.launch(rows, &all)
+    }
+
+    /// One launch: the likeliest token after each slot's last row.
+    pub fn last(&mut self, rows: &[Row]) -> Result<Vec<u32>, Error> {
+        self.launch(rows, &ends(rows))
+    }
+
+    /// One launch of `rows`, the likeliest ids after `picks`.
+    fn launch(&mut self, rows: &[Row], picks: &[u32]) -> Result<Vec<u32>, Error> {
         if rows.is_empty() {
             return Err(Error::Rows);
         }
@@ -187,7 +217,7 @@ impl Engine {
         {
             return Err(Error::RowPlace);
         }
-        let (sizes, feeds) = launch_of(rows, self.slots);
+        let (sizes, feeds) = launch_of(rows, picks, self.slots);
         let (plan, bound) =
             self.plans
                 .upto(&self.graph, 0, &sizes, &[Context, Segments], &self.device)?;
@@ -198,7 +228,7 @@ impl Engine {
         self.runner.feed(&views)?;
         self.runner.submit(0..self.runner.plan().steps.len())?;
         let mut ids = self.runner.ids(out)?;
-        ids.truncate(rows.len());
+        ids.truncate(picks.len());
         Ok(ids)
     }
 

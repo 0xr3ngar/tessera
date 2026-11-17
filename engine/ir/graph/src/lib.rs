@@ -10,6 +10,7 @@ mod regions;
 mod scalar;
 mod select;
 mod shard;
+mod trim;
 mod types;
 mod verify;
 
@@ -24,6 +25,7 @@ pub use numerics::{Math, Numerics, Order};
 pub use parts::Parts;
 pub use scalar::{Bf16, E2M1, E4M3, E8M0, F16};
 pub use shard::{Sharded, Whole, shard};
+pub use trim::trim;
 pub use types::{DType, Placement, TensorType};
 pub use verify::{VerifyError, verify};
 

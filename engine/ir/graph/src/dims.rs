@@ -13,6 +13,8 @@ pub enum DimName {
     Context,
     /// Slots one launch's rows span. A size with no axis.
     Segments,
+    /// Rows a step returns results for.
+    Picks,
     /// Length of a learned position table.
     Positions,
     Hidden,

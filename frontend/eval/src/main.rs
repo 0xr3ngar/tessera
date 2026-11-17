@@ -136,10 +136,9 @@ fn run(engine: &mut Engine, prompt: &[u32], m: usize, new: usize) -> Result<Run,
             .flat_map(|s| prompt.iter().enumerate().map(move |(p, t)| row(s, *t, p)))
             .collect();
         let start = Instant::now();
-        let mut last = engine.step(&rows)?;
+        // Each slot's last prompt row chooses its first token.
+        let mut last = engine.last(&rows)?;
         let prefill = start.elapsed().as_secs_f64();
-        // Each slot's last prompt row chose its first token.
-        last = (0..m).map(|s| last[(s + 1) * prompt.len() - 1]).collect();
         let start = Instant::now();
         for i in 0..new {
             let rows: Vec<Row> = (0..m).map(|s| row(s, last[s], prompt.len() + i)).collect();

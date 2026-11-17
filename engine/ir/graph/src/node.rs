@@ -314,4 +314,6 @@ pub enum Role {
     /// The keys each query reads, by index.
     Keys,
     Logits,
+    /// The rows a step returns, by index.
+    Picks,
 }

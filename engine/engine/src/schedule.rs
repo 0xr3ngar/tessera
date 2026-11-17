@@ -189,16 +189,20 @@ impl<'a> Batch<'a> {
         if rows.is_empty() {
             return Ok(false);
         }
-        let ids = self.engine.step(&rows)?;
-        // Each answer takes its rows and the last id.
+        let ids = self.engine.last(&rows)?;
+        let ends = crate::ends(&rows);
+        // Each answer takes its rows and its last id.
         let mut i = 0;
         while i < self.active.len() {
             let slot = self.active[i].slot;
-            let mine = rows.iter().zip(&ids).filter(|(r, _)| r.slot == slot);
-            let (n, last) = mine.fold((0, 0), |(n, _), (_, id)| (n + 1, *id));
-            match n {
-                0 => i += 1,
-                _ => match self.active[i].advance(n, last) {
+            let n = rows.iter().filter(|r| r.slot == slot).count();
+            let mine = ends
+                .iter()
+                .zip(&ids)
+                .find(|(e, _)| rows[**e as usize].slot == slot);
+            match mine {
+                None => i += 1,
+                Some((_, &last)) => match self.active[i].advance(n, last) {
                     Some(reason) => {
                         (self.active[i].sink)(Event::Done(reason));
                         self.finish(i);
