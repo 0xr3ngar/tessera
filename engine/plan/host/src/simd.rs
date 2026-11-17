@@ -250,13 +250,7 @@ macro_rules! level {
                             11 => {
                                 rows::<11>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1))
                             }
-                            12 => {
-                                rows::<12>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1))
-                            }
-                            13 => {
-                                rows::<13>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1))
-                            }
-                            _ => rows::<14>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1)),
+                            _ => rows::<12>(std::array::from_fn(row), packed, (acc.0, &mut *acc.1)),
                         }
                     }
                 }
@@ -375,7 +369,7 @@ pub(crate) const WIDE: usize = 32;
 
 /// Depth one packed panel holds, so it stays in cache.
 #[cfg(target_arch = "x86_64")]
-const PANEL: usize = 256;
+const PANEL: usize = 128;
 
 /// Rows of `w` as `[depth][WIDE]`, eight at a time.
 #[cfg(target_arch = "x86_64")]
