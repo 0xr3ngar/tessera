@@ -168,7 +168,6 @@ macro_rules! tiles {
             rows: usize,
         ) {
             let block = lockstep::BLOCK;
-            let rows = rows.min(block);
             let last = (at + rows.saturating_sub(1) * stride + block) * 4;
             let (Some(_), Some(x), Some(w)) = (
                 unsafe { within(out, out_len, last) },

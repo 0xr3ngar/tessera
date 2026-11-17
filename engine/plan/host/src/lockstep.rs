@@ -1,7 +1,7 @@
 //! What compiled lockstep kernels call: reads, shuffles and tiles.
 
 use crate::exec::{ArgVal, Grid};
-use crate::simd::{Level, dot_at, mix_at, tile_at};
+use crate::simd::{Block, Level, block_at, dot_at, mix_at, panel_at, reduce};
 use codegen::form::{Load, Read};
 use codegen::numerics::Precision;
 use codegen::stage::{Row, apply};
@@ -355,27 +355,10 @@ pub(crate) fn f32_row<'a>(
     scratch
 }
 
-/// Depth a block sums while its rows stay in cache.
+/// Depth the generic block sums in cache.
 const SPAN: usize = 512;
 /// Rows and columns of one block of sums.
 pub const BLOCK: usize = 16;
-
-/// Rows `first..first + R` against columns `col..col + 4`.
-fn quad<const R: usize>(x: &[&[f32]], w: &[&[f32]], at: (usize, usize), sums: &mut Sums) {
-    let (first, col) = at;
-    let got = tile_at::<R>(
-        Level::best(),
-        std::array::from_fn(|r| x[first + r]),
-        std::array::from_fn(|c| w[col + c]),
-    );
-    for (r, line) in got.iter().enumerate() {
-        for (c, v) in line.iter().enumerate() {
-            sums[first + r][col + c] += v;
-        }
-    }
-}
-
-type Sums = [[f32; BLOCK]; BLOCK];
 
 /// Where a block reads and writes, in elements.
 pub struct Dots {
@@ -388,56 +371,54 @@ pub struct Dots {
 
 /// `rows` of `x` against `BLOCK` rows of `w`, into `out`.
 pub fn dots_form(form: &dyn Load, out: &mut [u8], x: &[u8], w: &[u8], d: &Dots, rows: usize) {
-    let (k, rows) = (d.k, rows.min(BLOCK));
-    let mut held: [Vec<f32>; BLOCK] = std::array::from_fn(|_| Vec::new());
-    let mut xr: [&[f32]; BLOCK] = [&[]; BLOCK];
-    for (r, h) in held.iter_mut().enumerate().take(rows) {
-        xr[r] = f32_row(x, d.x_at + r * k, k, h);
+    let k = d.k;
+    let mut held: Vec<Vec<f32>> = vec![Vec::new(); rows];
+    let mut xr: Vec<&[f32]> = Vec::with_capacity(rows);
+    for (r, h) in held.iter_mut().enumerate() {
+        xr.push(f32_row(x, d.x_at + r * k, k, h));
     }
-    let wide = match form.read() {
-        Read::F32 => true,
-        Read::Bf16 => false,
-        other => panic!("no tile of dots over {other:?} rows"),
-    };
     let mut kept: [Vec<f32>; BLOCK] = std::array::from_fn(|_| Vec::new());
     let mut wr: [&[f32]; BLOCK] = [&[]; BLOCK];
-    if wide {
-        for (c, h) in kept.iter_mut().enumerate() {
-            wr[c] = f32_row(w, d.w_at + c * k, k, h);
-        }
-    }
-    // bf16 rows widen one span at a time.
-    let mut narrow = vec![[0.0f32; SPAN]; if wide { 0 } else { BLOCK }];
-    let mut sums: Sums = [[0.0; BLOCK]; BLOCK];
-    for start in (0..k).step_by(SPAN) {
-        let end = (start + SPAN).min(k);
-        for (c, line) in narrow.iter_mut().enumerate() {
-            let first = d.w_at + c * k + start;
-            for (i, v) in line[..end - start].iter_mut().enumerate() {
-                let b = &w[(first + i) * 2..(first + i) * 2 + 2];
-                *v = f32::from_bits(u32::from(u16::from_le_bytes([b[0], b[1]])) << 16);
+    for (c, h) in kept.iter_mut().enumerate() {
+        let first = d.w_at + c * k;
+        wr[c] = match form.read() {
+            Read::F32 => f32_row(w, first, k, h),
+            Read::Bf16 => {
+                let wide = |i: usize| u16::from_le_bytes([w[i * 2], w[i * 2 + 1]]);
+                h.extend((first..first + k).map(|i| f32::from_bits(u32::from(wide(i)) << 16)));
+                let h: &Vec<f32> = h;
+                h.as_slice()
             }
-        }
-        let ws: [&[f32]; BLOCK] = match wide {
-            true => wr.map(|r| &r[start..end]),
-            false => std::array::from_fn(|c| &narrow[c][..end - start]),
+            other => panic!("no tile of dots over {other:?} rows"),
         };
-        let xs = xr.map(|r| r.get(start..end).unwrap_or(&[]));
-        for first in (0..rows).step_by(4) {
-            for col in (0..BLOCK).step_by(4) {
-                let at = (first, col);
-                match rows - first {
-                    1 => quad::<1>(&xs, &ws, at, &mut sums),
-                    2 => quad::<2>(&xs, &ws, at, &mut sums),
-                    3 => quad::<3>(&xs, &ws, at, &mut sums),
-                    _ => quad::<4>(&xs, &ws, at, &mut sums),
-                }
-            }
+    }
+    let mut acc = vec![[0.0f32; BLOCK]; rows];
+    if !panel_at(Level::best(), &xr, &wr, &mut acc) {
+        for (chunk, lines) in acc.chunks_mut(BLOCK).enumerate() {
+            block_rows(&xr[chunk * BLOCK..chunk * BLOCK + lines.len()], &wr, lines);
         }
     }
-    for (r, line) in sums.iter().enumerate().take(rows) {
+    for (r, line) in acc.iter().enumerate() {
         for (c, v) in line.iter().enumerate() {
             st_f32(out, d.at + r * d.stride + c, *v);
+        }
+    }
+}
+
+/// A few rows of `x` by `w`, span by span.
+fn block_rows(x: &[&[f32]], w: &[&[f32]], lines: &mut [[f32; BLOCK]]) {
+    let k = w[0].len();
+    // Each quad's partial sums, added up once at the end.
+    let mut sums: Block = [[[[[0.0; 16]; 4]; 4]; 4]; 4];
+    for start in (0..k).step_by(SPAN) {
+        let end = (start + SPAN).min(k);
+        let xs: Vec<&[f32]> = x.iter().map(|r| &r[start..end]).collect();
+        let ws: Vec<&[f32]> = w.iter().map(|r| &r[start..end]).collect();
+        block_at(&xs, x.len(), &ws, &mut sums);
+    }
+    for (r, line) in lines.iter_mut().enumerate() {
+        for (cq, quad) in sums[r / 4].iter().enumerate() {
+            line[4 * cq..4 * cq + 4].copy_from_slice(&reduce(quad)[r % 4]);
         }
     }
 }
