@@ -1,15 +1,14 @@
 use crate::mocks::{MockGenerator, call, json, loaded};
-use axum::http::StatusCode;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-#[tokio::test]
-async fn completion_whole() {
+#[test]
+fn completion_whole() {
     let mock = Arc::new(MockGenerator::default());
     let slot = loaded(&mock, false);
     let body = json!({"model": "m", "prompt": "abcd", "stop": "x", "temperature": 0});
-    let (status, got) = json(&slot, "/v1/completions", Some(body)).await;
-    assert_eq!(status, StatusCode::OK);
+    let (status, got) = json(&slot, "/v1/completions", Some(body));
+    assert_eq!(status, 200);
     assert_eq!(got["object"], "text_completion");
     assert_eq!(got["choices"][0]["text"], "hello");
     assert_eq!(got["choices"][0]["finish_reason"], "stop");
@@ -22,16 +21,16 @@ async fn completion_whole() {
     assert_eq!((asked.max_tokens, asked.stop), (12, vec!["x".to_string()]));
 }
 
-#[tokio::test]
-async fn chat_streamed() {
+#[test]
+fn chat_streamed() {
     let slot = loaded(&Arc::new(MockGenerator::default()), false);
     let body = json!({
         "messages": [{"role": "user", "content": [{"type": "text", "text": "hi"}]}],
         "stream": true,
         "stream_options": {"include_usage": true},
     });
-    let (status, text) = call(&slot, "/v1/chat/completions", Some(body)).await;
-    assert_eq!(status, StatusCode::OK);
+    let (status, text) = call(&slot, "/v1/chat/completions", Some(body));
+    assert_eq!(status, 200);
     let data: Vec<&str> = text
         .lines()
         .filter_map(|l| l.strip_prefix("data: "))
@@ -53,15 +52,12 @@ async fn chat_streamed() {
     assert_eq!(chunks[2]["choices"][0]["finish_reason"], "stop");
     assert_eq!(chunks[3]["choices"], json!([]));
     assert_eq!(chunks[3]["usage"]["total_tokens"], 9);
-    assert!(
-        chunks
-            .iter()
-            .all(|c| c["object"] == "chat.completion.chunk")
-    );
+    let objects: Vec<&Value> = chunks.iter().map(|c| &c["object"]).collect();
+    assert!(objects.iter().all(|o| **o == "chat.completion.chunk"));
 }
 
-#[tokio::test]
-async fn refusals() {
+#[test]
+fn refusals() {
     let slot = loaded(&Arc::new(MockGenerator::default()), false);
     let cases = [
         (json!({"model": "other", "prompt": "a"}), 404, "model"),
@@ -78,23 +74,20 @@ async fn refusals() {
         ),
     ];
     for (body, status, param) in cases {
-        let (got, error) = json(&slot, "/v1/completions", Some(body)).await;
-        assert_eq!(
-            (got.as_u16(), &error["error"]["param"]),
-            (status, &json!(param))
-        );
+        let (got, error) = json(&slot, "/v1/completions", Some(body));
+        assert_eq!((got, &error["error"]["param"]), (status, &json!(param)));
         assert_eq!(error["error"]["code"], status);
     }
 }
 
-#[tokio::test]
-async fn unknown_fields() {
+#[test]
+fn unknown_fields() {
     let said = json!({"role": "user", "content": "hi", "name": "x", "reasoning": "r"});
     let body = json!({"messages": [said]});
     for (strict, status) in [(false, 200), (true, 400)] {
         let slot = loaded(&Arc::new(MockGenerator::default()), strict);
-        let (got, answer) = json(&slot, "/v1/chat/completions", Some(body.clone())).await;
-        assert_eq!(got.as_u16(), status);
+        let (got, answer) = json(&slot, "/v1/chat/completions", Some(body.clone()));
+        assert_eq!(got, status);
         assert_eq!(strict, answer["error"]["param"] == "messages[0].name");
     }
 }
