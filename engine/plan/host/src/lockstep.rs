@@ -337,7 +337,12 @@ pub fn dot(a: &[f32], b: &[f32]) -> f32 {
 }
 
 /// `n` floats of `bytes` from element `at`, copied when unaligned.
-fn f32_row<'a>(bytes: &'a [u8], at: usize, n: usize, scratch: &'a mut Vec<f32>) -> &'a [f32] {
+pub(crate) fn f32_row<'a>(
+    bytes: &'a [u8],
+    at: usize,
+    n: usize,
+    scratch: &'a mut Vec<f32>,
+) -> &'a [f32] {
     let slice = &bytes[at * 4..(at + n) * 4];
     // SAFETY: f32 has no invalid bit patterns.
     let (head, body, _) = unsafe { slice.align_to::<f32>() };

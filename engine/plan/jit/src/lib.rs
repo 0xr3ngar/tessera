@@ -77,6 +77,7 @@ helpers! {
     dot_bf16(P, P, P, P, P, P, P) -> F32;
     dot_form(P, P, P, P, P, P, P, P) -> F32;
     mix_f32(P, P, P, F32, F32, P, P, P, P);
+    attend_f32(P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, P, F32, P);
     stage_f32(P, P, P, P, I32, F32, P, P, P);
     dots_f32(P, P, P, P, P, P, P, P, P, P, P, P);
     dots_bf16(P, P, P, P, P, P, P, P, P, P, P, P);

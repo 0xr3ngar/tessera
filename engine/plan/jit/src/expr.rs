@@ -663,6 +663,46 @@ impl Lowerer<'_, '_> {
                 self.call("stage_f32", &[po, lo, at, n, code, s, pb, lb, b_at]);
                 Val::S(self.iconst(types::I8, 0))
             }
+            Intrinsic::Attend => {
+                let [
+                    out,
+                    at,
+                    q,
+                    k,
+                    v,
+                    k_at,
+                    stride,
+                    from,
+                    to,
+                    width,
+                    scale,
+                    ids,
+                    list_at,
+                    picks,
+                ] = args
+                else {
+                    return Err("attention takes fourteen arguments".into());
+                };
+                let mut call = Vec::new();
+                let firsts = [at, at, k_at, k_at, list_at];
+                for (name, first) in [out, q, k, v, ids].into_iter().zip(firsts) {
+                    let Expr::Var(name) = name else {
+                        return Err("attention names its buffers".into());
+                    };
+                    let Kind::Buffer { ptr, len, skip, .. } = self.kind(name)? else {
+                        return Err(format!("`{name}` is not a buffer"));
+                    };
+                    let first = self.index(first, t)?;
+                    call.extend([ptr, len, self.b.ins().iadd(skip, first)]);
+                }
+                for n in [stride, from, to, width] {
+                    call.push(self.index(n, t)?);
+                }
+                call.push(self.floats(std::slice::from_ref(scale), t)?[0]);
+                call.push(self.index(picks, t)?);
+                self.call("attend_f32", &call);
+                Val::S(self.iconst(types::I8, 0))
+            }
             Intrinsic::Mix => {
                 let [out, at, keep, p, b, b_at, n] = args else {
                     return Err("a mix takes seven arguments".into());
