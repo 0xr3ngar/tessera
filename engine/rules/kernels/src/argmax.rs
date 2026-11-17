@@ -96,9 +96,13 @@ fn argmax(x: Buf<F32>, peaks: Buf<U32>, mut out: BufMut<U32>, rows: u32, width: 
     let mut best = f32::NEG_INFINITY;
     for p in 0..parts {
         let i = peaks[(gid() * parts + p) as u64];
-        if i < width && x[at + i as u64] > best {
-            best = x[at + i as u64];
-            arg = i;
+        // The host JIT evaluates both sides of `&&`.
+        if i < width {
+            let v = x[at + i as u64];
+            if v > best {
+                best = v;
+                arg = i;
+            }
         }
     }
     out[gid() as u64] = arg;

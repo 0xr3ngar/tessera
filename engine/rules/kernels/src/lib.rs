@@ -1,5 +1,6 @@
 //! Kernels and their lowering rules. Linking this crate registers them.
 
+mod allow;
 mod argmax;
 mod batched;
 mod by_sum;

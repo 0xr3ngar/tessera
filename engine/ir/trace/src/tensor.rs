@@ -97,6 +97,11 @@ impl Tensor {
         self.stage(Stage::Causal, &[positions])
     }
 
+    /// Entries whose bit in `mask` is clear become -inf.
+    pub fn allow(&self, mask: &Tensor) -> Tensor {
+        self.stage(Stage::Allow, &[mask])
+    }
+
     pub fn act(&self, act: Act) -> Tensor {
         self.stage(Stage::Act(act), &[])
     }

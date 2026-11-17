@@ -130,6 +130,22 @@ jobs:
           shared-key: features
       - run: cargo clippy --workspace --all-targets --features "${{ matrix.features }}"
 
+  grammar:
+    # The llguidance guide, behind its off-by-default feature.
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: grammar
+      - run: cargo clippy -p grammar --all-targets --features llguidance
+      - run: cargo test -p grammar --features llguidance
+
   macos:
     # Pushes to main skip it, as the merge queue tested the same tree.
     needs: changes
@@ -318,7 +334,7 @@ jobs:
     # The one check to require: every job above passed or was skipped
     # by `changes`, and no human step is pending.
     if: always()
-    needs: [changes, commits, lint, linux, features, macos, similarity, platforms, style]
+    needs: [changes, commits, lint, linux, features, grammar, macos, similarity, platforms, style]
     runs-on: ubuntu-slim
     steps:
       # Skips come only from `changes`, so it must pass itself.

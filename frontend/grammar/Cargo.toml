@@ -1,0 +1,19 @@
+[package]
+name = "grammar"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Grammars that limit which tokens a decode step may pick"
+
+[features]
+default = []
+# The llguidance engine. Off by default.
+llguidance = ["dep:bundle", "dep:engine", "dep:llguidance", "dep:serde_json", "dep:toktrie"]
+
+[dependencies]
+bundle = { workspace = true, optional = true }
+engine = { workspace = true, optional = true }
+llguidance = { version = "1.9", default-features = false, optional = true }
+serde_json = { version = "1", optional = true }
+toktrie = { version = "1.9", optional = true }

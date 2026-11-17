@@ -83,15 +83,20 @@ pub fn linear(bounded: &[Dim], k: u64, n: u64) -> Graph {
     m.finish([(Role::Logits, &x.matmul(&w.w))])
 }
 
-/// Norms, maps, centering, a unit sum, softmax, argmax and mean.
+/// Norms, maps, centering, unit sum, softmax, mask, argmax, mean.
 pub fn rows(bounded: &[Dim], width: u64) -> Graph {
-    let m = model(bounded, &[(Hidden, width)]);
+    let m = model(
+        bounded,
+        &[(Hidden, width), (VocabWords, width.div_ceil(32))],
+    );
     let w: Scale = declare(&m);
     let port = || rows_of(bounded, Hidden, DType::F32);
-    let [x, y] = m.entry(EntryKind::Forward, [port(), port()]);
+    let bits = rows_of(bounded, VocabWords, DType::U32);
+    let [x, y, bits] = m.entry(EntryKind::Forward, [port(), port(), bits]);
     let gated = x.rms_norm(&w.norm, 1e-6).act(Act::Silu).mul(&y.rms(1e-6));
     let sum = y.add(&gated).center();
-    let ids = sum.act(Act::Sigmoid).unit_sum().softmax().top_k(1u64);
+    let probs = sum.act(Act::Sigmoid).unit_sum().softmax();
+    let ids = probs.allow(&bits).top_k(1u64);
     m.finish([(Role::Tokens, &ids), (Role::Logits, &sum.mean(0))])
 }
 

@@ -1,6 +1,6 @@
 //! Decoders: grouped-query attention, RoPE, a dense or routed MLP.
 
-use crate::shared::{Attend, Side, Stack, step_ports, swiglu, tokens};
+use crate::shared::{Attend, Side, Stack, pick, step_ports, swiglu, tokens};
 use trace::DimName::*;
 use trace::{
     Act, Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Linears, Mask, Model,
@@ -323,7 +323,7 @@ pub fn stepper<N: HeadNorm, M: Mlp>(c: &Config) -> Graph {
     dims.push(Dim { name: Rows, size });
     let m = Model::new(dims);
     let w: Decoder<N, M> = trace::declare(&m);
-    let [tokens, positions, slots] = step_ports(&m);
+    let ([tokens, positions, slots], allowed) = step_ports(&m, c.stack.masked);
     let ty = TensorType::new([Seqs, Context, KvHeads, HeadDim], DType::F32);
     let cache = |_: &Layer<N, M>| [m.kept(ty.clone()), m.kept(ty.clone())];
     let kept: Vec<Cache> = w.layers.iter().map(cache).collect();
@@ -336,6 +336,5 @@ pub fn stepper<N: HeadNorm, M: Mlp>(c: &Config) -> Graph {
         slots: Some(&slots),
     };
     let logits = pass.logits(&w, &tokens, Some(&kept));
-    let ids = logits.top_k(1u64).reshape([Rows]);
-    m.finish([(Role::Tokens, &ids), (Role::Logits, &logits)])
+    pick(&m, &logits, allowed.as_ref())
 }

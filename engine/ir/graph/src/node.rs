@@ -177,6 +177,8 @@ pub enum Stage {
     AllReduce,
     /// Entries past the position in the argument become -inf.
     Causal,
+    /// Entry `i` becomes -inf where mask bit `i` is clear.
+    Allow,
 }
 
 impl Stage {
@@ -187,7 +189,8 @@ impl Stage {
             | Stage::Mul
             | Stage::RmsNorm { .. }
             | Stage::Rope { .. }
-            | Stage::Causal => 1,
+            | Stage::Causal
+            | Stage::Allow => 1,
             _ => 0,
         }
     }
@@ -316,4 +319,6 @@ pub enum Role {
     Logits,
     /// The rows a step returns, by index.
     Picks,
+    /// One bit per vocabulary row. Clear bits forbid the token.
+    Allowed,
 }

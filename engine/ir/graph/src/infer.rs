@@ -344,6 +344,27 @@ fn positions(
     })
 }
 
+/// One `u32` word per 32 entries of each row.
+fn allowed(dims: &[Dim], x: &TensorType, bits: &TensorType) -> Result<(), TypeError> {
+    let lead = x.rank() - 1;
+    let words = |s: &DimExpr| s.poly(dims).ok().and_then(|n| n.as_const());
+    let width = words(&x.shape.0[lead]);
+    let fits = bits.rank() == x.rank()
+        && same_shape(dims, &front(&x.shape, lead), &front(&bits.shape, lead))?
+        && words(&bits.shape.0[lead]) == width.map(|w| w.div_ceil(32));
+    need(fits, ErrorKind::Shape, || {
+        format!("mask {} does not cover {}", bits.shape, x.shape)
+    })?;
+    need(bits.dtype == DType::U32, ErrorKind::DType, || {
+        format!("masks must be u32, got {:?}", bits.dtype)
+    })?;
+    need(
+        bits.placement == Placement::Replicated,
+        ErrorKind::Placement,
+        || "masks must be replicated".into(),
+    )
+}
+
 fn row(dims: &[Dim], stages: &[Stage], args: &[&TensorType]) -> Result<TensorType, TypeError> {
     let x = args[0];
     need(x.rank() >= 1, ErrorKind::Shape, || {
@@ -408,6 +429,10 @@ fn row(dims: &[Dim], stages: &[Stage], args: &[&TensorType]) -> Result<TensorTyp
             }
             (Stage::Causal, Some(pos)) => {
                 positions(dims, x, pos, p)?;
+                whole(p, last, s)?;
+            }
+            (Stage::Allow, Some(bits)) => {
+                allowed(dims, x, bits)?;
                 whole(p, last, s)?;
             }
             (Stage::Act(a), _) => {

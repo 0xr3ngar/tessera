@@ -52,6 +52,7 @@ impl Generator for Queued {
             tokens: prompt,
             max_tokens: params.max_tokens,
             stop: self.generate.stop.clone(),
+            guide: None,
         };
         let generate = self.generate.clone();
         let (mut spool, mut stops) = (Spool::default(), Stops::new(params.stop));

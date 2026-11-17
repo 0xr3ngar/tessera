@@ -50,6 +50,8 @@ pub enum DimName {
     MoeLayers,
     /// Layers that run their own indexer.
     IndexLayers,
+    /// `u32` words of a one-bit-per-token mask.
+    VocabWords,
 }
 
 /// How a dimension gets its size.
