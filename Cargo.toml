@@ -39,6 +39,7 @@ frontend-comm = { path = "frontend/comm" }
 frontend-settings = { path = "frontend/settings" }
 gpukit = { path = "engine/gpu/gpukit" }
 bundle = { path = "frontend/bundle" }
+grammar = { path = "frontend/grammar" }
 graph = { path = "engine/ir/graph" }
 interp = { path = "engine/ir/interp" }
 host = { path = "engine/plan/host" }
