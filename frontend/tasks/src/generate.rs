@@ -1,9 +1,14 @@
-//! Prompts to requests, with the model's template and stops.
+//! Generation through the engine thread's queue.
 
-use crate::Error;
+use crate::api::{Chat, Finish, Generator, Params, Sink, Step, Tokens};
+use crate::{Error, Spool, Stops};
 use bundle::tokenize::hf::Hf;
 use bundle::{Message, Template};
-use engine::Request;
+use engine::{Event, Reason, Request};
+use std::sync::{Arc, Mutex, mpsc};
+
+/// A request for the engine thread, and its sink.
+pub type Job = (Request, engine::Sink);
 
 pub struct Generate {
     pub tokenizer: Hf,
@@ -12,22 +17,18 @@ pub struct Generate {
     pub stop: Vec<u32>,
 }
 
-impl Generate {
-    /// `prompt` as a request for `max_tokens` more.
-    pub fn request(&self, prompt: &str, max_tokens: usize) -> Result<Request, Error> {
-        let tokens = self.tokenizer.encode(prompt)?;
-        if tokens.is_empty() {
-            return Err("an empty prompt".into());
-        }
-        Ok(Request {
-            tokens,
-            max_tokens,
-            stop: self.stop.clone(),
-        })
+impl Tokens for Generate {
+    fn encode(&self, text: &str) -> Result<Vec<u32>, Error> {
+        self.tokenizer.encode(text)
     }
 
-    /// The chat as the template lays it out.
-    pub fn chat(&self, messages: &[Message], think: bool) -> Result<String, Error> {
+    fn decode(&self, ids: &[u32]) -> String {
+        self.tokenizer.decode(ids)
+    }
+}
+
+impl Chat for Generate {
+    fn render(&self, messages: &[Message], think: bool) -> Result<String, Error> {
         let template = self
             .template
             .as_ref()
@@ -36,5 +37,59 @@ impl Generate {
             return Err("no messages".into());
         }
         Ok(template.render(messages, think)?)
+    }
+}
+
+/// Answers through an engine thread's queue.
+pub struct Queued {
+    pub generate: Arc<Generate>,
+    pub jobs: Mutex<mpsc::Sender<Job>>,
+}
+
+impl Generator for Queued {
+    fn generate(&self, prompt: Vec<u32>, params: Params, mut sink: Sink) -> Result<(), Error> {
+        let request = Request {
+            tokens: prompt,
+            max_tokens: params.max_tokens,
+            stop: self.generate.stop.clone(),
+        };
+        let generate = self.generate.clone();
+        let (mut spool, mut stops) = (Spool::default(), Stops::new(params.stop));
+        let (mut tokens, mut ended) = (0, false);
+        // The engine sends `Done` after a sink refuses a token.
+        let each = move |event: Event| {
+            if ended {
+                return false;
+            }
+            let step = match event {
+                Event::Token(id) => {
+                    tokens += 1;
+                    let piece = spool.push(id, |ids| generate.tokenizer.decode(ids));
+                    let (text, cut) = stops.push(&piece);
+                    match cut {
+                        false => Step::Token { id, text },
+                        true => Step::Done {
+                            text,
+                            finish: Finish::Stop,
+                            tokens,
+                        },
+                    }
+                }
+                Event::Done(reason) => Step::Done {
+                    text: stops.rest(),
+                    finish: match reason {
+                        Reason::Stop => Finish::Stop,
+                        Reason::Length | Reason::Context => Finish::Length,
+                    },
+                    tokens,
+                },
+            };
+            ended = matches!(step, Step::Done { .. });
+            sink(step) && !ended
+        };
+        let jobs = self.jobs.lock().map_err(|_| "the engine stopped")?;
+        jobs.send((request, Box::new(each)))
+            .map_err(|_| "the engine stopped")?;
+        Ok(())
     }
 }

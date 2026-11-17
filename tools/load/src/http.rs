@@ -12,9 +12,14 @@ pub(crate) struct Sample {
     pub latency_ms: f64,
 }
 
-/// One `data:` event. Only the last has a reason.
+/// One `data:` chunk. The last choice carries a reason.
 #[derive(Deserialize)]
 struct Piece {
+    choices: Vec<Choice>,
+}
+
+#[derive(Deserialize)]
+struct Choice {
     finish_reason: Option<String>,
 }
 
@@ -37,11 +42,9 @@ fn send(request: ureq::Request, body: Option<&str>) -> Result<ureq::Response, Fa
 }
 
 pub(crate) fn health(agent: &ureq::Agent, url: &str) -> Result<(), Failure> {
-    let text = send(agent.get(&format!("{url}/health")), None)?.into_string()?;
-    match text == "ok" {
-        true => Ok(()),
-        false => Err("health response is not ok".into()),
-    }
+    // A status other than 200 is an error here.
+    send(agent.get(&format!("{url}/health")), None)?;
+    Ok(())
 }
 
 /// Streams one completion. Times the first token and the end.
@@ -57,12 +60,21 @@ pub(crate) fn complete(agent: &ureq::Agent, url: &str, body: &str) -> Result<Sam
         let Some(data) = line.strip_prefix("data:") else {
             continue;
         };
+        let data = data.trim_start();
+        if data == "[DONE]" {
+            break;
+        }
         if done.is_some() {
             return Err("data after stream completion".into());
         }
-        let piece: Piece = serde_json::from_str(data.trim_start())?;
+        let piece: Piece = serde_json::from_str(data)?;
         let ms = start.elapsed().as_secs_f64() * 1e3;
-        match piece.finish_reason {
+        let reason = piece
+            .choices
+            .into_iter()
+            .next()
+            .and_then(|c| c.finish_reason);
+        match reason {
             Some(_) => done = Some(ms),
             None => {
                 tokens += 1;

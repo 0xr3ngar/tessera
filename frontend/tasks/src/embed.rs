@@ -1,10 +1,12 @@
 //! Texts to unit-length EmbeddingGemma 2 vectors.
 
 use crate::Error;
+use crate::api::{Embed, Embedded, Tokens};
 use bundle::encoder::encoder;
 use bundle::tokenize::hf::Hf;
 use engine::{Model, Recipe, Settings, Tensor};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, mpsc};
 
 /// Tokens per text, `<bos>` and `<eos>` included.
 const MAX_TOKENS: usize = 1024;
@@ -151,5 +153,75 @@ impl Embedder {
             out.push(unit(sum));
         }
         Ok(out)
+    }
+}
+
+/// Work for the embedder's thread.
+type Work = Box<dyn FnOnce(&mut Embedder) + Send>;
+
+/// An embedder on its own thread. Its model cannot move.
+pub struct Threaded {
+    work: Mutex<mpsc::Sender<Work>>,
+}
+
+impl Threaded {
+    /// Opens the release in `dir` on a new thread.
+    pub fn open(dir: PathBuf, settings: Settings) -> Result<Self, Error> {
+        let (work, queue) = mpsc::channel::<Work>();
+        let (ready, opened) = mpsc::channel();
+        std::thread::spawn(move || match Embedder::open(&dir, &settings) {
+            Ok(mut embedder) => {
+                eprintln!("{}: embedder loaded", embedder.device());
+                let _ = ready.send(Ok(()));
+                queue.iter().for_each(|w| w(&mut embedder));
+            }
+            Err(e) => drop(ready.send(Err(e))),
+        });
+        opened.recv().map_err(|_| "the embedder thread stopped")??;
+        Ok(Self {
+            work: Mutex::new(work),
+        })
+    }
+
+    /// Runs `f` on the thread and waits for it.
+    fn run<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&mut Embedder) -> T + Send + 'static,
+    ) -> Result<T, Error> {
+        let (answer, answered) = mpsc::channel();
+        let work = self.work.lock().map_err(|_| "the embedder stopped")?;
+        work.send(Box::new(move |e| drop(answer.send(f(e)))))
+            .map_err(|_| "the embedder stopped")?;
+        drop(work);
+        Ok(answered.recv().map_err(|_| "the embedder stopped")?)
+    }
+}
+
+impl Embed for Threaded {
+    fn embed(&self, texts: &[String]) -> Result<Embedded, Error> {
+        let texts = texts.to_vec();
+        self.run(move |embedder| {
+            let mut ids = Vec::with_capacity(texts.len());
+            for t in &texts {
+                ids.push(embedder.tokens(t)?);
+            }
+            Ok(Embedded {
+                tokens: ids.iter().map(Vec::len).sum(),
+                vectors: embedder.embed_ids(&ids)?,
+            })
+        })?
+    }
+}
+
+impl Tokens for Threaded {
+    fn encode(&self, text: &str) -> Result<Vec<u32>, Error> {
+        let text = text.to_string();
+        self.run(move |embedder| embedder.tokens(&text))?
+    }
+
+    fn decode(&self, ids: &[u32]) -> String {
+        let ids = ids.to_vec();
+        let decoded = self.run(move |embedder| embedder.tokenizer.decode(&ids));
+        decoded.unwrap_or_default()
     }
 }

@@ -1,5 +1,6 @@
 //! Text in, answers out: tasks adapt text to a model.
 
+pub mod api;
 pub mod embed;
 #[cfg(test)]
 mod embed_test;
@@ -9,9 +10,9 @@ mod text;
 #[cfg(test)]
 mod text_test;
 
-pub use embed::Embedder;
-pub use generate::Generate;
+pub use embed::{Embedder, Threaded};
+pub use generate::{Generate, Job, Queued};
 pub use tag::Tagger;
-pub use text::Spool;
+pub(crate) use text::{Spool, Stops};
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
