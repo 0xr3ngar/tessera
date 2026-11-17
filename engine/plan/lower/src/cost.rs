@@ -9,7 +9,7 @@ use engine_settings::{Pick, Settings};
 use graph::Parts;
 use platform::{Limits, Platform};
 use serde::{Deserialize, Serialize};
-use sim::{Chip, Cluster, Cost, FIXED, Fit, Pool, Sample, Timings};
+use sim::{Chip, Cluster, Cost, FIXED, Fit, Pool, Sample, Timings, ZoneKind};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
@@ -46,6 +46,9 @@ pub struct Device {
     #[serde(default)]
     pub platform: Platform,
     timed: Timings,
+    /// Timed launches on a host zone, by kernel name.
+    #[serde(default)]
+    host: Timings,
     /// A rule to pick wherever it applies, whatever it costs.
     #[serde(skip)]
     favor: Option<String>,
@@ -75,8 +78,8 @@ fn sample(step: &Step, seconds: f64) -> Sample {
     Sample::new(kernel, source, sizes, work, seconds)
 }
 
-/// Seconds by kernel name, sizes and work.
-type Memo = HashMap<(&'static str, Vec<usize>, u64), f64>;
+/// Seconds by zone kind, kernel name, sizes and work.
+type Memo = HashMap<(ZoneKind, &'static str, Vec<usize>, u64), f64>;
 
 /// Each generation is handed out once per process.
 static GENERATIONS: AtomicU64 = AtomicU64::new(1);
@@ -101,6 +104,7 @@ impl Default for Device {
             rank: 0,
             platform: Platform::default(),
             timed: Timings::default(),
+            host: Timings::default(),
             favor: None,
             barred: Vec::new(),
             pins: Pins::default(),
@@ -258,27 +262,37 @@ impl Device {
         self.favor.as_deref() == Some(rule)
     }
 
-    /// Seconds for one launch in `zone`. Samples cover zone 0.
+    /// Seconds for one launch in `zone`, from its own samples.
     pub fn seconds_in(&self, zone: u32, k: &dyn Kernel, len: usize) -> f64 {
-        match zone {
-            0 => self.seconds(k, len),
+        match (zone, self.cluster.kind(zone as usize)) {
+            (0, _) => self.seconds(k, len),
+            (_, ZoneKind::Cpu) => self.estimate(ZoneKind::Cpu, k, len),
             _ => FIXED + k.guess() * k.work(len),
         }
     }
 
     /// Estimated seconds for one launch writing `len` elements.
     pub fn seconds(&self, k: &dyn Kernel, len: usize) -> f64 {
+        self.estimate(self.cluster.kind(0), k, len)
+    }
+
+    /// Seconds from the samples of zones of `kind`.
+    fn estimate(&self, kind: ZoneKind, k: &dyn Kernel, len: usize) -> f64 {
         if self.barred.iter().any(|b| b == k.name()) {
             return f64::INFINITY;
         }
         let work = k.work(len);
-        let key = (k.name(), k.sizes(), work.to_bits());
+        let key = (kind, k.name(), k.sizes(), work.to_bits());
         if let Some(seconds) = self.memo.borrow().get(&key) {
             return *seconds;
         }
-        let near = self.timed.estimate(k.name(), &key.1, work);
+        // A host zone beside a GPU has its own samples.
+        let own = kind == self.cluster.kind(0);
+        let timed = if own { &self.timed } else { &self.host };
+        let near = timed.estimate(k.name(), &key.2, work);
         // With no sample of this kernel, the chip model speaks.
-        let modelled = || Some(self.pool.as_ref()?.estimate(&k.load(len)?).seconds);
+        let pool = self.pool.as_ref().filter(|_| own);
+        let modelled = || Some(pool?.estimate(&k.load(len)?).seconds);
         let seconds = near.or_else(modelled).unwrap_or(FIXED + k.guess() * work);
         self.memo.borrow_mut().insert(key, seconds);
         seconds
@@ -317,6 +331,16 @@ impl Device {
         self.timed.len()
     }
 
+    /// The same device, with `host`'s samples for its host zone.
+    pub fn hosted(mut self, host: &Device) -> Self {
+        self.host = host.timed.clone();
+        self.changed()
+    }
+
+    pub fn host_samples(&self) -> usize {
+        self.host.len()
+    }
+
     /// Adds timed launches. A launch timed before is replaced.
     pub fn fit<'a>(&mut self, samples: impl IntoIterator<Item = (&'a Step, f64)>) {
         self.generation = fresh();
@@ -344,6 +368,7 @@ impl Device {
         }
         let (_, mut device): (u32, Device) = serde_json::from_str(&text)?;
         device.timed.restore();
+        device.host.restore();
         device.pool = device.fit.map(|fit| fit.pool("fitted"));
         device.generation = fresh();
         Ok(device)

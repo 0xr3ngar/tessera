@@ -2,7 +2,7 @@ use crate::bench::{Mark, slower, text};
 use crate::probe::{Kind, Probe, Reading, fit, links, read, suite};
 use crate::{Grid, headroom, judge};
 use lower::form::BF16_FORM;
-use lower::{Device, Pick, Pins, Settings, Source, rules};
+use lower::{Cluster, Device, Pick, Pins, Settings, Source, Zone, ZoneKind, rules};
 use naga::valid::{Capabilities, ValidationFlags, Validator};
 use sim::Chip;
 use std::collections::{BTreeMap, BTreeSet};
@@ -59,10 +59,26 @@ fn cpu_matmuls_compete() {
         heads: vec![[4, 2, 16]],
         spans: vec![[4, 4]],
     };
-    let timed = grid.run(&mut Device::guess(&cpu), &cpu).unwrap();
+    let mut host = Device::guess(&cpu);
+    let timed = grid.run(&mut host, &cpu).unwrap();
     for rule in ["cpu_dense", "cpu_tiled"] {
         assert!(timed.iter().any(|(s, _)| s.rule == rule), "{rule} untimed");
     }
+    // A GPU's host zone reads the host's samples.
+    let mut cluster = Cluster::one("gpu");
+    let kind = ZoneKind::Cpu;
+    let parent = None;
+    cluster.add(Zone {
+        name: "host".into(),
+        kind,
+        parent,
+    });
+    let gpu = Device::guess(&run::testing::host())
+        .zoned(cluster)
+        .hosted(&host);
+    let (step, _) = &timed[0];
+    let (k, len) = (&*step.kernel, step.write.len);
+    assert_eq!(gpu.seconds_in(1, k, len), host.seconds(k, len));
 }
 
 /// A saved bench reads back, and names what got slower.

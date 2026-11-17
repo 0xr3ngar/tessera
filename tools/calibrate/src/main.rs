@@ -3,7 +3,7 @@
 use calibrate::probe::{fit, links, read, suite};
 use calibrate::{Grid, headroom, judge};
 use calibrate::{bench, plans};
-use lower::{Cluster, Device, Settings, Step};
+use lower::{Cluster, Device, Pick, Settings, Step};
 use sim::{Chip, known};
 use std::error::Error;
 use std::process::ExitCode;
@@ -50,6 +50,13 @@ fn run(settings: &Settings) -> Result<(), Box<dyn Error>> {
     let cluster = links(settings)?;
     let mut device = Device::guess(settings);
     let timed = Grid::full().run(&mut device, settings)?;
+    // The host zone's native kernels, timed on the host.
+    let cpu = Settings {
+        backend: Pick::Cpu,
+        ..settings.clone()
+    };
+    let mut host = Device::guess(&cpu);
+    Grid::host().run(&mut host, &cpu)?;
     let seconds = start.elapsed().as_secs_f64();
     let launches = timed.len();
     println!(
@@ -68,10 +75,11 @@ fn run(settings: &Settings) -> Result<(), Box<dyn Error>> {
     room(&pool, &timed);
     hops(&cluster);
     // The stored device carries the fit, for unmeasured kernels.
-    let device = device.fitted(fit).zoned(cluster);
+    let device = device.fitted(fit).zoned(cluster).hosted(&host);
     let path = Device::path(settings, &device.platform).ok_or("no home: set TESSERA_COSTS")?;
     device.save(&path)?;
-    println!("{} samples in {}", device.samples(), path.display());
+    let (gpu, cpu) = (device.samples(), device.host_samples());
+    println!("{gpu} samples and {cpu} on the host in {}", path.display());
     Ok(())
 }
 

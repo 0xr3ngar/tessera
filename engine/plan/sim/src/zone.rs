@@ -4,7 +4,7 @@ use crate::Tag;
 use serde::{Deserialize, Serialize};
 
 /// The hardware a zone is.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ZoneKind {
     Gpu,
     Cpu,
