@@ -5,6 +5,7 @@ pub mod embed;
 #[cfg(test)]
 mod embed_test;
 pub mod generate;
+pub mod paint;
 pub mod tag;
 mod text;
 #[cfg(test)]
