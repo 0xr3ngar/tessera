@@ -205,6 +205,14 @@ fn ragged_causal() {
         })
     };
     assert!(result(tys.clone(), attend(Mask::Causal)).is_ok());
+    let mut split = tys.clone();
+    split[0].placement = Split { axis: 1 };
+    let wrong = placed(split.clone(), attend(Mask::Causal));
+    assert_eq!(wrong, Err(ErrorKind::Placement));
+    split[1].placement = Split { axis: 2 };
+    split[2].placement = Split { axis: 2 };
+    let heads = placed(split, attend(Mask::Causal));
+    assert_eq!(heads, Ok(Split { axis: 1 }));
     for mask in [Mask::Bidirectional, Mask::Within(4)] {
         assert_eq!(placed(tys.clone(), attend(mask)), Err(ErrorKind::Value));
     }
@@ -256,6 +264,10 @@ fn kept_rows_append() {
     assert_eq!(append(&g, 1, 0), Err(ErrorKind::Shape));
     assert_eq!(append(&g, 2, 0), Err(ErrorKind::Placement));
     assert_eq!(append(&g, 0, 1), Err(ErrorKind::Reference));
+    // Head-split rows go to head-split kept rows.
+    g.kept[0] = kept.clone().placed(Split { axis: 2 });
+    assert_eq!(append(&g, 2, 0), Ok(g.kept[0].clone()));
+    g.kept[0] = kept.clone();
     let push = |g: &mut Graph| {
         g.nodes.push(Node {
             op: Op::Append(0),

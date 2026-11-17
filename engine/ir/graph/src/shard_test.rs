@@ -79,7 +79,9 @@ fn placements(g: &Graph) -> Vec<Placement> {
 
 #[test]
 fn mlp_splits_and_sums() {
-    let g = shard(&mlp(Stage::Act(Act::Silu))).unwrap();
+    let g = shard(&mlp(Stage::Act(Act::Silu)), &Parts::even(2))
+        .unwrap()
+        .graph;
     assert_eq!(placements(&g), [Split { axis: 0 }, Split { axis: 1 }]);
     let sums = |n: &Node| n.op == Op::Row(Row(vec![Stage::AllReduce]));
     assert_eq!(g.nodes.iter().filter(|n| sums(n)).count(), 1);
@@ -93,7 +95,17 @@ fn mlp_splits_and_sums() {
 #[test]
 fn whole_rows_stay_whole() {
     // A norm between them needs whole rows, so nothing splits.
-    let g = shard(&mlp(Stage::Rms { eps: 1e-6 })).unwrap();
-    assert_eq!(placements(&g), [Replicated, Replicated]);
-    assert_eq!(g.nodes.len(), 7);
+    let g = shard(&mlp(Stage::Rms { eps: 1e-6 }), &Parts::even(2)).unwrap();
+    assert_eq!(placements(&g.graph), [Replicated, Replicated]);
+    assert_eq!(g.graph.nodes.len(), 7);
+    let held: Vec<u32> = g.whole.iter().map(|w| w.weight).collect();
+    assert_eq!(held, [0, 1]);
+}
+
+#[test]
+fn uneven_stays_whole() {
+    // Six columns do not divide into four equal units.
+    let g = shard(&mlp(Stage::Act(Act::Silu)), &Parts(vec![3, 1])).unwrap();
+    assert_eq!(placements(&g.graph), [Replicated, Replicated]);
+    assert!(g.whole[0].why.contains("does not divide"), "{:?}", g.whole);
 }

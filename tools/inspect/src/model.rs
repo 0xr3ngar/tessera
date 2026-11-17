@@ -1,6 +1,6 @@
 //! The front end's graph, its sharded form, and their link.
 
-use graph::{DimName, EntryKind, Graph, NodeId, Op, Row, Size, Stage, shard};
+use graph::{DimName, EntryKind, Graph, NodeId, Op, Parts, Row, Size, Stage, Whole, shard};
 use models::decoder::{Config, Moe, Swiglu, stepper};
 use models::small;
 use std::error::Error;
@@ -11,6 +11,8 @@ pub struct Model {
     pub name: String,
     pub source: Graph,
     pub sharded: Graph,
+    /// Weights the split left whole, and why.
+    pub whole: Vec<Whole>,
     /// Per sharded node, the source node it computes or sums.
     pub origin: Vec<NodeId>,
     /// Per sharded node, whether sharding added it.
@@ -42,8 +44,11 @@ fn sum() -> Op {
 }
 
 impl Model {
-    pub fn new(name: String, source: Graph) -> Result<Self, Box<dyn Error>> {
-        let sharded = shard(&source)?;
+    pub fn new(name: String, source: Graph, parts: &Parts) -> Result<Self, Box<dyn Error>> {
+        let graph::Sharded {
+            graph: sharded,
+            whole,
+        } = shard(&source, parts)?;
         let (mut origin, mut added) = (Vec::new(), Vec::new());
         let mut at = 0;
         for n in &sharded.nodes {
@@ -61,6 +66,7 @@ impl Model {
             name,
             source,
             sharded,
+            whole,
             origin,
             added,
         })

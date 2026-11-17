@@ -60,7 +60,7 @@ fn planned(g: &Graph, host: &Settings) -> [Plan; 2] {
     let device = Device::guess(host)
         .zoned(Cluster::two("a", "b"))
         .ranked(vec![0, 1]);
-    let sharded = shard(g).unwrap();
+    let sharded = shard(g, &graph::Parts::even(2)).unwrap().graph;
     [0, 1].map(|r| lower(&sharded, 0, &SIZES, &device.clone().as_rank(r)).unwrap())
 }
 

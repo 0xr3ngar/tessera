@@ -46,35 +46,44 @@ impl Loopback {
         Ok(())
     }
 
-    /// Runs every step on every rank. Sums meet between steps.
+    /// Runs each rank's own steps. Sums meet between steps.
     pub fn run(&mut self, inputs: &[View]) -> Result<Vec<Tensor>, Error> {
         for r in &mut self.ranks {
             r.feed(inputs)?;
         }
-        let steps = self.ranks[0].plan().steps.clone();
-        for (i, step) in steps.iter().enumerate() {
-            if step.kernel.name() != "all_reduce" {
-                for r in &mut self.ranks {
-                    r.submit(i..i + 1)?;
-                }
-                continue;
+        // Uneven ranks lower to different steps.
+        let sums: Vec<Vec<usize>> = self.ranks.iter().map(|r| sums(r.plan())).collect();
+        if sums.iter().any(|s| s.len() != sums[0].len()) {
+            return Err(Error::RankOrder);
+        }
+        let mut from = vec![0; self.ranks.len()];
+        for at in 0..=sums[0].len() {
+            for (r, rank) in self.ranks.iter_mut().enumerate() {
+                let to = sums[r].get(at).copied();
+                let to = to.unwrap_or(rank.plan().steps.len());
+                rank.submit(from[r]..to)?;
+                from[r] = to + 1;
             }
+            if at == sums[0].len() {
+                break;
+            }
+            let step = |r: usize| &self.ranks[r].plan().steps[sums[r][at]];
             let mut parts = Vec::with_capacity(self.ranks.len());
-            for r in &self.ranks {
-                parts.push(r.read(step.reads[0])?);
+            for (r, rank) in self.ranks.iter().enumerate() {
+                parts.push(rank.read(step(r).reads[0])?);
             }
             let sum = summed(parts.iter().map(|p| p.floats().expect("floats")));
-            let sum = Tensor::f32(vec![step.write.len], sum);
-            for r in &mut self.ranks {
-                r.write(step.write, sum.view())?;
+            for (r, rank) in self.ranks.iter_mut().enumerate() {
+                let write = rank.plan().steps[sums[r][at]].write;
+                rank.write(write, Tensor::f32(vec![write.len], sum.clone()).view())?;
             }
         }
         let outputs = self.ranks[0].plan().outputs.clone();
         let mut out = Vec::with_capacity(outputs.len());
-        for o in &outputs {
+        for (at, o) in outputs.iter().enumerate() {
             let first = self.ranks[0].read(o.slot)?;
             for r in &self.ranks[1..] {
-                if r.read(o.slot)? != first {
+                if r.read(r.plan().outputs[at].slot)? != first {
                     return Err(Error::OutputsDisagree);
                 }
             }
@@ -82,4 +91,11 @@ impl Loopback {
         }
         Ok(out)
     }
+}
+
+/// The steps of `plan` that sum over ranks, in order.
+fn sums(plan: &Plan) -> Vec<usize> {
+    let steps = plan.steps.iter().enumerate();
+    let sums = steps.filter(|(_, s)| s.kernel.name() == "all_reduce");
+    sums.map(|(i, _)| i).collect()
 }

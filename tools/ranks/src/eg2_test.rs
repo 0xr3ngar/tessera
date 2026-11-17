@@ -24,7 +24,7 @@ fn eg2_run() {
         .collect();
     let n = ids.len();
     let (g, weights, _) = model("eg2", &dir, n as u64).unwrap();
-    let sharded = shard(&g).unwrap();
+    let sharded = shard(&g, &graph::Parts::even(2)).unwrap().graph;
     let settings = runs().pop().unwrap();
     let kind = match settings.gpu() {
         Some(_) => ZoneKind::Gpu,

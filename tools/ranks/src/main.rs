@@ -223,7 +223,18 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let n = tokens.len();
     let ranks = args.ranks;
     let (g, weights, mut pins) = model(&args.model, &fixture, n as u64)?;
-    let sharded = shard(&g)?;
+    let parts = match args.parts.is_empty() {
+        true => graph::Parts::even(ranks),
+        false => graph::Parts(args.parts.clone()),
+    };
+    let graph::Sharded {
+        graph: sharded,
+        whole,
+    } = shard(&g, &parts)?;
+    for w in &whole {
+        let path = &g.weights[w.weight as usize].path;
+        eprintln!("rank {}: {path:?} stays whole: {}", args.rank, w.why);
+    }
     let split = sharded
         .weights
         .iter()
@@ -249,10 +260,7 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let device = device
         .ranked((0..ranks as u32).collect())
         .as_rank(args.rank);
-    let device = match args.parts.is_empty() {
-        true => device,
-        false => device.uneven(args.parts.clone()),
-    };
+    let device = device.uneven(parts.0);
     let sizes = [(Seqs, 1), (Context, n as u64)];
     let start = Instant::now();
     let plan = lower(&sharded, 0, &sizes, &device)?;

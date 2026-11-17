@@ -1,10 +1,10 @@
 //! The toy decoder over two ranks matches one.
 
-use graph::{Graph, Placement, shard};
+use graph::{Graph, Parts, Placement, shard};
 use interp::{Tensor, run, run_ranks};
 use lower::{Device, Plan, View, lower};
-use models::decoder::{Config, Swiglu, program};
-use parity::pair;
+use models::decoder::{Config, Swiglu, program, stepper};
+use parity::{pair, step_ranks};
 use run::Loopback;
 use run::testing::{host, runs};
 use testkit::{Noise, fill, max_abs_diff};
@@ -16,7 +16,7 @@ const SIZES: [(DimName, u64); 2] = [(Seqs, 1), (Context, 8)];
 /// The toy graph, sharded too, with faux weights and inputs.
 fn toy() -> (Graph, Graph, Vec<Tensor>, Vec<Tensor>) {
     let g = program::<Norm, Swiglu>(&Config::toy(2, 8));
-    let sharded = shard(&g).unwrap();
+    let sharded = shard(&g, &Parts::even(2)).unwrap().graph;
     let mut noise = Noise(5);
     let mut draw = |ty: &TensorType| fill(&g, ty, &SIZES, &mut noise).unwrap();
     let weights = g.weights.iter().map(|w| draw(&w.ty)).collect();
@@ -78,4 +78,42 @@ fn two_rank_plan() {
         let diff = off(&got[0], &g, &weights, &inputs);
         assert!(diff < 1e-3, "{diff} on {}", ranks.rank(0).device());
     }
+}
+
+/// Weights placed so, with a path step `name` if given.
+fn placed(g: &Graph, placement: Placement, name: Option<&str>) -> usize {
+    let named =
+        |w: &&graph::Weight| name.is_none_or(|n| w.path.contains(&graph::PathSeg::Field(n.into())));
+    let on = g.weights.iter().filter(|w| w.ty.placement == placement);
+    on.filter(named).count()
+}
+
+#[test]
+fn step_splits_heads() {
+    let g = stepper::<Norm, Swiglu>(&Config::toy(2, 8));
+    let sharded = step_ranks(&g, &Parts::even(2));
+    assert_eq!(sharded.whole, []);
+    let g = &sharded.graph;
+    let (columns, rows) = (Placement::Split { axis: 0 }, Placement::Split { axis: 1 });
+    for name in ["q", "k", "v"] {
+        assert_eq!(placed(g, columns, Some(name)), 2, "{name}");
+    }
+    assert_eq!(placed(g, rows, Some("o")), 2);
+    let heads = Placement::Split { axis: 2 };
+    assert!(g.kept.iter().all(|k| k.placement == heads));
+}
+
+#[test]
+fn uneven_heads_stay_whole() {
+    // Two KV heads cannot take three quarters and one.
+    let g = stepper::<Norm, Swiglu>(&Config::toy(2, 8));
+    let sharded = step_ranks(&g, &Parts(vec![3, 1]));
+    // Per layer q, k, v and o stay whole.
+    assert_eq!(sharded.whole.len(), 8);
+    assert_eq!(
+        placed(&sharded.graph, Placement::Split { axis: 1 }, None),
+        2
+    );
+    let whole = |k: &TensorType| k.placement == Placement::Replicated;
+    assert!(sharded.graph.kept.iter().all(whole));
 }
