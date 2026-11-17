@@ -1,6 +1,6 @@
 //! DeepSeek-style decoders: low-rank attention, MoE, indexed keys.
 
-use crate::shared::{Attend, Rotated, Stack, rows, step_ports, swiglu, tokens};
+use crate::shared::{Attend, Stack, rows, step_ports, swiglu, tokens};
 use trace::DimName::*;
 use trace::{
     Act, Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Linears, Mask, Model,
@@ -443,18 +443,7 @@ pub struct RotatedMoe {
     pub down_su: Embed,
     #[shape(Experts, Hidden)]
     pub down_sv: Embed,
-    pub shared: RotatedShared,
-}
-
-/// The expert every row uses, its rotations folded per matrix.
-#[derive(Weights)]
-pub struct RotatedShared {
-    #[shape(Hidden, Ffn)]
-    pub gate: Rotated,
-    #[shape(Hidden, Ffn)]
-    pub up: Rotated,
-    #[shape(Ffn, Hidden)]
-    pub down: Rotated,
+    pub shared: SharedMlp,
 }
 
 impl Routed for RotatedMoe {

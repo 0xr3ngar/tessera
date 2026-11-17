@@ -267,7 +267,17 @@ impl Release {
         let width = if shared { experts::shared_width(k) } else { k };
         let [hidden, _, ffn] = sizes;
         let file = experts::codes_file(layer, width);
-        self.with(&file, |f| experts::packed(f, local, [hidden, ffn]))
+        let mut bytes = self.with(&file, |f| experts::packed(f, local, [hidden, ffn]))?;
+        // The shared expert is a rotated file: its rotations follow.
+        if let Some(stem) = local.strip_suffix(".weight").filter(|_| shared) {
+            let index = experts::index_file(layer);
+            for end in ["suh", "svh"] {
+                let name = format!("{stem}.{end}");
+                let v = self.with(&index, |f| experts::floats(f, &name, k))?;
+                bytes.extend(v.iter().flat_map(|x| F16::from(*x).0.to_le_bytes()));
+            }
+        }
+        Ok(bytes)
     }
 
     /// The file holding `name`, and the name inside it.
@@ -568,7 +578,7 @@ mod experts {
         let (Some([hidden, experts, ffn]), Some(routed), Some(shared)) = (
             sizes(idx, k),
             trellis::form_for(k),
-            trellis::form_for(shared_width(k)),
+            trellis::turned_for(shared_width(k)),
         ) else {
             return Vec::new();
         };
@@ -596,12 +606,10 @@ mod experts {
             out.push(slice(from, vec![experts, rows], Stored::F32));
             let stem = format!("shared_experts.{p}_proj");
             out.push(slice(
-                format!("{stem}.codes"),
+                format!("{stem}.weight"),
                 vec![rows, cols],
                 Stored::Form(shared),
             ));
-            out.push(slice(format!("{stem}.suh"), vec![cols], Stored::F32));
-            out.push(slice(format!("{stem}.svh"), vec![rows], Stored::F32));
         }
         for side in ["signs_in", "signs_out"] {
             out.push(slice(format!("experts.{side}"), vec![hidden], Stored::F32));
@@ -667,7 +675,7 @@ mod experts {
     ) -> Result<Vec<u8>, Error> {
         let missing = || Error::Missing(local.into());
         let (tensor, p) = match local.strip_prefix("shared_experts.") {
-            Some(rest) => (true, rest.strip_suffix("_proj.codes").ok_or_else(missing)?),
+            Some(rest) => (true, rest.strip_suffix("_proj.weight").ok_or_else(missing)?),
             None => {
                 let rest = local.strip_prefix("experts.").ok_or_else(missing)?;
                 (false, rest.strip_suffix(".weight").ok_or_else(missing)?)
