@@ -1,5 +1,6 @@
 //! Plans over a GPU zone and a host zone.
 
+use engine_settings::Settings;
 use graph::DimName::{Rows, Seqs, Vocab};
 use graph::{DType, Dim, Graph, TensorType};
 use lower::kernels::Map;
@@ -154,4 +155,19 @@ fn clusters_are_stored() {
     assert!(loaded == device && loaded.zones() == 2);
     assert_eq!(loaded.transfer(0, 1, 1_000_000), Some(2e-6 + 1e-6));
     assert_eq!(loaded.transfer(1, 1, 1_000_000), Some(0.0));
+}
+
+#[test]
+fn stored_runs_alone() {
+    let device = Device::guess(&host()).zoned(two(1e-6));
+    let settings = Settings {
+        costs: Some(scratch("tessera-lower-zones-costs")),
+        ..host()
+    };
+    let file = Device::path(&settings, &device.platform).unwrap();
+    device.save(&file).unwrap();
+    let stored = Device::stored(device.platform.clone(), &settings).unwrap();
+    std::fs::remove_file(&file).unwrap();
+    assert_eq!(stored.zones(), 1);
+    assert!(!step(&stored).zoned());
 }
