@@ -1137,6 +1137,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "inspect"
+version = "0.1.0"
+dependencies = [
+ "graph",
+ "lower",
+ "models",
+ "platform",
+ "rules",
+ "serde",
+ "serde_json",
+ "sim",
+ "trace",
+]
+
+[[package]]
 name = "interp"
 version = "0.1.0"
 dependencies = [

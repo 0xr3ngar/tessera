@@ -68,6 +68,7 @@ tessera is not alpha or beta. It's an experiment right now and no numbers are av
 <tr><td>&emsp;<a href="tools/calibrate">calibrate</a></td><td>Times kernels on this machine and stores what they cost</td></tr>
 <tr><td>&emsp;<a href="tools/check">tessera-check</a></td><td>Runs the style checks, and prints one report or writes one PR comment</td></tr>
 <tr><td>&emsp;<a href="tools/findings">findings</a></td><td>The JSON each check writes, for tessera-check to render</td></tr>
+<tr><td>&emsp;<a href="tools/inspect">inspect</a></td><td>Draws a model's graph, its lowering per rank, and tokens moving through the ranks</td></tr>
 <tr><td>&emsp;<a href="tools/lint">tessera-lint</a></td><td>The repository's code-shape rules, run by CI and the pre-commit hook</td></tr>
 <tr><td>&emsp;<a href="tools/load">load</a></td><td>Drives concurrent requests against tessera-serve and reports throughput</td></tr>
 <tr><td>&emsp;<a href="tools/parity">parity</a></td><td>Every model against its reference, the interpreter and the device</td></tr>
