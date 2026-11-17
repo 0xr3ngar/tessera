@@ -296,7 +296,8 @@ jobs:
     # backend, with no GPU needed.
     needs: changes
     if: needs.changes.outputs.build == 'true'
-    runs-on: ubuntu-latest
+    # CUDA 13.0 packages target 24.04. Newer glibc breaks nvcc.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.99.1
