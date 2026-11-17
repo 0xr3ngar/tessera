@@ -224,9 +224,7 @@ fn section(title: &str, body: El) -> El {
 pub fn page(model: &Model, pass: &Pass) -> String {
     let title = format!("{}: lowering, {}", model.name, pass.label);
     let nav = el("p")
-        .kid(text("a", "source graph").attr("href", "graph.dot"))
-        .text(" · ")
-        .kid(text("a", "sharded graph").attr("href", "sharded.dot"))
+        .kid(text("a", "graph").attr("href", "graph.html"))
         .text(" · ")
         .kid(text("a", "tokens moving").attr("href", "pump.html"));
     let body = el("body")

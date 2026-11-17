@@ -170,7 +170,9 @@ pub fn page(model: &str, names: &[String], laps: &[Lap]) -> String {
         .kid(text("button", "step").attr("id", "step"))
         .kid(text("button", "restart").attr("id", "restart"))
         .kid(el("select").attr("id", "lap"))
-        .kid(text("a", "lowering").attr("href", "lowering.html"));
+        .kid(text("a", "lowering").attr("href", "lowering.html"))
+        .text(" · ")
+        .kid(text("a", "graph").attr("href", "graph.html"));
     let body = el("body")
         .kid(text("h1", title.clone()))
         .kid(controls)

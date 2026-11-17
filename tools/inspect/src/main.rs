@@ -3,6 +3,7 @@
 // Linking these registers their lowering rules.
 use rules as _;
 
+mod diagram;
 mod dot;
 mod html;
 mod lowering;
@@ -132,8 +133,11 @@ fn run(args: &Args) -> Result<(), Box<dyn Error>> {
     let out = &args.out;
     std::fs::create_dir_all(out)?;
     std::fs::write(out.join("graph.json"), model.source.to_json())?;
-    std::fs::write(out.join("graph.dot"), dot::draw(&model, false))?;
-    std::fs::write(out.join("sharded.dot"), dot::draw(&model, true))?;
+    let (source, sharded) = (dot::draw(&model, false), dot::draw(&model, true));
+    let graph = diagram::page(&model.name, &source, &sharded);
+    std::fs::write(out.join("graph.html"), graph)?;
+    std::fs::write(out.join("graph.dot"), source)?;
+    std::fs::write(out.join("sharded.dot"), sharded)?;
     std::fs::write(
         out.join("lowering.html"),
         lowering::page(&model, &passes[0]),
