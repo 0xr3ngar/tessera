@@ -439,6 +439,79 @@ f_fn float f_e4m3(u32 w, u32 l) {{
             }
             /// `o.mix(at, keep, p, b, j, n)`: `o * keep + p * b`.
             // A zero `keep` drops old values, maybe junk.
+            /// `o.attend(..)`: one query's softmax attention into `o`.
+            // Keys `from..to`, or the `n` listed at `l`.
+            Attend = method attend(self, u64, Buf, Buf, Buf, u64, u32, u32, u32, u32, f32, Buf, u64, u32) {
+                device: {
+                    let rows = |out: &str| format!(
+                        "f_fn void f_attend_row({out} o, f_const(float) q, f_const(float) k, f_const(float) v, u32 stride, u32 from, u32 to, u32 width, float scale, f_const(u32) ids, u32 picks) {{
+    u32 n = picks > 0u ? picks : to - from;
+    float top = -1.0e30f;
+    for (u32 i = 0; i < n; i++) {{
+        u32 j = picks > 0u ? ids[i] : from + i;
+        if (j < from || j >= to) {{ continue; }}
+        float s = 0.0f;
+        for (u32 d = 0; d < width; d++) {{ s += q[d] * k[j * stride + d]; }}
+        top = fmax(top, s * scale);
+    }}
+    for (u32 d = 0; d < width; d++) {{ o[d] = 0.0f; }}
+    float total = 0.0f;
+    for (u32 i = 0; i < n; i++) {{
+        u32 j = picks > 0u ? ids[i] : from + i;
+        if (j < from || j >= to) {{ continue; }}
+        float s = 0.0f;
+        for (u32 d = 0; d < width; d++) {{ s += q[d] * k[j * stride + d]; }}
+        float p = exp(s * scale - top);
+        total += p;
+        for (u32 d = 0; d < width; d++) {{ o[d] += p * v[j * stride + d]; }}
+    }}
+    for (u32 d = 0; d < width; d++) {{ o[d] = o[d] / total; }}
+}}
+#define f_attend(o, a, q, k, v, ka, st, f, t, w, sc, ids, la, n) f_attend_row((o) + (a), (q) + (a), (k) + (ka), (v) + (ka), st, f, t, w, sc, (ids) + (la), n)
+"
+                    );
+                    [rows("device float *"), rows("float *")]
+                },
+                text: |p, args| p.spell("f_attend", args),
+                host: |g, args, mask| {
+                    let names = [0, 2, 3, 4, 11].map(|i| match &args[i] {
+                        Expr::Var(name) => g.arg(name),
+                        _ => panic!("attention names its buffers"),
+                    });
+                    let [out, q, k, v, ids] = names;
+                    let n: Vec<Vec<Val>> = [1, 5, 6, 7, 8, 9, 10, 12, 13].iter().map(|i| g.eval(&args[*i], mask)).collect();
+                    for t in (0..g.threads).filter(|t| mask[*t]) {
+                        let (at, k_at, stride) = (n[0][t].l(), n[1][t].l(), u64::from(n[2][t].u()));
+                        let (from, to, width) = (n[3][t].u(), n[4][t].u(), u64::from(n[5][t].u()));
+                        let (scale, list_at, picks) = (n[6][t].f(), n[7][t].l(), n[8][t].u());
+                        let listed = (0..picks).map(|i| g.load(&ids, list_at + u64::from(i)).u());
+                        let keys: Vec<u32> = match picks {
+                            0 => (from..to).collect(),
+                            _ => listed.filter(|j| (from..to).contains(j)).collect(),
+                        };
+                        let row = |b, at: u64| -> Vec<f32> { (0..width).map(|d| g.load(b, at + d).f()).collect() };
+                        let qr = row(&q, at);
+                        let mut scores: Vec<f32> = Vec::new();
+                        for j in &keys {
+                            let kr = row(&k, k_at + u64::from(*j) * stride);
+                            scores.push(qr.iter().zip(&kr).map(|(a, b)| a * b).sum::<f32>() * scale);
+                        }
+                        let top = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                        let ps: Vec<f32> = scores.iter().map(|s| (s - top).exp()).collect();
+                        let total: f32 = ps.iter().sum();
+                        let mut sum = vec![0.0f32; width as usize];
+                        for (j, p) in keys.iter().zip(&ps) {
+                            let vr = row(&v, k_at + u64::from(*j) * stride);
+                            sum.iter_mut().zip(&vr).for_each(|(s, x)| *s += p / total * x);
+                        }
+                        for (d, x) in sum.into_iter().enumerate() {
+                            g.store(&out, at + d as u64, Val::F(x));
+                        }
+                    }
+                    vec![Val::B(false); g.threads]
+                },
+                count: |c, _| c.tally(Ops { stores: 1.0, ..float(8.0) }, false),
+            }
             Mix = method mix(self, u64, f32, f32, Buf, u64, u32) {
                 device: {
                     let rows = |out: &str| format!(

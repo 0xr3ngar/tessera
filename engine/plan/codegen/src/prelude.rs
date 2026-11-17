@@ -226,6 +226,27 @@ impl<F: Elems> BufMut<F> {
     pub fn mix<G: Elems>(&mut self, _: u64, _: f32, _: f32, _: Buf<G>, _: u64, _: u32) {
         device()
     }
+
+    /// One query's softmax attention into `width` elements from `at`.
+    #[allow(clippy::too_many_arguments, reason = "four rows and the query's shape")]
+    pub fn attend(
+        &mut self,
+        _: u64,
+        _: Buf<F32>,
+        _: Buf<F32>,
+        _: Buf<F32>,
+        _: u64,
+        _: u32,
+        _: u32,
+        _: u32,
+        _: u32,
+        _: f32,
+        _: Buf<U32>,
+        _: u64,
+        _: u32,
+    ) {
+        device()
+    }
 }
 
 /// Group memory, for the whole group.

@@ -43,28 +43,13 @@ fn cpu_attend<const LISTED: bool>(
     let to = if reach < keys { reach } else { keys };
     let kh = h / (heads / kv_heads);
     let list = (s * queries + t) as u64 * picks as u64;
-    let count = if LISTED { picks } else { to - from };
-    // The first key's zero `keep` clears the output row.
-    let mut most = -1.0e30f32;
-    let mut total = 0.0f32;
-    for i in 0..count {
-        let j = if LISTED {
-            ids[list + i as u64]
-        } else {
-            from + i
-        };
-        if j >= from && j < to {
-            let ko = ((s * keys + j) * kv_heads + kh) as u64 * width as u64;
-            let score = q.dot(qo, k, ko, width) * scale;
-            let top = max(most, score);
-            let keep = exp(most - top);
-            let p = exp(score - top);
-            total = total * keep + p;
-            out.mix(qo, keep, p, v, ko, width);
-            most = top;
-        }
-    }
-    out.mix(qo, 1.0 / total, 0.0, v, 0, width);
+    // Key 0 of this head. Keys step by `stride`.
+    let first = (s * keys * kv_heads + kh) as u64 * width as u64;
+    let stride = kv_heads * width;
+    let listed = if LISTED { picks } else { 0 };
+    out.attend(
+        qo, q, k, v, first, stride, from, to, width, scale, ids, list, listed,
+    );
 }
 
 /// Softmax attention over `[seqs, rows, heads, width]` tensors.

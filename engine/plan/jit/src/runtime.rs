@@ -219,6 +219,63 @@ pub unsafe extern "C" fn stage_f32(
     lockstep::stage_f32(out, at, n, (code, s), operand);
 }
 
+/// One query's attention. Each buffer comes as pointer, length, start.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "five buffers and the query's shape"
+)]
+pub unsafe extern "C" fn attend_f32(
+    out: *mut u8,
+    out_len: usize,
+    out_at: usize,
+    q: *const u8,
+    q_len: usize,
+    q_at: usize,
+    k: *const u8,
+    k_len: usize,
+    k_at: usize,
+    v: *const u8,
+    v_len: usize,
+    v_at: usize,
+    ids: *const u8,
+    ids_len: usize,
+    list_at: usize,
+    stride: usize,
+    from: usize,
+    to: usize,
+    width: usize,
+    scale: f32,
+    picks: usize,
+) {
+    let last = to.saturating_sub(1) * stride + width;
+    let (Some(_), Some(q), Some(k), Some(v), Some(ids)) = (
+        unsafe { within(out, out_len, (out_at + width) * 4) },
+        unsafe { within(q, q_len, (q_at + width) * 4) },
+        unsafe { within(k, k_len, (k_at + last) * 4) },
+        unsafe { within(v, v_len, (v_at + last) * 4) },
+        unsafe { within(ids, ids_len, (list_at + picks) * 4) },
+    ) else {
+        return;
+    };
+    // SAFETY: checked above. The output has its own buffer.
+    let out = unsafe { std::slice::from_raw_parts_mut(out, out_len) };
+    let rows = host::attend::Rows { out, q, k, v, ids };
+    let query = host::attend::Query {
+        out_at,
+        q_at,
+        k_at,
+        v_at,
+        stride,
+        from,
+        to,
+        width,
+        scale,
+        list_at,
+        picks,
+    };
+    host::attend::attend_f32(rows, &query);
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "two rows, two scales and a length"

@@ -1,5 +1,6 @@
 //! Runs kernel bodies on the host, each group in lockstep.
 
+pub mod attend;
 pub mod exec;
 mod intrinsic {
     include!("../../codegen/src/intrinsic.rs");
