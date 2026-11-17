@@ -1,4 +1,4 @@
-//! Line shapes, for tools/lint and tools/simcheck.
+//! Line shapes and merge conflicts, for tools/lint and tools/simcheck.
 
 use std::iter::Peekable;
 use std::str::Chars;
@@ -34,4 +34,10 @@ pub fn shape(line: &str) -> String {
         }
     }
     out
+}
+
+/// The first line, from 1, of an unresolved merge conflict.
+pub fn conflict(text: &str) -> Option<usize> {
+    let marker = |l: &str| l == "<<<<<<<" || l.starts_with("<<<<<<< ");
+    text.lines().position(marker).map(|i| i + 1)
 }

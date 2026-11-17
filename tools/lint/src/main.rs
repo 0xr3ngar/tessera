@@ -70,6 +70,9 @@ pub struct Violation {
     pub message: String,
 }
 
+/// A conflicted file skips the per-file rules and shape runs.
+const CONFLICT: &str = "unresolved merge conflict. Resolve it, then run lint again.";
+
 fn main() -> ExitCode {
     let root = files::repo_root();
     let sources = match files::sources(&root) {
@@ -97,7 +100,10 @@ fn main() -> ExitCode {
     }
     let (mut found, mut names, mut tests) = (Vec::new(), Vec::new(), Vec::new());
     for src in &sources {
-        check_file(src, &mut found, &mut names, &mut tests);
+        match shape::conflict(&src.text) {
+            Some(line) => found.push(src.violation(line, "conflict", CONFLICT.into())),
+            None => check_file(src, &mut found, &mut names, &mut tests),
+        }
     }
     share::check(&dirs, &sources, &tests, &mut found);
     names::check(&dirs, &names, &mut found);

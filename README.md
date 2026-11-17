@@ -74,7 +74,7 @@ tessera is not alpha or beta. It's an experiment right now and no numbers are av
 <tr><td>&emsp;<a href="tools/load">load</a></td><td>Drives concurrent requests against tessera-serve and reports throughput</td></tr>
 <tr><td>&emsp;<a href="tools/parity">parity</a></td><td>Every model against its reference, the interpreter and the device</td></tr>
 <tr><td>&emsp;<a href="tools/ranks">ranks</a></td><td>Runs one rank of a sharded Qwen3 forward pass, joined to the others over TCP</td></tr>
-<tr><td>&emsp;<a href="tools/shape">shape</a></td><td>Line shapes: a line with names, numbers and strings collapsed</td></tr>
+<tr><td>&emsp;<a href="tools/shape">shape</a></td><td>Line shapes, with names, numbers and strings collapsed, and merge conflicts</td></tr>
 <tr><td>&emsp;<a href="tools/simcheck">tessera-simcheck</a></td><td>Fails on near-copies of code, found with EmbeddingGemma 2 embeddings</td></tr>
 <tr><td>&emsp;<a href="tools/style">tessera-style</a></td><td>Comment and prose style rules, as part-of-speech patterns</td></tr>
 </table>
