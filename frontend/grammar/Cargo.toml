@@ -14,6 +14,6 @@ llguidance = ["dep:bundle", "dep:engine", "dep:llguidance", "dep:serde_json", "d
 [dependencies]
 bundle = { workspace = true, optional = true }
 engine = { workspace = true, optional = true }
-llguidance = { version = "1.9", default-features = false, optional = true }
+llguidance = { version = "1.9", default-features = false, features = ["lark"], optional = true }
 serde_json = { version = "1", optional = true }
 toktrie = { version = "1.9", optional = true }
