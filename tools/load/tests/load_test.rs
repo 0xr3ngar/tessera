@@ -122,11 +122,13 @@ fn events(tokens: usize, mode: Mode) -> String {
     if !matches!(mode, Mode::Empty) {
         for i in 0..tokens {
             let text = if i == 1 { "" } else { "café" };
-            stream.push_str(&format!("data: {{\"text\":\"{text}\"}}\r\n\r\n"));
+            let chunk = format!(r#"{{"choices":[{{"text":"{text}","finish_reason":null}}]}}"#);
+            stream.push_str(&format!("data: {chunk}\r\n\r\n"));
         }
     }
     if !matches!(mode, Mode::Truncated) {
-        stream.push_str("data: {\"text\":\"\",\"finish_reason\":\"length\"}\n\n");
+        let last = r#"{"choices":[{"text":"","finish_reason":"length"}]}"#;
+        stream.push_str(&format!("data: {last}\n\ndata: [DONE]\n\n"));
     }
     stream
 }
