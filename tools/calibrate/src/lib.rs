@@ -1,5 +1,6 @@
 //! Times kernels on this machine and stores what they cost.
 
+pub mod bench;
 mod grid;
 pub mod plans;
 pub mod probe;

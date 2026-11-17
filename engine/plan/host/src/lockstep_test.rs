@@ -32,7 +32,7 @@ fn dots_match_sums() {
     let xb: Vec<u8> = x.iter().flat_map(|v| v.to_le_bytes()).collect();
     let forms: [(&dyn Load, &[u8]); 2] = [(F32_FORM, &wide), (BF16_FORM, &narrow)];
     for (form, w_bytes) in forms {
-        for rows in [1, 3, 13, BLOCK] {
+        for (rows, cols) in [(1, n), (3, 13), (13, n), (BLOCK, 13)] {
             let mut out = vec![0u8; BLOCK * n * 4];
             let d = Dots {
                 at: 0,
@@ -40,10 +40,15 @@ fn dots_match_sums() {
                 x_at: 0,
                 w_at: 0,
                 k,
+                cols,
             };
             dots_form(form, &mut out, &xb, w_bytes, &d, rows);
             for (r, c) in (0..rows).flat_map(|r| (0..n).map(move |c| (r, c))) {
-                let want: f32 = (0..k).map(|i| x[r * k + i] * w[c * k + i]).sum();
+                // Columns past `cols` stay untouched.
+                let want: f32 = match c < cols {
+                    true => (0..k).map(|i| x[r * k + i] * w[c * k + i]).sum(),
+                    false => 0.0,
+                };
                 let at = (r * n + c) * 4;
                 let got = f32::from_le_bytes(out[at..at + 4].try_into().unwrap());
                 assert!(

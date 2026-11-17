@@ -166,19 +166,20 @@ macro_rules! tiles {
             w_at: usize,
             k: usize,
             rows: usize,
+            cols: usize,
         ) {
-            let block = lockstep::BLOCK;
-            let last = (at + rows.saturating_sub(1) * stride + block) * 4;
+            let cols = cols.min(lockstep::BLOCK);
+            let last = (at + rows.saturating_sub(1) * stride + cols) * 4;
             let (Some(_), Some(x), Some(w)) = (
                 unsafe { within(out, out_len, last) },
                 unsafe { within(x, x_len, (x_at + rows * k) * 4) },
-                unsafe { within(w, w_len, $form.bytes(w_at + block * k)) },
+                unsafe { within(w, w_len, $form.bytes(w_at + cols * k)) },
             ) else {
                 return;
             };
             // SAFETY: checked above.
             let out = unsafe { std::slice::from_raw_parts_mut(out, out_len) };
-            let d = lockstep::Dots { at, stride, x_at, w_at, k };
+            let d = lockstep::Dots { at, stride, x_at, w_at, k, cols };
             lockstep::dots_form($form, out, x, w, &d, rows);
         }
     )*};

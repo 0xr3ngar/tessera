@@ -1,8 +1,8 @@
-//! Probes this GPU, times the grid, or times model plans.
+//! Probes this GPU, times the grid, plans or shapes.
 
-use calibrate::plans;
 use calibrate::probe::{fit, links, read, suite};
 use calibrate::{Grid, headroom, judge};
+use calibrate::{bench, plans};
 use lower::{Cluster, Device, Settings, Step};
 use sim::{Chip, known};
 use std::error::Error;
@@ -104,10 +104,42 @@ fn plans(settings: &Settings) -> Result<(), Box<dyn Error>> {
     }
 }
 
+/// A shape slower than its baseline by this share fails.
+const SLACK: f64 = 0.2;
+
+/// Times shared shapes, saved or held to a baseline.
+fn marks(settings: &Settings, args: &[String]) -> Result<(), Box<dyn Error>> {
+    let marks = bench::bench(settings)?;
+    for m in &marks {
+        let gflops = m.flops / m.seconds / 1e9;
+        println!("{:40} {:10.3e} s {gflops:8.1} GFLOP/s", m.name, m.seconds);
+    }
+    let flag = |name: &str| {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+    };
+    if let Some(path) = flag("--save") {
+        std::fs::write(path, bench::text(&marks))?;
+    }
+    let Some(path) = flag("--against") else {
+        return Ok(());
+    };
+    let slower = bench::slower(&marks, &std::fs::read_to_string(path)?, SLACK);
+    for s in &slower {
+        println!("slower: {s}");
+    }
+    match slower.is_empty() {
+        true => Ok(()),
+        false => Err(format!("{} shapes slower than {path}", slower.len()).into()),
+    }
+}
+
 fn main() -> ExitCode {
     let settings = frontend_settings::read();
-    let arg = std::env::args().nth(1);
-    match match arg.as_deref() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match match args.first().map(String::as_str) {
+        Some("bench") => marks(&settings, &args[1..]),
         Some("probe") => probe(&settings),
         Some("plans") => plans(&settings),
         _ => run(&settings),

@@ -42,13 +42,15 @@ fn cpu_tiled(
     #[build] form: &'static dyn Stored,
 ) {
     // Threads on one row chunk sit side by side.
-    let cols = n / 32;
-    let row = gid() / cols * chunk;
-    let col = gid() % cols * 32;
+    let blocks = (n + 31) / 32;
+    let row = gid() / blocks * chunk;
+    let col = gid() % blocks * 32;
     if row >= m {
         return;
     }
     let rows = if m - row < chunk { m - row } else { chunk };
+    // The last block may hold fewer columns.
+    let cols = if n - col < 32 { n - col } else { 32 };
     let at = row as u64 * n as u64 + col as u64;
     out.dots(
         at,
@@ -59,6 +61,7 @@ fn cpu_tiled(
         col as u64 * k as u64,
         k,
         rows,
+        cols,
     );
 }
 
@@ -146,7 +149,7 @@ fn tiled_finish(mut body: Body, after: &After) -> Body {
     let cols = Stmt::For {
         var: "c".into(),
         from: Expr::lit(0),
-        to: Expr::lit(32),
+        to: Expr::var("cols"),
         step: Expr::lit(1),
         unroll: 0,
         body: finish(after, sum, at),
@@ -177,7 +180,7 @@ fn row_calls(after: &After) -> Option<Vec<Stmt>> {
         let args = vec![
             Expr::var("out"),
             Expr::var("first"),
-            Expr::lit(32),
+            Expr::var("cols"),
             Expr::lit(row.code()),
             Expr::Float(f64::from(scale)),
             Expr::var(&operand),
@@ -188,9 +191,9 @@ fn row_calls(after: &After) -> Option<Vec<Stmt>> {
     Some(calls)
 }
 
-/// Blocks need whole columns and f32 or bf16 weights.
-fn tiles(n: usize, form: &dyn Stored) -> bool {
-    n.is_multiple_of(32) && ["f32", "bf16"].contains(&form.name())
+/// Blocks need f32 or bf16 weights, at any width.
+fn tiles(form: &dyn Stored) -> bool {
+    ["f32", "bf16"].contains(&form.name())
 }
 
 /// Multiply-adds one packed weight costs, as a guess.
@@ -257,7 +260,7 @@ fn tiled_launches(k: &Tiled, step: &Step) -> Vec<Launch> {
     let chunk = d.m.div_ceil(chunks);
     // One thread a group: workers split by group.
     let shape = Shape::Grid {
-        across: chunks * (d.n / 32),
+        across: chunks * d.n.div_ceil(32),
         down: 1,
         threads: 1,
     };
@@ -352,7 +355,7 @@ fn tiled(tree: &Tree, at: T) -> Option<Vec<Draft>> {
         picked,
         ..
     } = site.product;
-    if picked.is_some() || !tiles(n, form) {
+    if picked.is_some() || !tiles(form) {
         return None;
     }
     let after = site.after.clone();
