@@ -4,7 +4,7 @@ use graph::PathSeg;
 use mem::Tensor;
 use serde::{Deserialize, Serialize};
 
-pub use codegen::form::{BF16_FORM, Bf16, F32, F32_FORM, LOADS, Load, U32, U32_FORM, named, of};
+pub use codegen::form::{BF16_FORM, F32_FORM, LOADS, Load, U32_FORM, named};
 
 /// A weight as a file holds it.
 pub enum Weight {

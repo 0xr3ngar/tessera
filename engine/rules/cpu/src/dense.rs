@@ -1,12 +1,12 @@
 //! `x[m, k]` times `w[n, k]` transposed, dense or picked.
 
-use crate::{GUESS, source};
 use codegen::ir::{BinOp, Body, Expr, Intrinsic, Stmt, Ty};
 use codegen::prelude::*;
 use lower::form::Load as Stored;
 use lower::kernels::{MapStage, finish};
 use lower::sites::{After, Picked as Pick};
 use lower::{Draft, Kernel, Launch, Shape, Step, T, Tree, ZoneKind, sites};
+use lower::{GUESS, source};
 
 /// One thread per output: its row dotted with its column.
 #[kernel]

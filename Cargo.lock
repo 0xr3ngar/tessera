@@ -60,7 +60,6 @@ name = "attention"
 version = "0.1.0"
 dependencies = [
  "codegen",
- "cpu",
  "graph",
  "interp",
  "kernels",
@@ -219,15 +218,13 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 name = "calibrate"
 version = "0.1.0"
 dependencies = [
- "attention",
  "codegen",
  "engine",
  "frontend-settings",
  "graph",
- "kernels",
- "linear",
  "lower",
  "models",
+ "rules",
  "run",
  "sim",
  "testkit",
@@ -780,16 +777,14 @@ dependencies = [
 name = "frontend-comm"
 version = "0.1.0"
 dependencies = [
- "attention",
  "engine",
  "frontend-settings",
  "graph",
  "interp",
- "kernels",
- "linear",
  "lower",
  "mem",
  "models",
+ "rules",
  "run",
  "testkit",
  "trace",

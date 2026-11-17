@@ -220,7 +220,7 @@ impl<'a> Tree<'a> {
             let args = args?;
             let form = match &n.op {
                 Op::Weight(w) => pins.form(&g.weights[*w as usize].path),
-                _ => crate::form::of(n.ty.dtype),
+                _ => codegen::form::of(n.ty.dtype),
             };
             // Kernels read whole blocks, so a row holds whole ones.
             if !shape.last().is_none_or(|k| k.is_multiple_of(form.align())) {

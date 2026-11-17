@@ -25,10 +25,6 @@ fn dims() -> Vec<Dim> {
     ]
 }
 
-fn attention() -> Graph {
-    graphs::attention(&dims(), [2, 2, 16])
-}
-
 /// Runs entry 0 both ways. Returns the largest difference.
 fn gap(g: &Graph, inputs: &[Tensor], device: &Device, settings: &Settings) -> f32 {
     let want = run(g, &[], 0, inputs).unwrap();
@@ -43,13 +39,10 @@ fn gap(g: &Graph, inputs: &[Tensor], device: &Device, settings: &Settings) -> f3
     if same { 0.0 } else { f32::INFINITY }
 }
 
-/// The GPU rules this crate and `attention` register.
+/// The rules this crate registers.
 fn ours() -> Vec<&'static lower::Rule> {
-    let gpu = |m: &str| m.starts_with("kernels::") || m.starts_with("attention::");
-    let ours = rules().into_iter().filter(|r| gpu(r.module));
-    // CPU rules need a CPU zone.
-    ours.filter(|r| !r.module.starts_with("attention::cpu"))
-        .collect()
+    let ours = rules().into_iter();
+    ours.filter(|r| r.module.starts_with("kernels::")).collect()
 }
 
 /// Every rule's launches under `settings`. Returns the rules used.
@@ -60,7 +53,7 @@ fn rules_match(settings: &Settings) -> Vec<&'static str> {
     let graphs = [
         graphs::rows(&d, 32),
         graphs::rows(&d, 600),
-        attention(),
+        graphs::attention(&d, [2, 2, 16]),
         graphs::rotation(&d),
         graphs::table(&d, 32, 16),
         graphs::picks(&d, 16),
