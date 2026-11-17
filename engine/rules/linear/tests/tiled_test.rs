@@ -134,6 +134,8 @@ fn codes_match_decode() {
             let reads = |n: &&str| n.contains(codes.name());
             assert!(names.iter().any(reads), "{names:?} read the codes");
             let mut runner = open(plan, settings).unwrap();
+            let (compiled, made) = runner.compiled();
+            assert_eq!(compiled, made, "{}: every tree compiles", form.name());
             runner
                 .load_weight(0, &Weight::Packed(form, bytes.clone()))
                 .unwrap();
