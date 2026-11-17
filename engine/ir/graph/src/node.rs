@@ -321,4 +321,6 @@ pub enum Role {
     Picks,
     /// One bit per vocabulary row. Clear bits forbid the token.
     Allowed,
+    /// The token ids each pick chooses from.
+    Candidates,
 }

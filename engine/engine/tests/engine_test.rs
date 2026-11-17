@@ -1,6 +1,6 @@
 //! The engine's decode loop against the interpreter.
 
-use engine::{Batch, Engine, Event, Fair, Fault, Guide, Prefix, Reason, Request, Row};
+use engine::{Allowed, Batch, Engine, Event, Fair, Fault, Guide, Prefix, Reason, Request, Row};
 use graph::{Graph, Op};
 use interp::{Store, Tensor, run_kept};
 use lower::{Recipe, Settings, Weight, kept, rules};
@@ -272,14 +272,12 @@ fn trim_keeps_picks() {
     }
 }
 
-/// Allows one id, and keeps each id it accepts.
-struct Only(u32, Arc<Mutex<Vec<u32>>>);
+/// Allows one fixed set, and keeps each accepted id.
+struct Fixed(Allowed, Arc<Mutex<Vec<u32>>>);
 
-impl Guide for Only {
-    fn mask(&mut self, out: &mut [u32]) -> Result<bool, Fault> {
-        out.fill(0);
-        out[self.0 as usize / 32] = 1 << (self.0 % 32);
-        Ok(true)
+impl Guide for Fixed {
+    fn allowed(&mut self) -> Result<Allowed, Fault> {
+        Ok(self.0.clone())
     }
 
     fn accept(&mut self, id: u32) -> Result<(), Fault> {
@@ -289,28 +287,39 @@ impl Guide for Only {
 }
 
 #[test]
-fn masks_limit_picks() {
+fn heads_agree() {
     let mut c = Config::toy(1, 16);
     c.stack.masked = true;
     let trimmed = graph::trim(&stepper::<Norm, Swiglu>(&c), 0).unwrap();
     assert_eq!(trimmed.entries[0].inputs[3].ty.shape.0[0], Picks.into());
+    let set = [2u32, 11, 17, 30];
     for s in runs() {
         let (g, weights, mut engine) = open_on(29, 1, true, Recipe::default(), &s);
         let rows = [row(0, 3, 0), row(0, 9, 1)];
-        let want = step(&g, &weights, &mut Store::default(), &rows);
-        assert_eq!(engine.step(&rows).unwrap(), want);
-        let only = (want[1] + 1) % 32;
-        assert_eq!(engine.last_masked(&rows, &[1 << only]).unwrap(), [only]);
-        // The guide limits each answer token and sees it.
+        let got = run_kept(&g, &weights, &mut Store::default(), 0, &feeds(&rows)).unwrap();
+        let logits = got[1].floats().unwrap();
+        let score = |id: &&u32| logits[32 + **id as usize];
+        let best = *set
+            .iter()
+            .max_by(|a, b| score(a).total_cmp(&score(b)))
+            .unwrap();
+        // The sparse head, and the full head without the rest.
+        let except = Allowed::Except((0..32).filter(|i| !set.contains(i)).collect());
+        for allowed in [Allowed::Few(set.to_vec()), except] {
+            assert_eq!(engine.last_guided(&rows, &[allowed]).unwrap(), [best]);
+        }
+        // The host makes single choices. Lists pick among their ids.
         let seen = Arc::default();
-        let request = Request {
+        let request = |allowed| Request {
             tokens: vec![3, 9],
             max_tokens: 3,
-            guide: Some(Box::new(Only(only, Arc::clone(&seen)))),
+            guide: Some(Box::new(Fixed(allowed, Arc::clone(&seen)))),
             ..Request::default()
         };
-        assert_eq!(ids(&events(&mut engine, request)), [only; 3]);
-        assert_eq!(*seen.lock().unwrap(), [only; 3]);
+        assert_eq!(ids(&events(&mut engine, request(Allowed::One(5)))), [5; 3]);
+        let got = ids(&events(&mut engine, request(Allowed::Few(set.to_vec()))));
+        assert!(got[0] == best && got.iter().all(|i| set.contains(i)));
+        assert_eq!(seen.lock().unwrap().len(), 6);
     }
 }
 

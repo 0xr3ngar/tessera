@@ -213,6 +213,7 @@ impl Stack {
         dims.extend(shared.iter().chain(own).map(fixed));
         if self.masked {
             dims.push(Dim::fixed(VocabWords, self.vocab.div_ceil(32)));
+            dims.push(bounded(Candidates, FEW));
         }
         dims
     }
@@ -247,6 +248,21 @@ pub(crate) fn step_ports(m: &Model, masked: bool) -> ([Tensor; 3], Option<Tensor
     );
     let [t, p, s, bits] = m.entry(EntryKind::Step, [t, p, s, bits]);
     ([t, p, s], Some(bits))
+}
+
+/// The most token ids one sparse pick chooses from.
+pub const FEW: u64 = 128;
+
+/// A sparse step entry's rows, and each row's candidate ids.
+pub(crate) fn sparse_ports(m: &Model) -> [Tensor; 4] {
+    let port = |role, ty| Port { role, ty };
+    let row = |role| port(role, TensorType::new([Rows], DType::U32));
+    let [t, p, s] = [Role::Tokens, Role::Positions, Role::Slots].map(row);
+    let ids = port(
+        Role::Candidates,
+        TensorType::new([Rows, Candidates], DType::U32),
+    );
+    m.entry(EntryKind::Step, [t, p, s, ids])
 }
 
 /// Each row's likeliest allowed token, and its logits.

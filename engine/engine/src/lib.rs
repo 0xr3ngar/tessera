@@ -3,7 +3,7 @@
 // Linking the crates registers their rules.
 use rules as _;
 
-use graph::DimName::{Context, Picks, Rows, Segments, Seqs, VocabWords};
+use graph::DimName::{Candidates, Context, Picks, Rows, Segments, Seqs, VocabWords};
 use lower::{Cache, Device};
 use run::{Run, open};
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,7 @@ mod guide;
 mod model;
 mod schedule;
 
-pub use guide::{Fault, Guide, Prefix};
+pub use guide::{Allowed, FEW, Fault, Guide, Prefix};
 pub use model::Model;
 pub use schedule::{Batch, Fair, Policy, Seq, Sink};
 
@@ -92,6 +92,16 @@ pub struct Engine {
     slots: usize,
     /// Mask words per pick, if the graph takes masks.
     words: Option<usize>,
+    /// Whether entry 1 picks among candidate ids.
+    sparse: bool,
+}
+
+/// What a launch feeds before its picks.
+enum Head {
+    /// Entry 0, with each pick's mask words. None allows all.
+    Full(Option<Vec<u32>>),
+    /// Entry 1, with `k` candidate ids per pick.
+    Sparse(Vec<u32>, usize),
 }
 
 /// A token at a position, in a slot's sequence.
@@ -114,7 +124,7 @@ fn launch_of(
     rows: &[Row],
     picks: &[u32],
     slots: usize,
-) -> ([(graph::DimName, u64); 5], Vec<Tensor>) {
+) -> (Vec<(graph::DimName, u64)>, Vec<Tensor>) {
     let furthest = rows.iter().map(|r| r.position).max().unwrap_or(0);
     let mut seen: Vec<u32> = rows.iter().map(|r| r.slot).collect();
     seen.sort_unstable();
@@ -122,7 +132,7 @@ fn launch_of(
     // Rows and picks round up to a power of two.
     let filled = rows.len().next_power_of_two();
     let wanted = picks.len().next_power_of_two();
-    let sizes = [
+    let sizes = vec![
         (Seqs, slots as u64),
         (Rows, filled as u64),
         (Context, furthest as u64 + 1),
@@ -154,7 +164,11 @@ impl Engine {
         recipe: &Recipe,
         settings: &Settings,
     ) -> Result<Self, Error> {
-        let graph = graph::trim(&graph, 0)?;
+        let mut graph = graph::trim(&graph, 0)?;
+        let sparse = graph.entries.len() > 1;
+        if sparse {
+            graph = graph::trim(&graph, 1)?;
+        }
         let device = Device::guess(settings).with(recipe);
         let mut plans = Cache::default();
         let slots = graph
@@ -184,6 +198,7 @@ impl Engine {
             context,
             slots,
             words,
+            sparse,
         })
     }
 
@@ -217,26 +232,50 @@ impl Engine {
     /// One launch of `rows`: the likeliest token after each.
     pub fn step(&mut self, rows: &[Row]) -> Result<Vec<u32>, Error> {
         let all: Vec<u32> = (0..rows.len() as u32).collect();
-        self.launch(rows, &all, None)
+        self.launch(rows, &all, Head::Full(None))
     }
 
     /// One launch: the likeliest token after each slot's last row.
     pub fn last(&mut self, rows: &[Row]) -> Result<Vec<u32>, Error> {
-        self.launch(rows, &ends(rows), None)
+        self.launch(rows, &ends(rows), Head::Full(None))
     }
 
-    /// As `last`, each pick limited by its `words` of `masks`.
-    pub fn last_masked(&mut self, rows: &[Row], masks: &[u32]) -> Result<Vec<u32>, Error> {
-        self.launch(rows, &ends(rows), Some(masks))
+    /// As `last`, each pick from its `allowed` set.
+    pub fn last_guided(&mut self, rows: &[Row], allowed: &[Allowed]) -> Result<Vec<u32>, Error> {
+        let picks = ends(rows);
+        if allowed.len() != picks.len() {
+            return Err(Error::Mask);
+        }
+        let mut lists = Vec::with_capacity(allowed.len());
+        for a in allowed {
+            match a {
+                Allowed::One(id) => lists.push(vec![*id]),
+                Allowed::Few(ids) if !ids.is_empty() && ids.len() <= FEW => lists.push(ids.clone()),
+                _ => break,
+            }
+        }
+        if self.sparse && lists.len() == allowed.len() {
+            let k = lists
+                .iter()
+                .map(Vec::len)
+                .max()
+                .unwrap_or(1)
+                .next_power_of_two();
+            let mut ids = Vec::with_capacity(lists.len() * k);
+            for list in &lists {
+                // Repeats of the first id never win over it.
+                ids.extend(list.iter().chain(std::iter::repeat(&list[0])).take(k));
+            }
+            let at = self.launch(rows, &picks, Head::Sparse(ids, k))?;
+            return Ok(lists.iter().zip(at).map(|(l, i)| l[i as usize]).collect());
+        }
+        let words = self.words.ok_or(Error::Mask)?;
+        let bits = allowed.iter().flat_map(|a| a.bits(words)).collect();
+        self.launch(rows, &picks, Head::Full(Some(bits)))
     }
 
     /// One launch of `rows`, the likeliest ids after `picks`.
-    fn launch(
-        &mut self,
-        rows: &[Row],
-        picks: &[u32],
-        masks: Option<&[u32]>,
-    ) -> Result<Vec<u32>, Error> {
+    fn launch(&mut self, rows: &[Row], picks: &[u32], head: Head) -> Result<Vec<u32>, Error> {
         if rows.is_empty() {
             return Err(Error::Rows);
         }
@@ -246,22 +285,36 @@ impl Engine {
         {
             return Err(Error::RowPlace);
         }
-        let (sizes, mut feeds) = launch_of(rows, picks, self.slots);
-        if let Some(words) = self.words {
-            let mut bits = masks.unwrap_or_default().to_vec();
-            if !bits.is_empty() && bits.len() != picks.len() * words {
-                return Err(Error::Mask);
+        let (mut sizes, mut feeds) = launch_of(rows, picks, self.slots);
+        let wanted = feeds[3].len();
+        let entry = match head {
+            Head::Full(None) if self.words.is_none() => 0,
+            Head::Full(masks) => {
+                let words = self.words.ok_or(Error::Mask)?;
+                // Unmasked and filler picks allow everything.
+                let mut bits = masks.unwrap_or_default();
+                bits.resize(wanted * words, u32::MAX);
+                feeds.insert(3, Tensor::u32(vec![wanted, words], bits));
+                0
             }
-            // Unmasked and filler picks allow everything.
-            let wanted = feeds[3].len();
-            bits.resize(wanted * words, u32::MAX);
-            feeds.insert(3, Tensor::u32(vec![wanted, words], bits));
-        } else if masks.is_some() {
-            return Err(Error::Mask);
-        }
-        let (plan, bound) =
-            self.plans
-                .upto(&self.graph, 0, &sizes, &[Context, Segments], &self.device)?;
+            Head::Sparse(mut ids, k) => {
+                // Filler picks repeat the last pick's list.
+                let last = ids[ids.len() - k..].to_vec();
+                while ids.len() < wanted * k {
+                    ids.extend_from_slice(&last);
+                }
+                feeds.insert(3, Tensor::u32(vec![wanted, k], ids));
+                sizes.push((Candidates, k as u64));
+                1
+            }
+        };
+        let (plan, bound) = self.plans.upto(
+            &self.graph,
+            entry,
+            &sizes,
+            &[Context, Segments],
+            &self.device,
+        )?;
         let out = plan.outputs[0].slot;
         self.runner.replan(plan)?;
         self.runner.bind_all(&bound);

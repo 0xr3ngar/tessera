@@ -50,8 +50,9 @@ pub fn verify(g: &Graph) -> Result<(), VerifyError> {
         })
         .map_err(top)?;
     }
+    let owners = owners(g);
     for (i, k) in g.kept.iter().enumerate() {
-        kept(g, i, k).map_err(top)?;
+        kept(g, &owners, i, k).map_err(top)?;
     }
     let ports = g
         .entries
@@ -88,8 +89,24 @@ pub fn verify(g: &Graph) -> Result<(), VerifyError> {
     regions::check(g).map_err(top)
 }
 
-/// Kept rows grow along a bounded axis, appended once.
-fn kept(g: &Graph, i: usize, k: &TensorType) -> Result<(), TypeError> {
+/// The entry whose inputs each node reads, if any.
+fn owners(g: &Graph) -> Vec<Option<u32>> {
+    let mut out: Vec<Option<u32>> = Vec::with_capacity(g.nodes.len());
+    for n in &g.nodes {
+        let own = match n.op {
+            Op::Input { entry, .. } => Some(entry),
+            _ => n
+                .args
+                .iter()
+                .find_map(|a| out.get(a.0 as usize).copied().flatten()),
+        };
+        out.push(own);
+    }
+    out
+}
+
+/// Kept rows: a bounded second axis, one append per entry.
+fn kept(g: &Graph, owners: &[Option<u32>], i: usize, k: &TensorType) -> Result<(), TypeError> {
     let grows = match k.shape.0.get(1) {
         Some(DimExpr::Dim(name)) => g.dims.iter().find(|d| d.name == *name),
         _ => None,
@@ -98,12 +115,17 @@ fn kept(g: &Graph, i: usize, k: &TensorType) -> Result<(), TypeError> {
     need(bounded, ErrorKind::Shape, || {
         format!("kept rows {} need a bounded second axis", k.shape)
     })?;
-    let appends = |n: &&crate::node::Node| n.op == Op::Append(i as u32);
-    need(
-        g.nodes.iter().filter(appends).count() <= 1,
-        ErrorKind::Reference,
-        || format!("kept rows {i} are appended to twice"),
-    )
+    let mut seen = Vec::new();
+    for (n, own) in g.nodes.iter().zip(owners) {
+        if n.op != Op::Append(i as u32) {
+            continue;
+        }
+        need(!seen.contains(own), ErrorKind::Reference, || {
+            format!("kept rows {i} are appended to twice")
+        })?;
+        seen.push(*own);
+    }
+    Ok(())
 }
 
 fn numerics(op: &Op, n: Option<&Numerics>) -> Result<(), TypeError> {

@@ -1,6 +1,6 @@
 //! Many answers in flight, one step feeding them all.
 
-use crate::{Engine, Error, Event, Fault, Reason, Request, Row};
+use crate::{Allowed, Engine, Error, Event, Fault, Reason, Request, Row};
 use std::collections::VecDeque;
 
 /// Takes each event. `false` ends the answer early.
@@ -16,6 +16,8 @@ pub struct Seq {
     /// Tokens to feed: the prompt, then picked and forced tokens.
     pending: VecDeque<u32>,
     made: usize,
+    /// What the next pick may choose from.
+    next: Allowed,
 }
 
 impl Seq {
@@ -55,7 +57,7 @@ impl Seq {
             return Ok(Some(reason));
         }
         self.pending.push_back(id);
-        self.force()
+        self.settle()
     }
 
     /// Sends an answer token.
@@ -67,22 +69,42 @@ impl Seq {
         (self.made >= self.request.max_tokens).then_some(Reason::Length)
     }
 
-    /// Queues and sends the guide's forced tokens.
-    fn force(&mut self) -> Result<Option<Reason>, Error> {
-        let Some(guide) = &mut self.request.guide else {
-            return Ok(None);
-        };
-        let (forced, done) = (guide.forced(), guide.done());
-        for id in forced {
-            if self.request.stop.contains(&id) {
+    /// Adds forced and single-choice tokens, then reads the next set.
+    fn settle(&mut self) -> Result<Option<Reason>, Error> {
+        loop {
+            let Some(guide) = &mut self.request.guide else {
+                return Ok(None);
+            };
+            let forced = guide.forced();
+            let done = guide.done();
+            let next = match done {
+                true => Allowed::Any,
+                false => guide.allowed().map_err(fault)?,
+            };
+            let one = match next {
+                Allowed::One(id) => {
+                    guide.accept(id).map_err(fault)?;
+                    Some(id)
+                }
+                _ => None,
+            };
+            for id in forced.into_iter().chain(one) {
+                if self.request.stop.contains(&id) {
+                    return Ok(Some(Reason::Stop));
+                }
+                if let Some(reason) = self.emit(id) {
+                    return Ok(Some(reason));
+                }
+                self.pending.push_back(id);
+            }
+            if done {
                 return Ok(Some(Reason::Stop));
             }
-            if let Some(reason) = self.emit(id) {
-                return Ok(Some(reason));
+            if one.is_none() {
+                self.next = next;
+                return Ok(None);
             }
-            self.pending.push_back(id);
         }
-        Ok(done.then_some(Reason::Stop))
     }
 }
 
@@ -182,8 +204,9 @@ impl<'a> Batch<'a> {
                 sink,
                 fed: 0,
                 made: 0,
+                next: Allowed::Any,
             };
-            match seq.force()? {
+            match seq.settle()? {
                 Some(reason) => {
                     (seq.sink)(Event::Done(reason));
                     self.free.push(slot);
@@ -214,33 +237,25 @@ impl<'a> Batch<'a> {
         }
     }
 
-    /// Each pick's mask, if any guide limits one.
-    fn masks(&mut self, rows: &[Row], ends: &[u32]) -> Result<Option<Vec<u32>>, Error> {
-        if self.active.iter().all(|s| s.request.guide.is_none()) {
-            return Ok(None);
-        }
-        let words = self.engine.words().unwrap_or_default();
-        let mut out = vec![u32::MAX; ends.len() * words];
+    /// Each pick's allowed set, if any pick is limited.
+    fn allowed(&self, rows: &[Row], ends: &[u32]) -> Option<Vec<Allowed>> {
+        let mut out = vec![Allowed::Any; ends.len()];
         let mut limited = false;
-        for seq in &mut self.active {
-            let Some(guide) = &mut seq.request.guide else {
+        for seq in &self.active {
+            if seq.next == Allowed::Any {
                 continue;
-            };
+            }
             let Some(k) = ends.iter().position(|&e| rows[e as usize].slot == seq.slot) else {
                 continue;
             };
             // Only when the answer keeps this pick.
             let mine = rows.iter().filter(|r| r.slot == seq.slot).count();
-            if mine != seq.pending.len() {
-                continue;
+            if mine == seq.pending.len() {
+                out[k] = seq.next.clone();
+                limited = true;
             }
-            let row = &mut out[k * words..(k + 1) * words];
-            limited |= guide.mask(row).map_err(fault)?;
         }
-        if limited && words == 0 {
-            return Err(Error::Mask);
-        }
-        Ok(limited.then_some(out))
+        limited.then_some(out)
     }
 
     fn finish(&mut self, i: usize) {
@@ -257,8 +272,8 @@ impl<'a> Batch<'a> {
             return Ok(false);
         }
         let ends = crate::ends(&rows);
-        let ids = match self.masks(&rows, &ends)? {
-            Some(masks) => self.engine.last_masked(&rows, &masks)?,
+        let ids = match self.allowed(&rows, &ends) {
+            Some(allowed) => self.engine.last_guided(&rows, &allowed)?,
             None => self.engine.last(&rows)?,
         };
         // Each answer takes its rows and its last id.

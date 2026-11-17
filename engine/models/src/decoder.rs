@@ -1,6 +1,6 @@
 //! Decoders: grouped-query attention, RoPE, a dense or routed MLP.
 
-use crate::shared::{Attend, Side, Stack, pick, step_ports, swiglu, tokens};
+use crate::shared::{Attend, Side, Stack, pick, sparse_ports, step_ports, swiglu, tokens};
 use trace::DimName::*;
 use trace::{
     Act, Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Linears, Mask, Model,
@@ -258,6 +258,17 @@ impl Pass<'_> {
         tokens: &Tensor,
         kept: Option<&[Cache]>,
     ) -> Tensor {
+        let h = self.hidden(w, tokens, kept);
+        scaled(h.unembed(&w.embed), self.c.scales.logits)
+    }
+
+    /// Each row's normed state, before the unembed.
+    fn hidden<N: HeadNorm, M: Mlp>(
+        &self,
+        w: &Decoder<N, M>,
+        tokens: &Tensor,
+        kept: Option<&[Cache]>,
+    ) -> Tensor {
         let (m, c) = (self.m, self.c);
         let s = &c.scales;
         let mut x = scaled(m.embed(tokens, &w.embed), s.embed);
@@ -270,7 +281,7 @@ impl Pass<'_> {
             let [mlp] = m.composite(M::KIND, || [l.mlp.apply(m, &h)]);
             x = scaled(mlp, s.residual).add(&x);
         }
-        scaled(x.rms_norm(&w.norm, c.eps).unembed(&w.embed), s.logits)
+        x.rms_norm(&w.norm, c.eps)
     }
 
     /// Queries and keys pass through `N` per head, then rotate.
@@ -336,5 +347,23 @@ pub fn stepper<N: HeadNorm, M: Mlp>(c: &Config) -> Graph {
         slots: Some(&slots),
     };
     let logits = pass.logits(&w, &tokens, Some(&kept));
-    pick(&m, &logits, allowed.as_ref())
+    let full = pick(&m, &logits, allowed.as_ref());
+    if !c.stack.masked {
+        return full;
+    }
+    // A second entry picks among candidate ids.
+    let [tokens, positions, slots, ids] = sparse_ports(&m);
+    let pass = Pass {
+        positions: &positions,
+        slots: Some(&slots),
+        ..pass
+    };
+    let one = DimExpr::Const(1);
+    let h = pass.hidden(&w, &tokens, Some(&kept));
+    let h = h.reshape(vec![Rows.into(), one, Hidden.into()]);
+    let rows = m.embed(&ids, &w.embed);
+    let logits = h.matmul_rows(&rows).reshape([Rows, Candidates]);
+    let logits = scaled(logits, c.scales.logits);
+    let at = logits.top_k(1u64).reshape([Rows]);
+    m.finish([(Role::Tokens, &at), (Role::Logits, &logits)])
 }

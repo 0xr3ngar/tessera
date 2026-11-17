@@ -52,6 +52,8 @@ pub enum DimName {
     IndexLayers,
     /// `u32` words of a one-bit-per-token mask.
     VocabWords,
+    /// Token ids one sparse pick chooses from.
+    Candidates,
 }
 
 /// How a dimension gets its size.

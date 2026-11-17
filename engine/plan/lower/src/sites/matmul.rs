@@ -55,8 +55,11 @@ impl Pattern for Matmul {
             });
         }
         let (set, ids, offset) = gathered(tree, w)?;
-        let [count, stride, _] = tree.node(set).shape[..] else {
-            return None;
+        // A table of rows is a set of one-row matrices.
+        let (count, stride) = match tree.node(set).shape[..] {
+            [count, stride, _] => (count, stride),
+            [count, _] => (count, 1),
+            _ => return None,
         };
         let first = tree.share(set).filter(|s| s.axis == 0).map(|s| s.first);
         let (m, n) = (
