@@ -106,9 +106,9 @@ fn tiles_match_cpu() {
 
 #[test]
 fn codes_match_decode() {
-    let g = linear(256, 256);
+    let g = linear(512, 256);
     let mut draws = Noise(3);
-    let (inp, out) = (256, 256);
+    let (inp, out) = (512, 256);
     // Rotated files add f16 `suh` and `svh` after the codes.
     for (k, turned) in [(2, false), (3, false), (4, false), (2, true), (4, true)] {
         let codes = trellis::form_for(k).unwrap();
@@ -125,15 +125,31 @@ fn codes_match_decode() {
         }
         let weights = [Tensor::f32(vec![out, inp], form.unpack_all(&bytes))];
         // Few rows take the lane kernel, many the tiled one.
-        for (settings, rows) in runs().iter().flat_map(|s| [3usize, 40].map(|r| (s, r))) {
+        // Rotated, few rows also take the fused kernel.
+        let mut cases = Vec::new();
+        for settings in runs() {
+            for rows in [3usize, 40] {
+                cases.push((settings.clone(), rows, false));
+                if turned && rows == 3 {
+                    cases.push((settings.clone(), rows, true));
+                }
+            }
+        }
+        for (settings, rows, fused) in cases {
             let x = noise(vec![rows, inp], &mut draws);
             let want = run(&g, &weights, 0, std::slice::from_ref(&x)).unwrap();
-            let device = Device::guess(settings).pinned(Pins::all(form));
+            let mut device = Device::guess(&settings).pinned(Pins::all(form));
+            if fused {
+                device = device.favoring("turned");
+            }
             let plan = lower(&g, 0, &[(Rows, rows as u64)], &device).unwrap();
             let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
             let reads = |n: &&str| n.contains(codes.name());
             assert!(names.iter().any(reads), "{names:?} read the codes");
-            let mut runner = open(plan, settings).unwrap();
+            if fused {
+                assert_eq!(names, [codes.suffixed("turned")]);
+            }
+            let mut runner = open(plan, &settings).unwrap();
             let (compiled, made) = runner.compiled();
             assert_eq!(compiled, made, "{}: every tree compiles", form.name());
             runner

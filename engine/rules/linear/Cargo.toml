@@ -14,10 +14,10 @@ rocm = ["run/rocm"]
 [dependencies]
 codegen = { workspace = true }
 graph = { workspace = true }
+kernels = { workspace = true }
 lower = { workspace = true }
 
 [dev-dependencies]
-kernels = { workspace = true }
 testkit = { workspace = true }
 interp = { workspace = true }
 gpukit = { workspace = true }
