@@ -2,12 +2,25 @@
 
 use graph::DimName::*;
 use graph::{DType, Dim, DimExpr, DimName, Graph, Port, Role, TensorType};
-use trace::{Act, Embed, EntryKind, Linear, Linears, Mask, Model, Norm, Pairs, Weights, declare};
+use trace::{
+    Act, Embed, EntryKind, Linear, Linears, Mask, Model, Norm, Pairs, Vector, Weights, declare,
+};
 
 #[derive(Weights)]
 struct Layer {
     #[shape(Hidden, Ffn)]
     w: Linear,
+}
+
+/// A matrix between two scaled rotations.
+#[derive(Weights)]
+struct Turned {
+    #[shape(Hidden)]
+    suh: Vector,
+    #[shape(Hidden, Ffn)]
+    w: Linear,
+    #[shape(Ffn)]
+    svh: Vector,
 }
 
 #[derive(Weights)]
@@ -104,6 +117,15 @@ pub fn rotation(bounded: &[Dim]) -> Graph {
     let m = model(bounded, &[(Hidden, 256)]);
     let [x] = m.entry(EntryKind::Forward, [rows_of(bounded, Hidden, DType::F32)]);
     m.finish([(Role::Logits, &x.hadamard(128))])
+}
+
+/// Rows of 512 through a rotated matrix to 128.
+pub fn turned(bounded: &[Dim]) -> Graph {
+    let m = model(bounded, &[(Hidden, 512), (Ffn, 128)]);
+    let w: Turned = declare(&m);
+    let [x] = m.entry(EntryKind::Forward, [rows_of(bounded, Hidden, DType::F32)]);
+    let product = x.mul_vector(&w.suh).hadamard(128).matmul(&w.w);
+    m.finish([(Role::Logits, &product.hadamard(128).mul_vector(&w.svh))])
 }
 
 /// Each row's top two experts, picked, applied and mixed.

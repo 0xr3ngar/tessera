@@ -17,7 +17,7 @@ mod take;
 mod view;
 
 pub use gather::Gather;
-pub use hadamard::Hadamard;
+pub use hadamard::{BLOCK, Four, Hadamard, spin, spin_inline};
 pub use join::Join;
 pub use mean::Mean;
 pub use rms_norm::RmsNorm;
