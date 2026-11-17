@@ -11,6 +11,9 @@ pub mod names;
 #[cfg(test)]
 mod names_test;
 pub mod spacy;
+pub mod sprite;
+#[cfg(test)]
+mod sprite_test;
 mod template;
 #[cfg(test)]
 mod template_test;

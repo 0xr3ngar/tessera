@@ -26,7 +26,7 @@ pub use interp::{Tensor, bind};
 pub use lower::{Pick, Pins, Recipe, Settings, Weight, form};
 pub use mem::form as storage;
 pub use mem::{block, trellis};
-pub use models::{Stack, decoder, eg2, mla, tagger};
+pub use models::{Stack, clip, decoder, eg2, mla, sprite, tagger};
 pub use run::gpu;
 pub use trace::{Linear, Norm};
 
