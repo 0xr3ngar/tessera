@@ -139,6 +139,8 @@ fn head(dialect: Dialect) -> String {
     let mut text = String::new();
     if metal {
         text.push_str("#include <metal_stdlib>\nusing namespace metal;\n");
+        // Sums keep the printed order under fast math.
+        text.push_str("#pragma clang fp reassociate(off)\n");
     }
     text.push_str(
         "typedef unsigned int u32;\ntypedef unsigned short u16;\ntypedef unsigned char u8;\n",
