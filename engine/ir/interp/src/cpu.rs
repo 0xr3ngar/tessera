@@ -123,7 +123,7 @@ fn product<'w>(
         }
     }
     let mut shape = shape[..lead].to_vec();
-    if batches <= m {
+    if x.shape.len() > lead {
         shape = x.shape.clone();
         shape.pop();
     }
