@@ -29,7 +29,7 @@ fn cpu_dense(
     sums[0] += x.dot(row, w, col, k);
 }
 
-/// One thread per 64 rows by 16 columns.
+/// One thread per `chunk` rows by 16 columns.
 #[kernel]
 fn cpu_tiled(
     x: Buf<F32>,
@@ -38,16 +38,17 @@ fn cpu_tiled(
     m: u32,
     n: u32,
     k: u32,
+    chunk: u32,
     #[build] form: &'static dyn Stored,
 ) {
     // Threads on one row chunk sit side by side.
     let cols = n / 16;
-    let row = gid() / cols * 64;
+    let row = gid() / cols * chunk;
     let col = gid() % cols * 16;
     if row >= m {
         return;
     }
-    let rows = if m - row < 64 { m - row } else { 64 };
+    let rows = if m - row < chunk { m - row } else { chunk };
     let at = row as u64 * n as u64 + col as u64;
     out.dots(
         at,
@@ -243,13 +244,16 @@ pub struct Tiled(pub Dense);
 
 fn tiled_launches(k: &Tiled, step: &Step) -> Vec<Launch> {
     let d = &k.0;
+    // Even chunks of at most 64 rows share each packing.
+    let chunks = d.m.div_ceil(64);
+    let chunk = d.m.div_ceil(chunks);
     // One thread a group: workers split by group.
     let shape = Shape::Grid {
-        across: d.m.div_ceil(64) * (d.n / 16),
+        across: chunks * (d.n / 16),
         down: 1,
         threads: 1,
     };
-    vec![Launch::plain(step, &[d.m, d.n, d.k], shape)]
+    vec![Launch::plain(step, &[d.m, d.n, d.k, chunk], shape)]
 }
 
 /// Each row against its id's matrix, then the stages.
