@@ -8,6 +8,7 @@ use crate::tree::{T, Tree};
 use crate::{Error, Unsupported};
 use codegen::kept::Layout;
 use graph::Mask;
+use std::fmt;
 
 pub use scattered_collect::declarative::{gather, scatter};
 
@@ -176,12 +177,50 @@ pub(crate) fn ways(drafts: Vec<Draft>) -> Vec<Vec<Draft>> {
     ways.into_iter().map(|(_, way)| way).collect()
 }
 
-/// Launches for a tree node, covering nodes above their reads.
+/// Drafts for a tree node, covering nodes above their reads.
+pub trait Propose: Send + Sync {
+    fn at(&self, tree: &Tree, at: T) -> Option<Vec<Draft>>;
+}
+
+/// The form `rule!` registers.
+pub type ProposeFn = fn(&Tree, T) -> Option<Vec<Draft>>;
+
+impl Propose for ProposeFn {
+    fn at(&self, tree: &Tree, at: T) -> Option<Vec<Draft>> {
+        self(tree, at)
+    }
+}
+
+/// A named proposer.
 pub struct Rule {
     pub name: &'static str,
-    pub propose: fn(&Tree, T) -> Option<Vec<Draft>>,
+    pub propose: &'static dyn Propose,
     /// The module that registered it.
     pub module: &'static str,
+}
+
+impl Rule {
+    /// A rule made at run time. It is never freed.
+    pub fn made(name: &str, module: &str, propose: impl Propose + 'static) -> &'static Rule {
+        Box::leak(Box::new(Rule {
+            name: Box::leak(name.into()),
+            propose: Box::leak(Box::new(propose)),
+            module: Box::leak(module.into()),
+        }))
+    }
+}
+
+impl fmt::Debug for Rule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} in {}", self.name, self.module)
+    }
+}
+
+/// Rules with one name and module are one rule.
+impl PartialEq for Rule {
+    fn eq(&self, other: &Self) -> bool {
+        (self.name, self.module) == (other.name, other.module)
+    }
 }
 
 gather! {
@@ -198,7 +237,7 @@ macro_rules! rule {
                 #[scatter($crate::rule::RULES)]
                 static RULE: $crate::rule::Rule = $crate::rule::Rule {
                     name: $name,
-                    propose: $propose,
+                    propose: &($propose as $crate::rule::ProposeFn),
                     module: module_path!(),
                 };
             }
@@ -232,7 +271,12 @@ pub fn at_site<R>(site: &crate::sites::Stage, f: impl FnOnce(&crate::sites::Stag
 
 /// Every registered rule, in name order.
 pub fn rules() -> Vec<&'static Rule> {
-    let mut all: Vec<&'static Rule> = RULES.iter().collect();
+    rules_with(&[])
+}
+
+/// The registered rules and `made`, in name order.
+pub(crate) fn rules_with(made: &[&'static Rule]) -> Vec<&'static Rule> {
+    let mut all: Vec<&'static Rule> = RULES.iter().chain(made.iter().copied()).collect();
     all.sort_by_key(|r| r.name);
     all
 }

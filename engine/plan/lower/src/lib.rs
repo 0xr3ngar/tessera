@@ -37,7 +37,7 @@ pub use mem::{Buffer, DType, Tensor, View};
 pub use plan::{Loaded, Output, Plan, Share, Slot, Step};
 pub use platform::{Limits, Platform};
 pub use recipe::{Launching, Recipe};
-pub use rule::{Attn, Draft, RULES, Read, Rule, linked, rules};
+pub use rule::{Attn, Draft, Propose, RULES, Read, Rule, linked, rules};
 pub use schedule::{peak, schedule};
 pub use select::{Home, Op, Selected, Val, Value, select};
 pub use sim::{Cluster, Fit, Link, Load, Zone, ZoneKind};

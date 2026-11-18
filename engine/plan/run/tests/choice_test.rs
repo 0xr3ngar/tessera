@@ -4,7 +4,9 @@ use graph::DimName::{self, Hidden, Rows, Seqs};
 use graph::{Act, DType, Dim, Graph, TensorType};
 use lower::kernels::Map;
 use lower::sites;
-use lower::{Device, Draft, Kernel, Limits, Needs, Plan, Platform, T, Tree, lower, select};
+use lower::{
+    Device, Draft, Kernel, Limits, Needs, Plan, Platform, Propose, Rule, T, Tree, lower, select,
+};
 use run::testing::host;
 use trace::{EntryKind, Model, Port, Role};
 
@@ -63,6 +65,32 @@ fn dear(tree: &Tree, at: T) -> Option<Vec<Draft>> {
 fn lanes(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     let sites::Chain { reads, len, .. } = tree.site(at)?;
     Some(vec![Draft::new(Lanes { len }, reads, len)])
+}
+
+/// A map stand-in whose cost its rule sets.
+#[derive(Clone, Copy, Debug, Kernel)]
+#[launch(
+    name = "priced",
+    sizes = [],
+    source = Map::plain(Vec::new()).source(),
+    launches = Vec::new(),
+    work = self.len,
+    guess = self.guess,
+)]
+struct Priced {
+    len: usize,
+    guess: f64,
+}
+
+/// A rule made at run time, its price as data.
+struct Price(f64);
+
+impl Propose for Price {
+    fn at(&self, tree: &Tree, at: T) -> Option<Vec<Draft>> {
+        let sites::Chain { reads, len, .. } = tree.site(at)?;
+        let guess = self.0;
+        Some(vec![Draft::new(Priced { len, guess }, reads, len)])
+    }
 }
 
 lower::rule!("cheap", cheap);
@@ -137,4 +165,17 @@ fn limits_bar_kernels() {
     };
     let wide = device.on(Platform::assumed(wide));
     assert_eq!(names(&plan(&wide)), ["cheap"]);
+}
+
+#[test]
+fn made_rules_compete() {
+    let made = |guess| Rule::made("priced", module_path!(), Price(guess));
+    assert_eq!(names(&plan(&pair().adding(made(1e-12)))), ["priced"]);
+    assert_eq!(names(&plan(&pair().adding(made(1e-6)))), ["cheap"]);
+    let recipe = lower::Recipe {
+        rules: vec![made(1e-6)],
+        favor: Some("priced".into()),
+        ..Default::default()
+    };
+    assert_eq!(names(&plan(&pair().with(&recipe))), ["priced"]);
 }
