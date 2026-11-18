@@ -19,6 +19,7 @@ mod template;
 #[cfg(test)]
 mod template_test;
 pub mod tokenize;
+pub mod vae;
 
 pub use template::{Clock, Message, Template};
 

@@ -9,6 +9,9 @@ pub mod features;
 mod features_test;
 pub mod generate;
 pub mod paint;
+pub mod pictures;
+#[cfg(test)]
+mod pictures_test;
 pub mod png;
 pub mod tag;
 mod text;
