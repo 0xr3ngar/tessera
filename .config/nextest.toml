@@ -4,7 +4,7 @@
 checkpoint = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'binary(models) & test(/::(golden|gpu|native|reference_checks)$/)'
+filter = 'binary(sensai_models) & test(/::(golden|gpu|native|reference_checks)$/)'
 test-group = 'checkpoint'
 
 [profile.ci]
