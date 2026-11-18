@@ -1,10 +1,10 @@
 //! EmbeddingGemma 2: a bidirectional encoder with per-layer embeddings.
 
-use crate::shared::{Attend, Dense, Side, Stack, tokens};
+use crate::shared::{Attend, Dense, Side, Stack, listed as listed_ports, tokens};
 use trace::DimName::*;
 use trace::{
-    Act, Composite, DType, Dim, DimExpr, Embed, EntryKind, Graph, Mask, Model, Norm, Pairs, Port,
-    Role, Scalar, Tensor, TensorType, Weights, each,
+    Act, Composite, Dim, DimExpr, Embed, Graph, Mask, Model, Norm, Pairs, Role, Scalar, Tensor,
+    Weights, each,
 };
 
 pub struct Config {
@@ -248,18 +248,7 @@ pub fn batched<D: Dense>(c: &Config) -> Graph {
     let m = Model::new(c.dims());
     let w: Eg2<D> = trace::declare(&m);
     let attention = attention(&m, c);
-    let port = |role, shape: Vec<DimExpr>| Port {
-        role,
-        ty: TensorType::new(shape, DType::U32),
-    };
-    let rows = vec![Seqs.into(), Context.into()];
-    let lists = vec![Seqs.into(), Context.into(), Context.into()];
-    let ports = [
-        port(Role::Tokens, rows.clone()),
-        port(Role::Positions, rows),
-        port(Role::Keys, lists),
-    ];
-    let [tokens, positions, keys] = m.entry(EntryKind::Forward, ports);
+    let [tokens, positions, keys] = listed_ports(&m);
     let x = listed(&m, c, &w, &attention, [&tokens, &positions], Some(&keys));
     let out = w.proj.apply(&x.rms_norm(&w.norm, c.eps));
     m.finish([(Role::Logits, &out)])
