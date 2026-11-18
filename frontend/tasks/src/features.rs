@@ -14,14 +14,14 @@ pub struct Features {
 }
 
 impl Features {
-    /// The model in `dir`, `seqs` prompts of `rows` per launch.
+    /// The model and tokenizer dirs, sized for one launch.
     pub fn open(
-        dir: &Path,
+        dirs: [&Path; 2],
         settings: &Settings,
         layers: &[u64],
         [seqs, rows]: [usize; 2],
     ) -> Result<Self, Error> {
-        let t = tapped(dir, [seqs as u64, rows as u64], layers)?;
+        let t = tapped(dirs, [seqs as u64, rows as u64], layers)?;
         let recipe = Recipe {
             pins: t.pins.clone(),
             ..Recipe::default()
