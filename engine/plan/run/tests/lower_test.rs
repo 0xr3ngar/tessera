@@ -262,6 +262,7 @@ fn mapped(len: usize) -> Step {
         write: Slot::floats(0, len),
         covers: Vec::new(),
         zone: 0,
+        table: None,
     }
 }
 

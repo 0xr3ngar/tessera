@@ -93,7 +93,7 @@ impl Attn {
         values.into_iter().map(|v| Arg::count(v as usize)).collect()
     }
 
-    /// A ragged launch: six buffers, then its four sizes.
+    /// A ragged launch: six buffers, any page table, four sizes.
     pub fn rows_args(&self, step: &Step) -> Vec<Arg> {
         let buffers = [
             step.read(0),
@@ -109,7 +109,8 @@ impl Attn {
             Arg::count(self.heads),
             Arg::count(self.kv_heads),
         ];
-        buffers.into_iter().chain(sizes).collect()
+        let table = step.kept(self.kept);
+        buffers.into_iter().chain(table).chain(sizes).collect()
     }
 
     /// Queries, keys, the keys before the queries, heads, kv heads.

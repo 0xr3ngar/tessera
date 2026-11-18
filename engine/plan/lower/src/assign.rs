@@ -4,6 +4,7 @@ use crate::kernel::KernelRef;
 use crate::kernels::Map;
 use crate::plan::{Loaded, Output, Plan, Slot, Step};
 use crate::select::{Home, Selected, Val, Value};
+use graph::DType;
 
 /// A last use that never comes: weights, inputs and outputs.
 const FOREVER: usize = usize::MAX;
@@ -74,6 +75,18 @@ pub fn assign(s: &Selected, order: &[usize]) -> Plan {
                 };
                 b.slots[v] = Some(slot);
                 b.plan.kept.push((index, slot));
+                // One table beside the kept rows names every lane's pages.
+                if s.table > 0 && b.plan.table.is_none() {
+                    let form = codegen::form::of(DType::U32);
+                    let buffer = b.buffer(form.bytes(s.table), value.zone);
+                    let len = s.table;
+                    b.plan.table = Some(Slot {
+                        buffer,
+                        offset: 0,
+                        len,
+                        form,
+                    });
+                }
             }
             Home::Input(_) | Home::Temp => {}
         }
@@ -149,6 +162,7 @@ impl Buffers<'_> {
                     write: copy,
                     covers,
                     zone: op.zone,
+                    table: self.plan.table,
                 });
                 reads[0] = copy;
             }
@@ -165,6 +179,7 @@ impl Buffers<'_> {
             write,
             covers: op.covers.clone(),
             zone: op.zone,
+            table: self.plan.table,
         });
         for (k, v) in op.reads.iter().enumerate() {
             let repeat = op.reads[..k].contains(v);

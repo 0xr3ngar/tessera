@@ -183,7 +183,13 @@ impl Engine {
         }];
         let (sizes, _) = launch_of(&first, &[0], slots);
         let plan = plans.lower(&graph, 0, &sizes, &device)?;
+        let table = plan.table;
         let mut runner = open(plan, settings)?;
+        if let Some(table) = table {
+            // Each slot owns its own pages, in order.
+            let pages: Vec<u8> = (0..table.len as u32).flat_map(u32::to_le_bytes).collect();
+            runner.held_mut().upload(table, &pages)?;
+        }
         runner.launching(recipe.launch);
         let device = Device::stored(runner.platform(), settings)
             .map_err(lower::Error::from)?

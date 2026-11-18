@@ -15,6 +15,7 @@ pub mod spacy;
 pub mod sprite;
 #[cfg(test)]
 mod sprite_test;
+pub mod taps;
 mod template;
 #[cfg(test)]
 mod template_test;
@@ -209,21 +210,12 @@ pub(crate) fn head_dim(given: Option<u64>, hidden: u64, heads: u64) -> u64 {
     given.unwrap_or(hidden / heads)
 }
 
-/// Reads a model directory: `slots` sequences of `context` rows.
-pub fn load(dir: &Path, slots: u64, context: u64) -> Result<Bundle, Box<dyn Error + Send + Sync>> {
-    load_named(dir, slots, context, &[])
-}
-
-/// The same, with the user's weight-name rules applied last.
-pub fn load_named(
+/// The architecture and graph sizes `dir/config.json` gives.
+pub(crate) fn config(
     dir: &Path,
     slots: u64,
     context: u64,
-    user: &[Rule],
-) -> Result<Bundle, Box<dyn Error + Send + Sync>> {
-    if dir.is_file() {
-        return gguf::load(dir, slots, context, user);
-    }
+) -> Result<(String, Config), Box<dyn Error + Send + Sync>> {
     let hf: HfConfig = serde_json::from_str(&std::fs::read_to_string(dir.join("config.json"))?)?;
     let config = Config {
         stack: Stack {
@@ -249,8 +241,27 @@ pub fn load_named(
             logits: 1.0 / hf.logits_scaling.unwrap_or(1.0),
         },
     };
-    let graph = stepper(&hf.model_type, &config)
-        .ok_or_else(|| format!("{} is not a model this engine traces", hf.model_type))?;
+    Ok((hf.model_type, config))
+}
+
+/// Reads a model directory: `slots` sequences of `context` rows.
+pub fn load(dir: &Path, slots: u64, context: u64) -> Result<Bundle, Box<dyn Error + Send + Sync>> {
+    load_named(dir, slots, context, &[])
+}
+
+/// The same, with the user's weight-name rules applied last.
+pub fn load_named(
+    dir: &Path,
+    slots: u64,
+    context: u64,
+    user: &[Rule],
+) -> Result<Bundle, Box<dyn Error + Send + Sync>> {
+    if dir.is_file() {
+        return gguf::load(dir, slots, context, user);
+    }
+    let (arch, config) = config(dir, slots, context)?;
+    let graph = stepper(&arch, &config)
+        .ok_or_else(|| format!("{arch} is not a model this engine traces"))?;
     let file = File::open(&dir.join("model.safetensors"))?;
     let (weights, pins) = pull(&graph, &file, config.stack.layers, &[user])?;
     let tokenizer = Hf::open(&dir.join("tokenizer.json"))?;

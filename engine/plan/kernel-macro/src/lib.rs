@@ -203,7 +203,6 @@ fn tree(f: &mut ItemFn, helper: Option<Tokens>) -> Res {
     let body = quote! {
         Body {
             entry: #entry.into(),
-            layout: None,
             params: {
                 let mut params: Vec<Param> = Vec::new();
                 #(params.extend(#params);)*

@@ -4,7 +4,6 @@ use crate::expr::{Val, elem_size};
 use crate::runtime::{Arg, Buf, Ctx};
 use crate::signature;
 use codegen::ir::{Body, Expr, Intrinsic, Param, Stmt, Ty};
-use codegen::kept::Layout;
 use cranelift_codegen::ir::{
     FuncRef, Function, InstBuilder, MemFlagsData, StackSlot, StackSlotData, StackSlotKind, Type,
     Value, condcodes::IntCC, types,
@@ -56,7 +55,6 @@ pub(crate) struct Lowerer<'a, 'b> {
     pub(crate) lanes: Value,
     pub(crate) first: Variable,
     precision: Value,
-    pub(crate) layout: Option<&'static dyn Layout>,
     /// Tile sums to free when the group ends.
     tiles: Vec<Value>,
 }
@@ -749,7 +747,6 @@ pub(crate) fn function(
         lanes,
         first,
         precision,
-        layout: body.layout,
         tiles: Vec::new(),
     };
     for (i, param) in body.params.iter().enumerate() {

@@ -4,6 +4,9 @@ pub mod api;
 pub mod embed;
 #[cfg(test)]
 mod embed_test;
+pub mod features;
+#[cfg(test)]
+mod features_test;
 pub mod flow;
 #[cfg(test)]
 mod flow_test;

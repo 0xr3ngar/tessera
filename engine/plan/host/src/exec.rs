@@ -3,7 +3,6 @@
 use crate::lockstep::products;
 use codegen::form::Load;
 use codegen::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt, Ty};
-use codegen::kept::Layout;
 use codegen::numerics::Precision;
 use graph::{E2M1, E4M3, F16};
 use std::collections::HashMap;
@@ -109,7 +108,6 @@ struct Group<'a, 'b> {
     tiles: HashMap<String, (usize, usize, Vec<Vec<f32>>)>,
     /// Threads that returned.
     done: Vec<bool>,
-    layout: Option<&'static dyn Layout>,
     args: &'b HashMap<String, ArgVal>,
     buffers: &'b mut [&'a mut [u8]],
 }
@@ -747,7 +745,6 @@ pub fn run(
             shared: HashMap::new(),
             tiles: HashMap::new(),
             done: vec![false; grid.threads],
-            layout: body.layout,
             args: &named,
             buffers: &mut *buffers,
         };

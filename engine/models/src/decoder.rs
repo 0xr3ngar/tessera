@@ -1,6 +1,6 @@
 //! Decoders: grouped-query attention, RoPE, a dense or routed MLP.
 
-use crate::shared::{Attend, Side, Stack, pick, sparse_ports, step_ports, swiglu, tokens};
+use crate::shared::{Attend, Side, Stack, listed, pick, sparse_ports, step_ports, swiglu, tokens};
 use trace::DimName::*;
 use trace::{
     Act, Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Linears, Mask, Model,
@@ -222,6 +222,8 @@ struct Pass<'a> {
     rows: DimName,
     /// Each row's kept-row lane: the rows are ragged.
     slots: Option<&'a Tensor>,
+    /// Each row's keys, in place of the causal mask.
+    keys: Option<&'a Tensor>,
 }
 
 /// `x` times `by`, with nothing traced for one.
@@ -246,6 +248,7 @@ pub fn forward<N: HeadNorm, M: Mlp>(
         positions,
         rows,
         slots: None,
+        keys: None,
     };
     pass.logits(w, tokens, None)
 }
@@ -269,6 +272,18 @@ impl Pass<'_> {
         tokens: &Tensor,
         kept: Option<&[Cache]>,
     ) -> Tensor {
+        let x = self.trunk(w, tokens, kept, |_, _| {});
+        x.rms_norm(&w.norm, self.c.eps)
+    }
+
+    /// The residual rows. `tap` sees each layer's, counting from 1.
+    fn trunk<N: HeadNorm, M: Mlp>(
+        &self,
+        w: &Decoder<N, M>,
+        tokens: &Tensor,
+        kept: Option<&[Cache]>,
+        mut tap: impl FnMut(u64, &Tensor),
+    ) -> Tensor {
         let (m, c) = (self.m, self.c);
         let s = &c.scales;
         let mut x = scaled(m.embed(tokens, &w.embed), s.embed);
@@ -280,8 +295,9 @@ impl Pass<'_> {
             let h = x.rms_norm(&l.ln2, c.eps);
             let [mlp] = m.composite(M::KIND, || [l.mlp.apply(m, &h)]);
             x = scaled(mlp, s.residual).add(&x);
+            tap(i as u64 + 1, &x);
         }
-        x.rms_norm(&w.norm, c.eps)
+        x
     }
 
     /// Queries and keys pass through `N` per head, then rotate.
@@ -312,7 +328,12 @@ impl Pass<'_> {
                     let (k, v) = (k.append(keys, by), v.append(values, by));
                     self.m.attend_rows(scale, [q, &k, &v], by, None)
                 }
-                _ => self.m.attend(Mask::Causal, scale, [q, k, v], None),
+                _ => match self.keys {
+                    Some(keys) => self
+                        .m
+                        .attend(Mask::Bidirectional, scale, [q, k, v], Some(keys)),
+                    None => self.m.attend(Mask::Causal, scale, [q, k, v], None),
+                },
             }
         })
     }
@@ -325,6 +346,32 @@ pub fn program<N: HeadNorm, M: Mlp>(c: &Config) -> Graph {
     let [tokens, positions] = tokens(&m);
     let logits = forward(&m, c, &w, &tokens, &positions);
     m.finish([(Role::Logits, &logits)])
+}
+
+/// Residual rows after `layers`, joined on the last axis.
+pub fn taps<N: HeadNorm, M: Mlp>(c: &Config, layers: &[u64]) -> Graph {
+    let m = Model::new(c.dims());
+    let w: Decoder<N, M> = trace::declare(&m);
+    // Key lists keep padding out of each row's attention.
+    let [tokens, positions, keys] = listed(&m);
+    let pass = Pass {
+        m: &m,
+        c,
+        positions: &positions,
+        rows: Context,
+        slots: None,
+        keys: Some(&keys),
+    };
+    let mut taken: Vec<Tensor> = Vec::new();
+    pass.trunk(&w, &tokens, None, |at, x| {
+        if layers.contains(&at) {
+            taken.push(x.clone());
+        }
+    });
+    assert_eq!(taken.len(), layers.len(), "taps {layers:?} past the layers");
+    let first = taken[0].clone();
+    let joined = taken[1..].iter().fold(first, |all, t| all.concat(t));
+    m.finish([(Role::Logits, &joined)])
 }
 
 /// One step entry: rows in, each row's likeliest token out.
@@ -345,6 +392,7 @@ pub fn stepper<N: HeadNorm, M: Mlp>(c: &Config) -> Graph {
         positions,
         rows,
         slots: Some(&slots),
+        keys: None,
     };
     let logits = pass.logits(&w, &tokens, Some(&kept));
     let full = pick(&m, &logits, allowed.as_ref());
@@ -356,6 +404,7 @@ pub fn stepper<N: HeadNorm, M: Mlp>(c: &Config) -> Graph {
     let pass = Pass {
         positions: &positions,
         slots: Some(&slots),
+        keys: None,
         ..pass
     };
     let one = DimExpr::Const(1);

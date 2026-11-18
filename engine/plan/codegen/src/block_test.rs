@@ -14,7 +14,6 @@ fn block_headers_render() {
         }],
         stmts: Vec::new(),
         ret: None,
-        layout: None,
         helpers: Vec::new(),
     };
     let text = body.text();

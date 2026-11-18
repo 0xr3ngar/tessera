@@ -481,32 +481,7 @@ impl Lowerer<'_, '_> {
                 let a = self.floats(args, t)?;
                 Val::V([a[0], a[1], a[2], a[3]])
             }
-            Intrinsic::KeptRow => {
-                let layout = self.layout.ok_or("kept rows without a layout")?;
-                let (s, p) = {
-                    let v = self.u32s(args, t)?;
-                    (v[0], v[1])
-                };
-                let mut values = Vec::new();
-                for name in layout.params() {
-                    let Kind::One(_, v) = self.kind(name)? else {
-                        return Err(format!("layout scalar `{name}` is not a scalar"));
-                    };
-                    values.push(v);
-                }
-                let ins = self.b.ins();
-                Val::S(match layout.name() {
-                    "dense" => {
-                        let row = ins.imul(s, values[0]);
-                        self.b.ins().iadd(row, p)
-                    }
-                    "interleaved" => {
-                        let row = ins.imul(p, values[0]);
-                        self.b.ins().iadd(row, s)
-                    }
-                    other => return Err(format!("no `{other}` layout on the host")),
-                })
-            }
+            Intrinsic::KeptRow => return Err("kept_row without a layout attached".into()),
             Intrinsic::Word | Intrinsic::Half => {
                 let Expr::Var(name) = &args[0] else {
                     return Err("a word read names its buffer".into());

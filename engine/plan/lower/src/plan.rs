@@ -3,6 +3,7 @@
 use crate::abi::{Arg, Launch};
 use crate::form::{F32_FORM, Load};
 use crate::kernel::KernelRef;
+use codegen::kept::Layout;
 use graph::{NodeId, Order};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -52,6 +53,8 @@ pub struct Step {
     pub covers: Vec<NodeId>,
     /// The zone it runs in.
     pub zone: u32,
+    /// The plan's page table, when kept rows are paged.
+    pub table: Option<Slot>,
 }
 
 impl Step {
@@ -66,6 +69,12 @@ impl Step {
 
     pub fn out(&self) -> Arg {
         Arg::at(self.write, 0)
+    }
+
+    /// The page table, if `layout` reads one.
+    pub fn kept(&self, layout: &dyn Layout) -> Option<Arg> {
+        let table = || self.table.expect("a paged plan has a table");
+        layout.page().map(|_| Arg::at(table(), 0))
     }
 }
 
@@ -128,6 +137,8 @@ pub struct Plan {
     pub weights: Vec<Loaded>,
     /// Each kept-row buffer, holding this launch's rows too.
     pub kept: Vec<(u32, Slot)>,
+    /// Each slot's pages, when kept rows are paged.
+    pub table: Option<Slot>,
     /// One per input port of the entry.
     pub inputs: Vec<Slot>,
     pub outputs: Vec<Output>,
@@ -162,7 +173,8 @@ impl Plan {
             .weights
             .iter()
             .map(|l| &l.slot)
-            .chain(self.kept.iter().map(|(_, s)| s));
+            .chain(self.kept.iter().map(|(_, s)| s))
+            .chain(&self.table);
         let owned = |s: &Slot| self.buffers[s.buffer as usize];
         let held: usize = named.chain(&self.inputs).map(owned).sum();
         self.buffers.iter().sum::<usize>() - held

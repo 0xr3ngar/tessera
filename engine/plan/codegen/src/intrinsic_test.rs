@@ -1,6 +1,6 @@
+use crate::Dialect;
 use crate::form::F32_FORM;
 use crate::ir::{Body, Expr, Intrinsic, Param, Stmt};
-use crate::{Dialect, kept};
 
 /// One call of `i`, with a buffer as every argument.
 fn call(i: Intrinsic) -> Body {
@@ -15,7 +15,6 @@ fn call(i: Intrinsic) -> Body {
     };
     Body {
         entry: format!("{i:?}"),
-        layout: kept::named("dense"),
         params: vec![Param::Buffer {
             name: "x".into(),
             form: F32_FORM,
@@ -46,7 +45,9 @@ fn device_names(text: &str) -> Vec<String> {
 
 #[test]
 fn every_intrinsic_spelled() {
-    for i in Intrinsic::ALL.iter().copied() {
+    // A layout replaces `kept_row` before any text.
+    let spelled = Intrinsic::ALL.iter().filter(|i| **i != Intrinsic::KeptRow);
+    for i in spelled.copied() {
         let text = call(i).text();
         for dialect in [Dialect::Metal, Dialect::Cuda] {
             let rendered = text.render(dialect);
