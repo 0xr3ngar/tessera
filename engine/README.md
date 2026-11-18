@@ -13,6 +13,7 @@ and tokens.
 <tr><td colspan="2"><a href="ir"><b>ir/</b></a></td></tr>
 <tr><td>&emsp;<a href="ir/graph">graph</a></td><td>The model graph: typed nodes, symbolic shapes, a JSON form</td></tr>
 <tr><td>&emsp;<a href="ir/interp">interp</a></td><td>Runs a graph op by op on the CPU: the reference for every plan</td></tr>
+<tr><td>&emsp;<a href="ir/kv">kv</a></td><td>Pages of kept rows, shared between runs by refcount</td></tr>
 <tr><td>&emsp;<a href="ir/mem">mem</a></td><td>Buffers in zones, typed views onto them, and storage forms</td></tr>
 <tr><td>&emsp;<a href="ir/testkit">testkit</a></td><td>Helpers that tests share: noise, comparisons and scratch files</td></tr>
 <tr><td>&emsp;<a href="ir/trace">trace</a></td><td>Builds graphs by running model descriptions</td></tr>
