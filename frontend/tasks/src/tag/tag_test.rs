@@ -9,11 +9,11 @@ type Case = (String, Vec<(String, String)>);
 /// Matches spaCy's tags on the spacy reference's `tags.json`.
 #[test]
 fn spacy_tags() {
-    let Some(dir) = testkit::reference("spacy") else {
+    let Some(dir) = sensai_testkit::reference("spacy") else {
         eprintln!("no spacy reference here: skipped");
         return;
     };
-    let mut tagger = Tagger::open(&dir, &engine::Settings::default()).unwrap();
+    let mut tagger = Tagger::open(&dir, &sensai_engine::Settings::default()).unwrap();
     let cases: Vec<Case> =
         serde_json::from_slice(&std::fs::read(dir.join("tags.json")).unwrap()).unwrap();
     for (text, want) in &cases {

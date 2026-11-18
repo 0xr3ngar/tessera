@@ -1,17 +1,17 @@
 use super::Embedder;
-use engine::{Pick, Settings};
-use testkit::cosine_f32;
+use sensai_engine::{Pick, Settings};
+use sensai_testkit::cosine_f32;
 
 /// Each eg2 case through the exlr8 release, against eg2cpu.
 #[test]
 fn eg2_cases() {
-    let dir = testkit::reference("eg2");
+    let dir = sensai_testkit::reference("eg2");
     let Some(dir) = dir.filter(|d| d.join("exlr8/tokenizer.json").is_file()) else {
         return eprintln!("no eg2 reference with its exlr8 release: skipped");
     };
     let mut settings = Settings::default();
     // The host takes minutes on the long case.
-    settings.backend = engine::gpu().map_or(settings.backend, Pick::Gpu);
+    settings.backend = sensai_engine::gpu().map_or(settings.backend, Pick::Gpu);
     let mut embedder = Embedder::open(&dir.join("exlr8"), &settings).unwrap();
     for entry in std::fs::read_dir(dir.join("cases")).unwrap() {
         let case = entry.unwrap().path();

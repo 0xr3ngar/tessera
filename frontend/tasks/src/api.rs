@@ -1,7 +1,7 @@
 //! What an HTTP front end asks of a loaded model.
 
 use crate::Error;
-use bundle::Message;
+use sensai_bundle::Message;
 
 /// The served model's name, and the tokens one answer holds.
 #[derive(Clone, Debug)]

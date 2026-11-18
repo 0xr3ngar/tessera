@@ -1,15 +1,15 @@
 //! A tiny DeepSeek-shaped release over two ranks on one box.
 
 use super::{cluster, model};
-use graph::DimName::{Context, Seqs};
-use graph::{Graph, PathSeg, shard};
-use interp::{Tensor, run};
-use lower::form::BF16_FORM;
-use lower::{Device, ZoneKind, lower};
-use run::Loopback;
-use run::testing::runs;
+use sensai_graph::DimName::{Context, Seqs};
+use sensai_graph::{Graph, PathSeg, shard};
+use sensai_interp::{Tensor, run};
+use sensai_lower::form::BF16_FORM;
+use sensai_lower::{Device, ZoneKind, lower};
+use sensai_run::Loopback;
+use sensai_run::testing::runs;
+use sensai_testkit::{Noise, cosine_f32, max_abs_diff, weights};
 use std::path::Path;
-use testkit::{Noise, cosine_f32, max_abs_diff, weights};
 
 /// Rows of one sequence.
 const ROWS: usize = 8;
@@ -35,8 +35,8 @@ fn path(segs: &[PathSeg]) -> String {
 
 /// `weights` as HF slices in one bf16 file, experts apart.
 fn write(dir: &Path, g: &Graph, weights: &[Tensor]) {
-    let c = bundle::mla::config(CONFIG, 1, ROWS as u64).unwrap();
-    let rules = bundle::mla::rules(&c, false);
+    let c = sensai_bundle::mla::config(CONFIG, 1, ROWS as u64).unwrap();
+    let rules = sensai_bundle::mla::rules(&c, false);
     let (mut header, mut data) = (Vec::new(), Vec::new());
     let mut slice = |name: String, shape: &[usize], values: &[f32]| {
         let at = data.len();
@@ -83,11 +83,11 @@ fn write(dir: &Path, g: &Graph, weights: &[Tensor]) {
 /// Read back by name, run over two ranks, checked.
 #[test]
 fn mla_run() {
-    let c = bundle::mla::config(CONFIG, 1, ROWS as u64).unwrap();
-    let g = models::mla::program::<models::mla::Moe>(&c);
+    let c = sensai_bundle::mla::config(CONFIG, 1, ROWS as u64).unwrap();
+    let g = sensai_models::mla::program::<sensai_models::mla::Moe>(&c);
     let half = |t: Tensor| Tensor::f32(t.shape.clone(), BF16_FORM.roundtrip(t.floats().unwrap()));
     let floats: Vec<Tensor> = weights(&g, &mut Noise(9)).into_iter().map(half).collect();
-    let dir = testkit::scratch(&format!("{}-mla-release", std::process::id()));
+    let dir = sensai_testkit::scratch(&format!("{}-mla-release", std::process::id()));
     write(&dir, &g, &floats);
     let (read, stored, pins) = model("deepseek", &dir, ROWS as u64).unwrap();
     assert_eq!(read, g, "the release reads back as the same graph");
@@ -98,7 +98,7 @@ fn mla_run() {
     let positions = Tensor::u32(vec![1, ROWS], (0..ROWS as u32).collect());
     let want = run(&g, &floats, 0, &[tokens.clone(), positions.clone()]).unwrap();
     let want = want[0].floats().unwrap();
-    let sharded = shard(&g, &graph::Parts::even(2)).unwrap().graph;
+    let sharded = shard(&g, &sensai_graph::Parts::even(2)).unwrap().graph;
     let settings = runs().pop().unwrap();
     let kind = match settings.gpu() {
         Some(_) => ZoneKind::Gpu,

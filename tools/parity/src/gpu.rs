@@ -1,14 +1,14 @@
 //! A decoder on the GPU against the reference.
 
 use super::{Spec, Tolerance, interpreted, loaded, runs};
-use interp::Tensor;
-use lower::form::Load;
-use lower::{Cache, Device, Pins, Settings, View, lower};
-use run::Run;
+use sensai_interp::Tensor;
+use sensai_lower::form::Load;
+use sensai_lower::{Cache, Device, Pins, Settings, View, lower};
+use sensai_run::Run;
+use sensai_testkit::{argmax, max_abs_diff};
+use sensai_trace::DimName::{self, Context, Rows, Segments, Seqs};
+use sensai_trace::Graph;
 use std::sync::MutexGuard;
-use testkit::{argmax, max_abs_diff};
-use trace::DimName::{self, Context, Rows, Segments, Seqs};
-use trace::Graph;
 
 /// The model's reference, as its golden run reads it.
 struct Fixture {

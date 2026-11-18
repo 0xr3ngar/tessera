@@ -1,5 +1,5 @@
 use crate::windows::{cut, overlap};
-use shape::shape;
+use sensai_shape::shape;
 
 const SPACING: usize = 7;
 

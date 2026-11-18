@@ -1,8 +1,8 @@
 //! RMS norm over rows, generated.
 
 use crate::per_row;
-use codegen::prelude::*;
-use lower::{Kernel, stage_rule};
+use sensai_codegen::prelude::*;
+use sensai_lower::{Kernel, stage_rule};
 
 /// One thread per row. Summing in order keeps batches alike.
 #[kernel]

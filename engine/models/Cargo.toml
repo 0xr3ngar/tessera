@@ -1,5 +1,5 @@
 [package]
-name = "models"
+name = "sensai-models"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,6 +7,6 @@ publish.workspace = true
 description = "Model descriptions, traced into graphs"
 
 [dependencies]
-graph = { workspace = true }
-trace = { workspace = true }
+sensai-graph = { workspace = true }
+sensai-trace = { workspace = true }
 

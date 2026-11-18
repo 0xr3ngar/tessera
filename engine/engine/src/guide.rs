@@ -3,7 +3,7 @@
 pub type Fault = Box<dyn std::error::Error + Send + Sync>;
 
 /// The most ids a sparse pick reads.
-pub const FEW: usize = models::FEW as usize;
+pub const FEW: usize = sensai_models::FEW as usize;
 
 /// The tokens one pick may choose from.
 #[derive(Clone, Debug, PartialEq, Eq)]

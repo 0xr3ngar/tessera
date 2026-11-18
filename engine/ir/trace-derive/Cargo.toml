@@ -1,5 +1,5 @@
 [package]
-name = "trace-derive"
+name = "sensai-trace-derive"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true

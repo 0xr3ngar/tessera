@@ -1,5 +1,5 @@
 use crate::Term;
-use graph::{Parts, Shape};
+use sensai_graph::{Parts, Shape};
 
 /// What no rule lowers.
 #[derive(Debug, thiserror::Error)]

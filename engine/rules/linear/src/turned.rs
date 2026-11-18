@@ -1,10 +1,10 @@
 //! A rotated matmul for few rows, in one launch.
 
-use codegen::prelude::*;
-use graph::{Op, Order, Stage};
-use kernels::{BLOCK, spin, spin_inline};
-use lower::form::Load as Stored;
-use lower::{Draft, Kernel, Load, Needs, Shape, T, Term, Tree};
+use sensai_codegen::prelude::*;
+use sensai_graph::{Op, Order, Stage};
+use sensai_kernels::{BLOCK, spin, spin_inline};
+use sensai_lower::form::Load as Stored;
+use sensai_lower::{Draft, Kernel, Load, Needs, Shape, T, Term, Tree};
 
 /// Its row limit: each thread keeps one sum per row.
 const ROWS: usize = 8;
@@ -173,4 +173,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(kernel, [x, w, suh, svh], m * n)])
 }
 
-lower::rule!("turned", propose);
+sensai_lower::rule!("turned", propose);

@@ -4,7 +4,7 @@ mod roce;
 
 pub use roce::{port, ports};
 
-use engine::comm::{Error, Shm, Sockets};
+use sensai_engine::comm::{Error, Shm, Sockets};
 use std::fs::OpenOptions;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};

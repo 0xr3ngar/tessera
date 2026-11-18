@@ -5,12 +5,12 @@ use crate::kernel::Kernel;
 use crate::plan::{Plan, Step};
 use crate::recipe::Recipe;
 use crate::rule::{Rule, rules_with};
-use codegen::kept::Layout;
-use engine_settings::{Pick, Settings};
-use graph::Parts;
-use platform::{Limits, Platform};
+use sensai_codegen::kept::Layout;
+use sensai_engine_settings::{Pick, Settings};
+use sensai_graph::Parts;
+use sensai_platform::{Limits, Platform};
+use sensai_sim::{Chip, Cluster, Cost, FIXED, Fit, Pool, Sample, Timings, ZoneKind};
 use serde::{Deserialize, Serialize};
-use sim::{Chip, Cluster, Cost, FIXED, Fit, Pool, Sample, Timings, ZoneKind};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
@@ -93,7 +93,7 @@ fn fresh() -> u64 {
 }
 
 fn dense() -> &'static dyn Layout {
-    codegen::kept::DENSE
+    sensai_codegen::kept::DENSE
 }
 
 impl Default for Device {

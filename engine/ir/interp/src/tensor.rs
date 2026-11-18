@@ -11,8 +11,8 @@ pub enum Error {
 }
 
 /// A view that did not fit is a mismatch.
-impl From<mem::Error> for Error {
-    fn from(e: mem::Error) -> Self {
+impl From<sensai_mem::Error> for Error {
+    fn from(e: sensai_mem::Error) -> Self {
         Error::Mismatch(e.to_string())
     }
 }

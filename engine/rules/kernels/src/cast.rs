@@ -1,9 +1,9 @@
 //! Whole floats as indices, such as fixed id tables.
 
-use codegen::prelude::*;
-use graph::{DType, Op};
-use lower::form::Load as Stored;
-use lower::{Draft, Kernel, T, Term, Tree};
+use sensai_codegen::prelude::*;
+use sensai_graph::{DType, Op};
+use sensai_lower::form::Load as Stored;
+use sensai_lower::{Draft, Kernel, T, Term, Tree};
 
 /// One thread per element. Negatives and NaN give zero.
 #[kernel]
@@ -50,4 +50,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(cast, [x], len)])
 }
 
-lower::rule!("cast", propose);
+sensai_lower::rule!("cast", propose);

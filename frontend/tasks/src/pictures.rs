@@ -2,9 +2,9 @@
 
 use crate::Error;
 use crate::api::Image;
-use bundle::vae::decoder;
-use engine::vae::{TAPS, TOKEN};
-use engine::{Model, Recipe, Settings, Tensor};
+use sensai_bundle::vae::decoder;
+use sensai_engine::vae::{TAPS, TOKEN};
+use sensai_engine::{Model, Recipe, Settings, Tensor};
 use std::path::Path;
 
 pub struct Pictures {

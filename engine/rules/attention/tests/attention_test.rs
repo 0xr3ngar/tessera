@@ -1,17 +1,17 @@
 //! Attention rules against the interpreter, and the rule plans pick.
 
-use attention as _;
-use kernels as _;
+use sensai_attention as _;
+use sensai_kernels as _;
 
-use graph::DimName::{Context, HeadDim, Heads, KvHeads, Rows, Segments, Seqs};
-use graph::{DType, Dim, Graph, Size, TensorType};
-use interp::{Store, Tensor, run, run_kept};
-use lower::kept::{self, Layout};
-use lower::{Device, Settings, View, lower, rules};
-use run::testing::{host, runs};
-use run::{Run, open};
-use testkit::{Noise, fill, graphs, max_abs_diff};
-use trace::{EntryKind, Mask, Model, Port, Role};
+use sensai_graph::DimName::{Context, HeadDim, Heads, KvHeads, Rows, Segments, Seqs};
+use sensai_graph::{DType, Dim, Graph, Size, TensorType};
+use sensai_interp::{Store, Tensor, run, run_kept};
+use sensai_lower::kept::{self, Layout};
+use sensai_lower::{Device, Settings, View, lower, rules};
+use sensai_run::testing::{host, runs};
+use sensai_run::{Run, open};
+use sensai_testkit::{Noise, fill, graphs, max_abs_diff};
+use sensai_trace::{EntryKind, Mask, Model, Port, Role};
 
 /// Attention under `mask` over `heads` query heads of `width`.
 fn attention(mask: Mask, heads: u64, width: u64) -> Graph {
@@ -221,7 +221,7 @@ fn attention_streams() {
     let g = graphs::attention(&bounded, [2, 2, 16]);
     let sizes = [(Seqs, 2), (Rows, 3), (Context, 5)];
     let plan = lower(&g, 0, &sizes, &Device::guess(&host())).unwrap();
-    let streams = |s: &&lower::Step| matches!(s.kernel.name(), "attend" | "flash");
+    let streams = |s: &&sensai_lower::Step| matches!(s.kernel.name(), "attend" | "flash");
     assert_eq!(plan.steps.iter().filter(streams).count(), 1);
 }
 
@@ -251,7 +251,8 @@ fn gpu_rules_match() {
         .map(|p| fill(&g, &p.ty, &[(Seqs, 2), (Rows, 3), (Context, 5)], &mut noise).unwrap())
         .collect();
     // The CPU rules need a CPU zone.
-    let gpu = |m: &str| m.starts_with("attention::") && !m.starts_with("attention::cpu");
+    let gpu =
+        |m: &str| m.starts_with("sensai_attention::") && !m.starts_with("sensai_attention::cpu");
     for rule in rules().into_iter().filter(|r| gpu(r.module)) {
         for settings in runs() {
             let off = gap(&g, &inputs, rule.name, &settings);

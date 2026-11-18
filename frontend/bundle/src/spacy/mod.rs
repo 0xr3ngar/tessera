@@ -11,9 +11,9 @@ mod thinc;
 
 use crate::tokenize::Error;
 use crate::tokenize::spacy::{Spacy, Word};
-use engine::tagger::{Config, KEYS, PIECES, path, piece, program};
-use engine::{Graph, PathSeg, Tensor, Weight, bind};
 use features::{Features, thinc_hash};
+use sensai_engine::tagger::{Config, KEYS, PIECES, path, piece, program};
+use sensai_engine::{Graph, PathSeg, Tensor, Weight, bind};
 use std::path::Path;
 use thinc::{Array, Node};
 

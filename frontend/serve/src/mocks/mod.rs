@@ -12,9 +12,9 @@ use chat::MockChat;
 use embed::MockEmbed;
 pub use generator::MockGenerator;
 use paint::MockPaint;
+use sensai_tasks::api::Info;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
-use tasks::api::Info;
 use tokens::MockTokens;
 
 /// The mocks as model `m`, 16 tokens of context.

@@ -4,7 +4,7 @@ use crate::kernel::KernelRef;
 use crate::kernels::Map;
 use crate::plan::{Loaded, Output, Plan, Slot, Step};
 use crate::select::{Home, Selected, Val, Value};
-use graph::DType;
+use sensai_graph::DType;
 
 /// A last use that never comes: weights, inputs and outputs.
 const FOREVER: usize = usize::MAX;
@@ -77,7 +77,7 @@ pub fn assign(s: &Selected, order: &[usize]) -> Plan {
                 b.plan.kept.push((index, slot));
                 // One table beside the kept rows names every lane's pages.
                 if s.table > 0 && b.plan.table.is_none() {
-                    let form = codegen::form::of(DType::U32);
+                    let form = sensai_codegen::form::of(DType::U32);
                     let buffer = b.buffer(form.bytes(s.table), value.zone);
                     let len = s.table;
                     b.plan.table = Some(Slot {

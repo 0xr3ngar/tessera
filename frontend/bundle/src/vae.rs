@@ -1,8 +1,8 @@
 //! FLUX.2's VAE decoder from a diffusers directory.
 
-use checkpoint::File;
-use engine::vae::{Config, program};
-use engine::{Graph, PathSeg, Tensor, Weight, bind};
+use sensai_checkpoint::File;
+use sensai_engine::vae::{Config, program};
+use sensai_engine::{Graph, PathSeg, Tensor, Weight, bind};
 use std::error::Error;
 use std::path::Path;
 

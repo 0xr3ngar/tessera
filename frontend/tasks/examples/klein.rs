@@ -1,9 +1,9 @@
 //! A FLUX.2 klein picture for a prompt, written to PNG.
 
-use checkpoint::File;
+use sensai_checkpoint::File;
+use sensai_tasks::klein::Klein;
+use sensai_tasks::png;
 use std::time::Instant;
-use tasks::klein::Klein;
-use tasks::png;
 
 /// Standard normal values from a seed, by Box-Muller.
 fn noise(seed: u64, n: usize) -> Vec<f32> {
@@ -21,7 +21,7 @@ fn noise(seed: u64, n: usize) -> Vec<f32> {
         .collect()
 }
 
-fn main() -> Result<(), tasks::Error> {
+fn main() -> Result<(), sensai_tasks::Error> {
     let args: Vec<String> = std::env::args().collect();
     let usage =
         "usage: klein <model dir> <out.png> <latent side> <seed | noise.safetensors> <prompt>";
@@ -35,7 +35,7 @@ fn main() -> Result<(), tasks::Error> {
     };
     let klein = Klein {
         dir: dir.into(),
-        settings: frontend_settings::read(),
+        settings: sensai_frontend_settings::read(),
         steps: 4,
     };
     let started = Instant::now();

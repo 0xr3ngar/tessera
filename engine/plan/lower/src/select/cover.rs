@@ -5,8 +5,8 @@ use crate::cost::Device;
 use crate::kernels::{AllReduce, Widen};
 use crate::rule::{Draft, Read, Rule, ways};
 use crate::tree::{T, Term, Tree};
-use graph::{Op, Stage, View};
-use sim::ZoneKind;
+use sensai_graph::{Op, Stage, View};
+use sensai_sim::ZoneKind;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 

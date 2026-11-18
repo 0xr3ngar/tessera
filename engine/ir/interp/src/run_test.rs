@@ -1,8 +1,8 @@
 use crate::cpu_test::{close, eval, model, port};
 use crate::*;
-use trace::DType::{self, F32, I32, U32};
-use trace::DimName::*;
-use trace::{EntryKind, Graph, Role, TensorType};
+use sensai_trace::DType::{self, F32, I32, U32};
+use sensai_trace::DimName::*;
+use sensai_trace::{EntryKind, Graph, Role, TensorType};
 
 /// One kept layer: rows write `x`, then read their slot.
 fn kept() -> Graph {

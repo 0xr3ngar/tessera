@@ -1,26 +1,26 @@
 //! Ranks on threads, joined over handles the front end opened.
 
 // Linking these registers their lowering rules.
-use rules as _;
+use sensai_rules as _;
 
-use engine::comm::Transport;
-use frontend_comm::{shm, sockets};
-use frontend_settings::read as settings;
-use graph::{Graph, shard};
-use interp::{Tensor, run};
-use lower::{Cluster, Device, Pick, Plan, Settings, View, lower};
-use models::decoder::{Config, Swiglu, program};
-use run::Rank;
+use sensai_engine::comm::Transport;
+use sensai_frontend_comm::{shm, sockets};
+use sensai_frontend_settings::read as settings;
+use sensai_graph::{Graph, shard};
+use sensai_interp::{Tensor, run};
+use sensai_lower::{Cluster, Device, Pick, Plan, Settings, View, lower};
+use sensai_models::decoder::{Config, Swiglu, program};
+use sensai_run::Rank;
+use sensai_testkit::{Noise, fill, max_abs_diff};
+use sensai_trace::DimName::{self, Context, Seqs};
+use sensai_trace::{Norm, TensorType};
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
-use testkit::{Noise, fill, max_abs_diff};
-use trace::DimName::{self, Context, Seqs};
-use trace::{Norm, TensorType};
 
 const SIZES: [(DimName, u64); 2] = [(Seqs, 1), (Context, 8)];
 
 /// A tensor's parts, which may cross to another thread.
-type Plain = (Vec<usize>, Vec<u8>, mem::DType);
+type Plain = (Vec<usize>, Vec<u8>, sensai_mem::DType);
 
 fn plain(t: &Tensor) -> Plain {
     (t.shape.clone(), t.bytes().to_vec(), t.dtype())
@@ -58,7 +58,7 @@ fn planned(g: &Graph, host: &Settings) -> [Plan; 2] {
     let device = Device::guess(host)
         .zoned(Cluster::two("a", "b"))
         .ranked(vec![0, 1]);
-    let sharded = shard(g, &graph::Parts::even(2)).unwrap().graph;
+    let sharded = shard(g, &sensai_graph::Parts::even(2)).unwrap().graph;
     [0, 1].map(|r| lower(&sharded, 0, &SIZES, &device.clone().as_rank(r)).unwrap())
 }
 
@@ -121,7 +121,7 @@ fn two_sockets() {
 /// Ranks on threads over one mapped file, against one rank.
 #[test]
 fn two_shm() {
-    let path: PathBuf = testkit::scratch(&format!("ranks-{}", std::process::id()));
+    let path: PathBuf = sensai_testkit::scratch(&format!("ranks-{}", std::process::id()));
     both(|r| shm(&path, r, 2, 1 << 16).unwrap());
     let _ = std::fs::remove_file(&path);
 }

@@ -5,16 +5,16 @@ mod golden_test;
 mod rotation_test;
 mod rows_test;
 
-use lower::form::F32_FORM;
-use models::Rotated;
-use models::eg2::{Config, probe, program};
-use parity::{Check, Compare, Golden, Spec, Tolerance, suite};
-use trace::Composite::{Attention, Mlp};
-use trace::{Graph, Linear};
+use sensai_lower::form::F32_FORM;
+use sensai_models::Rotated;
+use sensai_models::eg2::{Config, probe, program};
+use sensai_parity::{Check, Compare, Golden, Spec, Tolerance, suite};
+use sensai_trace::Composite::{Attention, Mlp};
+use sensai_trace::{Graph, Linear};
 
 /// Two small layers, one sliding and one full.
 fn small() -> Graph {
-    program::<Linear>(&models::small::eg2())
+    program::<Linear>(&sensai_models::small::eg2())
 }
 
 fn release() -> Graph {

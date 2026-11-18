@@ -24,11 +24,11 @@ pub mod vae;
 
 pub use template::{Clock, Message, Template};
 
-use checkpoint::{File, Offer, Stored};
-use engine::decoder::{self, Config, Moe, Scales, Swiglu};
-use engine::form::{BF16_FORM, F32_FORM, Load, named};
-use engine::{Graph, Norm, Pins, Stack, Tensor, Weight};
 use names::Rule;
+use sensai_checkpoint::{File, Offer, Stored};
+use sensai_engine::decoder::{self, Config, Moe, Scales, Swiglu};
+use sensai_engine::form::{BF16_FORM, F32_FORM, Load, named};
+use sensai_engine::{Graph, Norm, Pins, Stack, Tensor, Weight};
 use serde::Deserialize;
 use std::error::Error;
 use std::path::Path;
@@ -109,7 +109,7 @@ pub fn each(
     let claims = names::resolve(graph, &slices, rules)?;
     for (c, w) in claims.iter().zip(&graph.weights) {
         let slice = slices.iter().find(|s| s.name == c.name).expect("resolved");
-        let axis = |e: &engine::DimExpr| e.value(&graph.dims, &|_| None).map(|n| n as usize);
+        let axis = |e: &sensai_engine::DimExpr| e.value(&graph.dims, &|_| None).map(|n| n as usize);
         let shape: Option<Vec<usize>> = w.ty.shape.0.iter().map(axis).collect();
         let (weight, form) = match (slice.stored, c.rows) {
             _ if !c.parts.is_empty() => stacked(offer, slice.stored, &c.parts, shape)?,
@@ -169,9 +169,9 @@ fn stacked(
 /// A bf16 slice's bytes, or its `rows`, kept packed.
 fn halves(
     offer: &dyn Offer,
-    slice: &checkpoint::Slice,
+    slice: &sensai_checkpoint::Slice,
     rows: Option<(usize, usize)>,
-) -> Result<Weight, checkpoint::Error> {
+) -> Result<Weight, sensai_checkpoint::Error> {
     let mut v = offer.bf16(&slice.name)?;
     if let Some((first, count)) = rows {
         let stride = 2 * slice.elements() / slice.shape[0];
@@ -183,10 +183,10 @@ fn halves(
 /// A slice's floats, or its `rows`, in the graph's shape.
 fn floats(
     offer: &dyn Offer,
-    slice: &checkpoint::Slice,
+    slice: &sensai_checkpoint::Slice,
     rows: Option<(usize, usize)>,
     shape: Option<Vec<usize>>,
-) -> Result<Weight, checkpoint::Error> {
+) -> Result<Weight, sensai_checkpoint::Error> {
     let mut v = offer.floats(&slice.name)?;
     if let Some((first, count)) = rows {
         let stride = slice.elements() / slice.shape[0];

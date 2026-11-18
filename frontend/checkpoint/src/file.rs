@@ -1,7 +1,7 @@
 //! One safetensors file: a JSON header, then tensor bytes.
 
 use crate::offer::{Offer, Slice, Stored};
-use engine::{Bf16, F16};
+use sensai_engine::{Bf16, F16};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;

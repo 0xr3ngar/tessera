@@ -1,12 +1,12 @@
 //! What every matmul kernel shares.
 
-use codegen::hash;
-use codegen::ir::{BinOp, Body, Expr, Stmt, Ty};
-use lower::form::Load as Stored;
-use lower::kernels::{add_operands, finish};
-use lower::sites;
-use lower::sites::{After, Near, Picked};
-use lower::{Launch, Read, Shape, Source, Step, T, Tree};
+use sensai_codegen::hash;
+use sensai_codegen::ir::{BinOp, Body, Expr, Stmt, Ty};
+use sensai_lower::form::Load as Stored;
+use sensai_lower::kernels::{add_operands, finish};
+use sensai_lower::sites;
+use sensai_lower::sites::{After, Near, Picked};
+use sensai_lower::{Launch, Read, Shape, Source, Step, T, Tree};
 use std::cell::RefCell;
 use std::collections::HashMap;
 

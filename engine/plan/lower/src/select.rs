@@ -14,7 +14,7 @@ use crate::plan::Share;
 use crate::rule::{Read, linked};
 use crate::tree::{T, Term, Tree};
 use crate::{Error, Unsupported};
-use graph::{DimName, Graph, NodeId, View};
+use sensai_graph::{DimName, Graph, NodeId, View};
 use std::collections::BTreeSet;
 
 /// A value some op writes, or the plan is given.
@@ -164,7 +164,7 @@ pub(crate) fn select_upto(
             len,
             Home::Input(port as u32),
             EDGE,
-            codegen::form::of(dtype),
+            sensai_codegen::form::of(dtype),
         );
         e.out.inputs.push(val);
     }
@@ -181,8 +181,8 @@ pub(crate) fn select_upto(
                 val
             }
             (_, None) => continue,
-            (Term::Op(graph::Op::View(View::Reshape(_))), _) => val(n.args[0]),
-            (Term::Op(graph::Op::Append(index)), _) => {
+            (Term::Op(sensai_graph::Op::View(View::Reshape(_))), _) => val(n.args[0]),
+            (Term::Op(sensai_graph::Op::Append(index)), _) => {
                 let args = [n.args[0], n.args[1], n.args[2]].map(val);
                 e.append(&tree, t, *index, args)?
             }

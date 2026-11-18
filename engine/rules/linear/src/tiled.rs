@@ -1,14 +1,14 @@
 //! A matmul on the matrix unit, staged through group memory.
 
 use crate::product::{Product, Variant, place};
-use codegen::form::F32_FORM;
-use codegen::ir::{BinOp, Body, Expr, Stmt};
-use codegen::prelude::*;
-use graph::Order;
-use lower::form::Load as Stored;
-use lower::kernels::finish;
-use lower::sites::Near;
-use lower::{Draft, Kernel, Launch, Load, Needs, Read, Shape, Step, T, Tree};
+use sensai_codegen::form::F32_FORM;
+use sensai_codegen::ir::{BinOp, Body, Expr, Stmt};
+use sensai_codegen::prelude::*;
+use sensai_graph::Order;
+use sensai_lower::form::Load as Stored;
+use sensai_lower::kernels::finish;
+use sensai_lower::sites::Near;
+use sensai_lower::{Draft, Kernel, Launch, Load, Needs, Read, Shape, Step, T, Tree};
 
 /// How a block of the output is computed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -438,4 +438,4 @@ fn gathered(tree: &Tree, product: &Product, reads: &[Read]) -> Option<(Near, Vec
     Some((near, reads))
 }
 
-lower::rule!("tiled", propose);
+sensai_lower::rule!("tiled", propose);

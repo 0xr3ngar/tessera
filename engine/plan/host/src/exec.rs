@@ -1,10 +1,10 @@
 //! Runs a body on the host, each group in lockstep.
 
 use crate::lockstep::products;
-use codegen::form::Load;
-use codegen::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt, Ty};
-use codegen::numerics::Precision;
-use graph::{E2M1, E4M3, F16};
+use sensai_codegen::form::Load;
+use sensai_codegen::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt, Ty};
+use sensai_codegen::numerics::Precision;
+use sensai_graph::{E2M1, E4M3, F16};
 use std::collections::HashMap;
 
 /// One argument of a launch, as the host sees it.

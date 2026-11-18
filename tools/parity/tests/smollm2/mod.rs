@@ -1,11 +1,11 @@
 //! SmolLM2-360M: a Llama decoder with tied embeddings.
 
-use models::decoder::{Config, Swiglu, program, stepper};
-use parity::{LOGITS, Spec, Stepper, decoder, suite};
-use trace::Composite::{Attention, Mlp};
-use trace::Graph;
+use sensai_models::decoder::{Config, Swiglu, program, stepper};
+use sensai_parity::{LOGITS, Spec, Stepper, decoder, suite};
+use sensai_trace::Composite::{Attention, Mlp};
+use sensai_trace::Graph;
 
-decoder!((), Swiglu, models::small::smollm2(), Config::smollm2);
+decoder!((), Swiglu, sensai_models::small::smollm2(), Config::smollm2);
 
 const SPEC: Spec = Spec {
     name: "smollm2",

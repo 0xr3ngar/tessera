@@ -1,12 +1,12 @@
 //! `x[m, k]` times `w[n, k]` transposed, dense or picked.
 
-use codegen::ir::{BinOp, Body, Expr, Intrinsic, Stmt, Ty};
-use codegen::prelude::*;
-use lower::form::Load as Stored;
-use lower::kernels::{MapStage, finish};
-use lower::sites::{After, Picked as Pick};
-use lower::{Draft, Kernel, Launch, Shape, Step, T, Tree, ZoneKind, sites};
-use lower::{GUESS, source};
+use sensai_codegen::ir::{BinOp, Body, Expr, Intrinsic, Stmt, Ty};
+use sensai_codegen::prelude::*;
+use sensai_lower::form::Load as Stored;
+use sensai_lower::kernels::{MapStage, finish};
+use sensai_lower::sites::{After, Picked as Pick};
+use sensai_lower::{Draft, Kernel, Launch, Shape, Step, T, Tree, ZoneKind, sites};
+use sensai_lower::{GUESS, source};
 
 /// One thread per output: its row dotted with its column.
 #[kernel]
@@ -105,7 +105,7 @@ fn cpu_picked(
 
 /// The stages after the sum, into the thread's output.
 fn finished(mut body: Body, after: &After, operands_at: usize) -> Body {
-    lower::kernels::add_operands(&mut body, operands_at, after.others());
+    sensai_lower::kernels::add_operands(&mut body, operands_at, after.others());
     let at = Expr::cast(Ty::U64, Expr::Call(Intrinsic::Gid, Vec::new()));
     let sum = Expr::index(Expr::var("sums"), Expr::Int(0));
     body.stmts.extend(finish(after, sum, at));
@@ -117,7 +117,7 @@ fn tiled_finish(mut body: Body, after: &After) -> Body {
     if after.stages.is_empty() {
         return body;
     }
-    lower::kernels::add_operands(&mut body, 2, after.others());
+    sensai_lower::kernels::add_operands(&mut body, 2, after.others());
     // Each of the thread's rows, then its 32 columns.
     let line = Expr::bin(BinOp::Mul, Expr::var("r"), Expr::var("n"));
     let first = Expr::bin(BinOp::Add, Expr::var("at"), Expr::cast(Ty::U64, line));
@@ -212,7 +212,7 @@ fn accepts(input: usize, form: &dyn Stored) -> bool {
 /// A matmul and its finishing stages.
 #[derive(Clone, Debug, Kernel)]
 #[launch(
-    crate = lower,
+    crate = sensai_lower,
     name = "cpu_dense",
     sizes = [self.m, self.n, self.k],
     work = self.m * self.n * self.k,
@@ -241,7 +241,7 @@ fn dense_launches(k: &Dense, step: &Step) -> Vec<Launch> {
 /// A matmul in square blocks, and its stages.
 #[derive(Clone, Debug, Kernel)]
 #[launch(
-    crate = lower,
+    crate = sensai_lower,
     name = "cpu_tiled",
     sizes = [self.0.m, self.0.n, self.0.k],
     work = tiled_work(&self.0),
@@ -270,7 +270,7 @@ fn tiled_launches(k: &Tiled, step: &Step) -> Vec<Launch> {
 /// Each row against its id's matrix, then the stages.
 #[derive(Clone, Debug, Kernel)]
 #[launch(
-    crate = lower,
+    crate = sensai_lower,
     name = "cpu_picked",
     sizes = [self.m, self.n, self.k],
     work = self.m * self.n * self.k,
@@ -369,5 +369,5 @@ fn tiled(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(Tiled(dense), site.reads(), m * n)])
 }
 
-lower::rule!("cpu_dense", propose);
-lower::rule!("cpu_tiled", tiled);
+sensai_lower::rule!("cpu_dense", propose);
+sensai_lower::rule!("cpu_tiled", tiled);

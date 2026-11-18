@@ -3,14 +3,14 @@
 use crate::Error;
 use crate::kernels::Kernels;
 use crate::run::{Base, Run};
-use codegen::Dialect;
-use engine_settings::Memory;
-use gpukit::backend::Backend;
-use gpukit::device::{Device, DeviceBuffer, cached_context, cached_source};
-use gpukit::launch::{KernelArgs, Launch, launch_1d, launch_grid};
-use graph::DimName;
-use lower::{Arg, Extent, Launch as Call, Launching, Plan, Shape, Slot};
-use mem::Buffer;
+use sensai_codegen::Dialect;
+use sensai_engine_settings::Memory;
+use sensai_gpukit::backend::Backend;
+use sensai_gpukit::device::{Device, DeviceBuffer, cached_context, cached_source};
+use sensai_gpukit::launch::{KernelArgs, Launch, launch_1d, launch_grid};
+use sensai_graph::DimName;
+use sensai_lower::{Arg, Extent, Launch as Call, Launching, Plan, Shape, Slot};
+use sensai_mem::Buffer;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::time::Instant;
@@ -72,7 +72,7 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
                     bound.device_ptr(self.buffer(*slot).device_ptr() + at)
                 }
                 Arg::Value(bytes) => bound.bytes(bytes),
-                Arg::Size(_) | Arg::Buffer(..) => return Err(lower::Error::Unbound.into()),
+                Arg::Size(_) | Arg::Buffer(..) => return Err(sensai_lower::Error::Unbound.into()),
             };
         }
         Ok(bound)
@@ -94,7 +94,7 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
                 let threads = threads as u32;
                 launch_grid(self.ctx, kernel, across, down, threads, args)?
             }
-            Shape::Runtime(_) => return Err(lower::Error::Unbound.into()),
+            Shape::Runtime(_) => return Err(sensai_lower::Error::Unbound.into()),
         }
         Ok(())
     }
@@ -123,20 +123,20 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
 pub(crate) struct Pin<D: Device>(pub(crate) &'static D);
 
 #[cfg(any(feature = "cuda", feature = "rocm"))]
-impl<D: Device> engine_comm::Pinning for Pin<D> {
-    fn pin(&self, len: usize) -> Result<engine_comm::Pinned, engine_comm::Error> {
+impl<D: Device> sensai_engine_comm::Pinning for Pin<D> {
+    fn pin(&self, len: usize) -> Result<sensai_engine_comm::Pinned, sensai_engine_comm::Error> {
         let (host, device) = self
             .0
             .pin(len)
-            .map_err(|e| engine_comm::Error::Link(e.to_string()))?;
-        Ok(engine_comm::Pinned {
+            .map_err(|e| sensai_engine_comm::Error::Link(e.to_string()))?;
+        Ok(sensai_engine_comm::Pinned {
             host: host as *mut u8,
             device,
             len,
         })
     }
 
-    fn unpin(&self, pinned: engine_comm::Pinned) {
+    fn unpin(&self, pinned: sensai_engine_comm::Pinned) {
         self.0.unpin(pinned.host as u64);
     }
 }
@@ -221,15 +221,15 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
         format!("{} {}", D::BACKEND, self.ctx.name())
     }
 
-    fn platform(&self) -> gpukit::Platform {
+    fn platform(&self) -> sensai_gpukit::Platform {
         self.ctx.platform()
     }
 
-    fn precision(&self) -> codegen::Precision {
+    fn precision(&self) -> sensai_codegen::Precision {
         crate::precision(match D::BACKEND {
-            Backend::Metal => engine_settings::Backend::Metal,
-            Backend::Cuda => engine_settings::Backend::Cuda,
-            Backend::Rocm => engine_settings::Backend::Rocm,
+            Backend::Metal => sensai_engine_settings::Backend::Metal,
+            Backend::Cuda => sensai_engine_settings::Backend::Cuda,
+            Backend::Rocm => sensai_engine_settings::Backend::Rocm,
         })
     }
 

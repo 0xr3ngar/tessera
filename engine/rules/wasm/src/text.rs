@@ -1,7 +1,7 @@
 //! A module's kernel text, launched with plain arguments.
 
 use crate::abi::{Offer, Shape};
-use lower::{Kernel, Launch, Source, Step};
+use sensai_lower::{Kernel, Launch, Source, Step};
 use std::fmt;
 
 /// A module kernel's text, never freed.
@@ -18,7 +18,7 @@ pub struct Fixed {
 pub struct Text {
     pub fixed: &'static Fixed,
     pub counts: Vec<u32>,
-    pub shape: lower::Shape,
+    pub shape: sensai_lower::Shape,
     pub work: f64,
     pub guess: f64,
 }
@@ -26,12 +26,12 @@ pub struct Text {
 impl Text {
     pub fn new(fixed: &'static Fixed, offer: &Offer) -> Self {
         let shape = match offer.shape {
-            Shape::Line(n) => lower::Shape::Line(n),
+            Shape::Line(n) => sensai_lower::Shape::Line(n),
             Shape::Grid {
                 across,
                 down,
                 threads,
-            } => lower::Shape::Grid {
+            } => sensai_lower::Shape::Grid {
                 across,
                 down,
                 threads,
@@ -85,7 +85,7 @@ impl Kernel for Text {
     }
 
     /// The module saw each read's form before it offered.
-    fn accepts(&self, _: usize, _: &dyn lower::form::Load) -> bool {
+    fn accepts(&self, _: usize, _: &dyn sensai_lower::form::Load) -> bool {
         true
     }
 }

@@ -1,18 +1,18 @@
 //! The EG2 exlr8 release over two ranks on one box.
 
 use super::{cluster, model};
-use graph::DimName::{Context, Seqs};
-use graph::shard;
-use interp::Tensor;
-use lower::{Device, ZoneKind, lower};
-use run::Loopback;
-use run::testing::runs;
-use testkit::cosine_f32;
+use sensai_graph::DimName::{Context, Seqs};
+use sensai_graph::shard;
+use sensai_interp::Tensor;
+use sensai_lower::{Device, ZoneKind, lower};
+use sensai_run::Loopback;
+use sensai_run::testing::runs;
+use sensai_testkit::cosine_f32;
 
 /// Each rank loads its part of the packed weights.
 #[test]
 fn eg2_run() {
-    let dir = testkit::reference("eg2");
+    let dir = sensai_testkit::reference("eg2");
     let Some(dir) = dir.filter(|d| d.join("exlr8/tokenizer.json").is_file()) else {
         return eprintln!("no eg2 reference with its exlr8 release: skipped");
     };
@@ -24,7 +24,7 @@ fn eg2_run() {
         .collect();
     let n = ids.len();
     let (g, weights, _) = model("eg2", &dir, n as u64).unwrap();
-    let sharded = shard(&g, &graph::Parts::even(2)).unwrap().graph;
+    let sharded = shard(&g, &sensai_graph::Parts::even(2)).unwrap().graph;
     let settings = runs().pop().unwrap();
     let kind = match settings.gpu() {
         Some(_) => ZoneKind::Gpu,

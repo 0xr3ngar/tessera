@@ -1,7 +1,7 @@
 //! Block forms: a scale, then codes it multiplies.
 
 use crate::form::{Form, Read, form};
-use graph::{DType, E2M1, E4M3, E8M0, F16};
+use sensai_graph::{DType, E2M1, E4M3, E8M0, F16};
 
 /// A code: what one element stores, before its block's scale.
 pub trait Code: Sync {

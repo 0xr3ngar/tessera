@@ -9,8 +9,8 @@ pub mod trellis;
 mod view;
 
 pub use buffer::{Backing, Buffer, Host};
-pub use graph::DType;
 pub use layout::Layout;
+pub use sensai_graph::DType;
 pub use tensor::Tensor;
 pub use view::{View, ViewMut, copy};
 

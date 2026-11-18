@@ -1,8 +1,10 @@
 //! A tiny GPT: learned positions, GELU MLPs, causal attention.
 
 use crate::shared::{Attend, Stack, tokens};
-use trace::DimName::*;
-use trace::{Act, Composite, Dim, Embed, Graph, Linear, Mask, Model, Norm, Role, Tensor, Weights};
+use sensai_trace::DimName::*;
+use sensai_trace::{
+    Act, Composite, Dim, Embed, Graph, Linear, Mask, Model, Norm, Role, Tensor, Weights,
+};
 
 pub struct Config {
     /// Its context bound is also the position table's length.
@@ -84,7 +86,7 @@ fn attention(m: &Model, c: &Config, l: &Layer, h: &Tensor) -> Tensor {
 /// One forward entry: tokens and positions in, logits out.
 pub fn program(c: &Config) -> Graph {
     let m = Model::new(c.dims());
-    let w: Gpt = trace::declare(&m);
+    let w: Gpt = sensai_trace::declare(&m);
     let [tokens, positions] = tokens(&m);
     let logits = forward(&m, c, &w, &tokens, &positions);
     m.finish([(Role::Logits, &logits)])

@@ -1,6 +1,6 @@
 use crate::exec::{self, ArgVal, Grid};
-use codegen::prelude::*;
-use codegen::{Dialect, Precision};
+use sensai_codegen::prelude::*;
+use sensai_codegen::{Dialect, Precision};
 
 /// A row's sum of squares: `n` from `at`, in order.
 #[kernel]
@@ -53,7 +53,7 @@ fn kernels_call() {
     let buf = |at| ArgVal::Buf {
         at,
         skip: 0,
-        form: codegen::form::F32_FORM,
+        form: sensai_codegen::form::F32_FORM,
     };
     let args = [buf(0), buf(1), ArgVal::U32(2), ArgVal::U32(4)];
     let grid = Grid {
@@ -139,7 +139,7 @@ fn callers_lend_memory() {
     let buf = |at| ArgVal::Buf {
         at,
         skip: 0,
-        form: codegen::form::F32_FORM,
+        form: sensai_codegen::form::F32_FORM,
     };
     let grid = Grid {
         groups: 1,
@@ -212,7 +212,7 @@ fn groups_pass_by_field() {
     let args = [ArgVal::Buf {
         at: 0,
         skip: 0,
-        form: codegen::form::F32_FORM,
+        form: sensai_codegen::form::F32_FORM,
     }];
     let grid = Grid {
         groups: 1,

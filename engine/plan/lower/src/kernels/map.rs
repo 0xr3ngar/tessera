@@ -8,12 +8,12 @@ use crate::rule::Draft;
 use crate::sites;
 use crate::sites::After;
 use crate::tree::{T, Tree};
-use codegen::hash;
-use codegen::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt};
-use codegen::prelude::*;
-use codegen::stage::Row;
-use graph::Act;
-use sim::Load;
+use sensai_codegen::hash;
+use sensai_codegen::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt};
+use sensai_codegen::prelude::*;
+use sensai_codegen::stage::Row;
+use sensai_graph::Act;
+use sensai_sim::Load;
 use std::cmp::Ordering;
 
 /// Adds `count` f32 operands `a0..` to `body`, at `at`.
@@ -205,18 +205,18 @@ fn map_launches(_: &Map, step: &Step) -> Vec<Launch> {
 
 impl Map {
     /// The skeleton with the stages and the store appended.
-    fn tree(&self) -> codegen::ir::Body {
+    fn tree(&self) -> sensai_codegen::ir::Body {
         let mut body = map_ir();
         // The operands sit between the input and the output.
         add_operands(&mut body, 1, operands(&self.0));
         let gid = || Expr::Call(Intrinsic::Gid, Vec::new());
-        let at = || Expr::cast(codegen::ir::Ty::U64, gid());
+        let at = || Expr::cast(sensai_codegen::ir::Ty::U64, gid());
         // A repeating operand is read within its span.
         let read = |k: usize| {
             let at = match self.1[k] {
-                Some(1) => Expr::cast(codegen::ir::Ty::U64, Expr::Int(0)),
+                Some(1) => Expr::cast(sensai_codegen::ir::Ty::U64, Expr::Int(0)),
                 Some(span) => Expr::cast(
-                    codegen::ir::Ty::U64,
+                    sensai_codegen::ir::Ty::U64,
                     Expr::bin(BinOp::Rem, gid(), Expr::Int(span as i64)),
                 ),
                 None => at(),

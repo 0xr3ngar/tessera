@@ -3,9 +3,9 @@
 use crate::names::repo;
 use crate::pull;
 use crate::tokenize::hf::Hf;
-use checkpoint::exlr8::Release;
-use engine::eg2::{Config, batched, program};
-use engine::{Graph, Linear, Weight};
+use sensai_checkpoint::exlr8::Release;
+use sensai_engine::eg2::{Config, batched, program};
+use sensai_engine::{Graph, Linear, Weight};
 use std::error::Error;
 use std::path::Path;
 

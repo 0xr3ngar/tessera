@@ -4,7 +4,7 @@ use crate::far::Lean;
 use crate::pairs::Hit;
 use crate::windows::Window;
 use anyhow::Result;
-use findings::{Finding, Level, Report, Rule, Snippet};
+use sensai_findings::{Finding, Level, Report, Rule, Snippet};
 use std::path::Path;
 
 const ALLOW: &str = "tools/simcheck/allow.toml";

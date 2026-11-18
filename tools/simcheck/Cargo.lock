@@ -148,14 +148,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
-name = "findings"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "flate2"
 version = "1.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -553,6 +545,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sensai-findings"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sensai-shape"
+version = "0.1.0"
+
+[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -603,10 +607,6 @@ checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
 dependencies = [
  "serde",
 ]
-
-[[package]]
-name = "shape"
-version = "0.1.0"
 
 [[package]]
 name = "shlex"
@@ -666,11 +666,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "eg2cpu",
- "findings",
  "rayon",
+ "sensai-findings",
+ "sensai-shape",
  "serde",
  "serde_json",
- "shape",
  "toml",
  "ureq",
 ]

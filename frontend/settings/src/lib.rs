@@ -1,6 +1,6 @@
 //! Settings read once from the environment, passed down.
 
-use engine::{Backend, Memory, Pick, Settings};
+use sensai_engine::{Backend, Memory, Pick, Settings};
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -28,7 +28,7 @@ pub fn read() -> Settings {
     let backend = match env.backend.as_deref() {
         Some("host") => Pick::Host,
         Some("cpu") => Pick::Cpu,
-        _ => engine::gpu().map_or(Pick::Host, Pick::Gpu),
+        _ => sensai_engine::gpu().map_or(Pick::Host, Pick::Gpu),
     };
     let cache = |dir: &str| Some(std::env::home_dir()?.join(".cache/tessera").join(dir));
     let costs = env.costs.or_else(|| cache("costs"));

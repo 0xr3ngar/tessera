@@ -1,8 +1,8 @@
 //! Region details the spec does not state.
 
 use super::release;
-use trace::DimName::*;
-use trace::Shape;
+use sensai_trace::DimName::*;
+use sensai_trace::Shape;
 
 #[test]
 fn shared_keys() {

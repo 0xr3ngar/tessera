@@ -3,14 +3,14 @@
 mod golden;
 mod regions_test;
 
-use lower::form::F32_FORM;
-use models::nanogpt::{Config, program};
-use parity::{Check, Compare, Golden, Spec, Tolerance, suite};
-use trace::Composite::{Attention, Mlp};
-use trace::Graph;
+use sensai_lower::form::F32_FORM;
+use sensai_models::nanogpt::{Config, program};
+use sensai_parity::{Check, Compare, Golden, Spec, Tolerance, suite};
+use sensai_trace::Composite::{Attention, Mlp};
+use sensai_trace::Graph;
 
 pub fn config() -> Config {
-    models::small::nanogpt()
+    sensai_models::small::nanogpt()
 }
 
 pub fn release() -> Graph {

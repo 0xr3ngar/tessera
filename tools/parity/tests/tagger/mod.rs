@@ -1,12 +1,12 @@
 //! spaCy's small English tagger.
 
-use models::tagger::{Config, program};
-use parity::{Spec, suite};
-use trace::Graph;
+use sensai_models::tagger::{Config, program};
+use sensai_parity::{Spec, suite};
+use sensai_trace::Graph;
 
 /// Two features of eight rows, one window layer.
 fn small() -> Graph {
-    program(&models::small::tagger())
+    program(&sensai_models::small::tagger())
 }
 
 fn release() -> Graph {

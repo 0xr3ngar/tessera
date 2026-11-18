@@ -1,13 +1,13 @@
 //! Whole-plan speed over shapes many models share, for comparisons.
 
 use crate::grid::{bounded, fill, opened};
-use engine::Error;
-use graph::DimName::{self, Context, Rows, Seqs};
-use graph::Graph;
-use lower::{Device, Settings, Tensor, View, lower};
+use sensai_engine::Error;
+use sensai_graph::DimName::{self, Context, Rows, Seqs};
+use sensai_graph::Graph;
+use sensai_lower::{Device, Settings, Tensor, View, lower};
+use sensai_testkit::Noise;
+use sensai_testkit::graphs::{attention, linear};
 use std::time::Instant;
-use testkit::Noise;
-use testkit::graphs::{attention, linear};
 
 /// Rows, depth and width of each matmul timed.
 const GEMMS: [[u64; 3]; 20] = [
