@@ -224,6 +224,9 @@ impl Group<'_, '_> {
                 }
                 v
             }
+            // The right side runs only where it decides the result.
+            Expr::Bin(BinOp::And, a, b) => self.branch(a, b, &Expr::Bool(false), mask),
+            Expr::Bin(BinOp::Or, a, b) => self.branch(a, &Expr::Bool(true), b, mask),
             Expr::Bin(op, a, b) => {
                 let (va, vb) = (self.eval(a, mask), self.eval(b, mask));
                 va.into_iter()
@@ -281,20 +284,23 @@ impl Group<'_, '_> {
                 };
                 v.into_iter().map(|x| Val::F(x.v()[i])).collect()
             }
-            Expr::Select(c, a, b) => {
-                // A branch runs where taken: its loads may be unsafe.
-                let c = self.eval(c, mask);
-                let yes: Vec<bool> = (0..n).map(|t| mask[t] && c[t].b()).collect();
-                let no: Vec<bool> = (0..n).map(|t| mask[t] && !c[t].b()).collect();
-                let (va, vb) = (self.eval(a, &yes), self.eval(b, &no));
-                c.into_iter()
-                    .zip(va.into_iter().zip(vb))
-                    .map(|(c, (x, y))| if c.b() { x } else { y })
-                    .collect()
-            }
+            Expr::Select(c, a, b) => self.branch(c, a, b, mask),
             Expr::Call(i, args) => self.call(*i, args, mask),
             Expr::Fn(name, ..) => panic!("`{name}` runs on the device: forms unpack on the host"),
         }
+    }
+
+    /// `if c { a } else { b }`, each side only where taken.
+    fn branch(&mut self, c: &Expr, a: &Expr, b: &Expr, mask: &[bool]) -> Vec<Val> {
+        let c = self.eval(c, mask);
+        let n = mask.len();
+        let yes: Vec<bool> = (0..n).map(|t| mask[t] && c[t].b()).collect();
+        let no: Vec<bool> = (0..n).map(|t| mask[t] && !c[t].b()).collect();
+        let (va, vb) = (self.eval(a, &yes), self.eval(b, &no));
+        c.into_iter()
+            .zip(va.into_iter().zip(vb))
+            .map(|(c, (x, y))| if c.b() { x } else { y })
+            .collect()
     }
 
     fn call(&mut self, i: Intrinsic, args: &[Expr], mask: &[bool]) -> Vec<Val> {

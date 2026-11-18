@@ -318,15 +318,11 @@ impl Lowerer<'_, '_> {
 
     fn binary(&mut self, op: BinOp, a: &Expr, b: &Expr, t: Value) -> Res<Val> {
         let (ta, tb) = (self.ty(a)?, self.ty(b)?);
-        if matches!(op, BinOp::And | BinOp::Or) {
-            let (a, b) = (
-                self.expr_as(a, Ty::Bool, t)?.scalar()?,
-                self.expr_as(b, Ty::Bool, t)?.scalar()?,
-            );
-            return Ok(Val::S(match op {
-                BinOp::And => self.b.ins().band(a, b),
-                _ => self.b.ins().bor(a, b),
-            }));
+        // The right side runs only where it decides the result.
+        match op {
+            BinOp::And => return self.select(a, b, &Expr::Bool(false), t),
+            BinOp::Or => return self.select(a, &Expr::Bool(true), b, t),
+            _ => {}
         }
         let w = wider(ta, tb);
         let (a, b) = (self.expr_as(a, w, t)?, self.expr_as(b, w, t)?);
