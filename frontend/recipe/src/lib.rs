@@ -1,0 +1,116 @@
+//! A recipe: weights, lowering choices and serve flags.
+
+mod hub;
+#[cfg(test)]
+mod lib_test;
+mod source;
+#[cfg(test)]
+mod source_test;
+
+pub use source::Source;
+
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
+
+/// What stops a recipe from opening.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}: {1}")]
+    Io(PathBuf, std::io::Error),
+    #[error("{0}: {1}")]
+    Toml(PathBuf, toml::de::Error),
+    #[error("{0}: {1}")]
+    Source(String, &'static str),
+    #[error("{0}: {1}")]
+    Command(String, String),
+    #[error("{0}: {1}")]
+    Http(String, String),
+    #[error("weights need exactly one of path or hf")]
+    Weights,
+    #[error("no cache directory: set TESSERA_RECIPES")]
+    NoCache,
+}
+
+/// Where a recipe's weights come from.
+#[derive(Debug, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Weights {
+    /// A local directory, relative to the recipe.
+    pub path: Option<PathBuf>,
+    /// `owner/name@commit` on Hugging Face.
+    pub hf: Option<String>,
+}
+
+/// One `recipe.toml`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Recipe {
+    pub name: String,
+    pub weights: Weights,
+    /// Weight-name rules, relative to the recipe.
+    pub names: Option<PathBuf>,
+    /// Lowering choices. `None` keeps the model's own.
+    pub lower: Option<engine::Recipe>,
+    /// Serve flags by name, with `_` for `-`.
+    #[serde(default)]
+    pub serve: toml::Table,
+    /// The directory the recipe was read from.
+    #[serde(skip)]
+    pub dir: PathBuf,
+}
+
+impl Recipe {
+    /// Reads `source`, cloned into `cache` when remote.
+    pub fn open(source: &str, cache: Option<&Path>) -> Result<Self, Error> {
+        let dir = Source::parse(source)?.resolve(cache)?;
+        Self::read(&dir)
+    }
+
+    /// Reads `recipe.toml` in `dir`.
+    pub fn read(dir: &Path) -> Result<Self, Error> {
+        let path = dir.join("recipe.toml");
+        let text = std::fs::read_to_string(&path).map_err(io(&path))?;
+        let mut recipe: Recipe = toml::from_str(&text).map_err(|e| Error::Toml(path, e))?;
+        recipe.dir = dir.to_path_buf();
+        Ok(recipe)
+    }
+
+    /// The weight-name rules file, if the recipe has one.
+    pub fn names(&self) -> Option<PathBuf> {
+        self.names.as_ref().map(|n| self.dir.join(n))
+    }
+
+    /// The weights directory, fetched into `cache` when remote.
+    pub fn weights(&self, cache: Option<&Path>) -> Result<PathBuf, Error> {
+        match (&self.weights.path, &self.weights.hf) {
+            (Some(path), None) => Ok(self.dir.join(path)),
+            (None, Some(hf)) => hub::snapshot(hf, cache.ok_or(Error::NoCache)?),
+            _ => Err(Error::Weights),
+        }
+    }
+
+    /// `[serve]` as `--flag` and value. `true` gives a bare flag.
+    pub fn flags(&self) -> Vec<(String, Option<String>)> {
+        let mut flags = Vec::new();
+        for (key, value) in &self.serve {
+            let flag = format!("--{}", key.replace('_', "-"));
+            match value {
+                toml::Value::Boolean(false) => {}
+                toml::Value::Boolean(true) => flags.push((flag, None)),
+                toml::Value::String(s) => flags.push((flag, Some(s.clone()))),
+                other => flags.push((flag, Some(other.to_string()))),
+            }
+        }
+        flags
+    }
+}
+
+/// Tags an IO failure with its path.
+fn io(path: &Path) -> impl FnOnce(std::io::Error) -> Error + '_ {
+    move |e| Error::Io(path.to_path_buf(), e)
+}
+
+/// Whether `text` is a full 40-digit commit hash.
+fn pinned(text: &str) -> bool {
+    text.len() == 40 && text.bytes().all(|b| b.is_ascii_hexdigit())
+}

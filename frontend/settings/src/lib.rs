@@ -12,6 +12,7 @@ struct Env {
     costs: Option<PathBuf>,
     check: Option<PathBuf>,
     names: Option<PathBuf>,
+    recipes: Option<PathBuf>,
     emulate: Option<Backend>,
     verbs: Option<String>,
     /// Bytes, maybe suffixed K, M, G or T, or `off`.
@@ -32,12 +33,14 @@ pub fn read() -> Settings {
     let cache = |dir: &str| Some(std::env::home_dir()?.join(".cache/tessera").join(dir));
     let costs = env.costs.or_else(|| cache("costs"));
     let check = env.check.or_else(|| cache("check"));
+    let recipes = env.recipes.or_else(|| cache("recipes"));
     Settings {
         backend,
         host_lanes: env.lanes.unwrap_or(32),
         costs,
         check,
         names: env.names,
+        recipes,
         emulate: env.emulate,
         verbs: env.verbs,
         memory: env.memory.map_or(Memory::Device, |m| memory(&m)),

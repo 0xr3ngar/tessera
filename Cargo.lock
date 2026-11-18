@@ -245,6 +245,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cli"
+version = "0.1.0"
+dependencies = [
+ "frontend-settings",
+ "recipe",
+ "serve",
+]
+
+[[package]]
 name = "codegen"
 version = "0.1.0"
 dependencies = [
@@ -1717,6 +1726,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "recipe"
+version = "0.1.0"
+dependencies = [
+ "engine",
+ "serde",
+ "thiserror",
+ "toml",
+ "ureq",
+]
+
+[[package]]
 name = "regalloc2"
 version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2390,6 +2410,8 @@ dependencies = [
  "once_cell",
  "rustls",
  "rustls-pki-types",
+ "serde",
+ "serde_json",
  "url",
  "webpki-roots 0.26.11",
 ]
