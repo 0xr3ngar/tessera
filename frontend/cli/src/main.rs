@@ -48,6 +48,12 @@ fn options(
         options.name = Some(r.name.clone());
         options.lower = r.lower.clone();
         options.names = r.names();
+        if let Some(path) = r.module() {
+            let failed = |e: String| Stop::Failed(format!("{}: {e}", path.display()));
+            let bytes = std::fs::read(&path).map_err(|e| failed(e.to_string()))?;
+            let rules = engine::wasm::load(&bytes).map_err(|e| failed(e.to_string()))?;
+            options.lower.get_or_insert_default().rules.extend(rules);
+        }
         for (flag, value) in r.flags() {
             apply(&mut options, &flag, value)?;
         }

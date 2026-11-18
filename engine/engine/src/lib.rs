@@ -29,6 +29,7 @@ pub use mem::{block, trellis};
 pub use models::{Stack, clip, decoder, eg2, flux2, mla, sprite, tagger, vae};
 pub use run::gpu;
 pub use trace::{Linear, Norm};
+pub use wasm;
 
 /// Tokens to continue, and when to stop.
 #[derive(Default, Serialize, Deserialize)]
