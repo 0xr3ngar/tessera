@@ -1,6 +1,7 @@
 //! The choices lowering takes, as data a search can edit.
 
 use crate::form::Pins;
+use crate::rule::Rule;
 use codegen::kept::{self, Layout};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::Path;
@@ -23,6 +24,9 @@ pub struct Recipe {
     /// Where kept rows lie, by slot and position.
     #[serde(default = "dense", with = "by_name")]
     pub kept: &'static dyn Layout,
+    /// Rules made at run time, beside the linked ones.
+    #[serde(skip)]
+    pub rules: Vec<&'static Rule>,
 }
 
 fn dense() -> &'static dyn Layout {
@@ -69,6 +73,7 @@ impl Default for Recipe {
             barred: Vec::new(),
             launch: Launching::default(),
             kept: dense(),
+            rules: Vec::new(),
         }
     }
 }

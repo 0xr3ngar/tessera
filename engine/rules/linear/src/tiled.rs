@@ -238,11 +238,8 @@ fn tiled_load(t: &Tiled, _: usize) -> Option<Load> {
     let (mf, nf) = (m as f64, n as f64);
     let (gm, gn) = t.groups();
     let (_, _, bk) = t.schedule.block;
-    // Each operand is re-read once per group across it.
-    let mut reads = vec![
-        4.0 * mf * k as f64 * gn as f64,
-        form.bytes(n * k) as f64 * gm as f64,
-    ];
+    // Neighbouring groups share `x` rows. `w` streams per row.
+    let mut reads = vec![4.0 * mf * k as f64, form.bytes(n * k) as f64 * gm as f64];
     reads.extend((0..t.product.after.others()).map(|_| 4.0 * mf * nf));
     Some(Load {
         threads: gm * gn * t.schedule.threads(),
@@ -252,6 +249,7 @@ fn tiled_load(t: &Tiled, _: usize) -> Option<Load> {
         reads,
         written: 4.0 * mf * nf,
         flight: 16.0,
+        ..Load::default()
     })
 }
 

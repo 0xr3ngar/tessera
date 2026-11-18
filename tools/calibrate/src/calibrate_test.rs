@@ -110,7 +110,7 @@ fn fake(probe: Probe) -> Reading {
         Kind::Write => 4.0 * threads * trips / 90e9,
         Kind::Chase => trips * 400e-9,
         // 1e13 tile flops a second.
-        Kind::Tile => threads / 32.0 * trips * 65_536.0 / 1e13,
+        Kind::Tile => threads / 32.0 * trips * 16_384.0 / 1e13,
     };
     Reading { probe, seconds }
 }
@@ -125,7 +125,7 @@ fn probes_fit_pools() {
     assert!(near(fit.wait, 300e-9) && near(fit.near, 40e-9));
     assert!(near(fit.read, 100e9) && near(fit.scan, 80e9));
     assert!(near(fit.write, 90e9) && near(fit.tile, 1e13), "{fit:?}");
-    assert_eq!(fit.pool("a made-up chip").constants().len(), 13);
+    assert_eq!(fit.pool("a made-up chip").constants().len(), 21);
 }
 
 #[test]

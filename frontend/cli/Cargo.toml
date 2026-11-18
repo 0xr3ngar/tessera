@@ -1,0 +1,22 @@
+[package]
+name = "cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "The tessera command: open a recipe, then serve or fetch it"
+
+[[bin]]
+name = "tessera"
+path = "src/main.rs"
+
+[features]
+default = []
+cuda = ["serve/cuda"]
+rocm = ["serve/rocm"]
+
+[dependencies]
+engine = { workspace = true }
+frontend-settings = { workspace = true }
+recipe = { workspace = true }
+serve = { workspace = true }

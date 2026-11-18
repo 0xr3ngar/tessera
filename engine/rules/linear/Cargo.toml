@@ -18,6 +18,7 @@ kernels = { workspace = true }
 lower = { workspace = true }
 
 [dev-dependencies]
+sim = { workspace = true }
 testkit = { workspace = true }
 interp = { workspace = true }
 gpukit = { workspace = true }

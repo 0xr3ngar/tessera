@@ -1,0 +1,232 @@
+//! Loads one model on a thread and serves HTTP.
+
+use crate::{Model, Slot};
+use engine::{Batch, Engine, Fair, Pins, Recipe, Settings};
+use std::net::TcpListener;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
+use std::time::Instant;
+use tasks::api::{Embed, Info, Paint, Tokens};
+use tasks::klein::Klein;
+use tasks::paint::Painter;
+use tasks::{Generate, Job, Queued, Threaded, Worker};
+
+/// The flags `Options::flag` and `Options::switch` take.
+pub const FLAGS: &str = "[--host <addr>] [--port <n>] [--max-model-len <tokens>] [--slots <n>] \
+[--served-model-name <name>] [--task generate|embed|paint|klein] [--image-size <px>] \
+[--max-connections <n>] [--reject-unknown-fields]";
+
+/// What the loaded model serves.
+#[derive(Clone, Copy, PartialEq)]
+enum Task {
+    Generate,
+    Embed,
+    /// Pictures. The model directory holds the weights and `clip/`.
+    Paint,
+    /// FLUX.2 klein pictures. The model is the diffusers repository.
+    Klein,
+}
+
+/// One painter as both of the traits the routes read.
+fn painter<P: Paint + Tokens + 'static>(p: P, set: impl FnOnce(Arc<dyn Tokens>, Arc<dyn Paint>)) {
+    let p = Arc::new(p);
+    set(p.clone(), p);
+}
+
+pub struct Options {
+    pub model: PathBuf,
+    pub host: String,
+    pub port: u16,
+    /// Tokens one answer holds, prompt included.
+    pub max_model_len: usize,
+    /// Answers in flight at once.
+    pub slots: usize,
+    pub name: Option<String>,
+    task: Task,
+    /// Unknown request fields refuse the request.
+    pub strict: bool,
+    pub max_connections: usize,
+    /// The largest picture klein paints, in pixels a side.
+    pub image_size: usize,
+    /// Lowering choices. Empty pins take the model's own.
+    pub lower: Option<Recipe>,
+    /// Weight-name rules, ahead of `TESSERA_NAMES`.
+    pub names: Option<PathBuf>,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            model: PathBuf::new(),
+            host: "127.0.0.1".into(),
+            port: 8080,
+            max_model_len: 4096,
+            slots: 4,
+            name: None,
+            task: Task::Generate,
+            strict: false,
+            max_connections: 64,
+            image_size: 512,
+            lower: None,
+            names: None,
+        }
+    }
+}
+
+impl Options {
+    /// Takes a flag with no value. `false` if unknown.
+    pub fn switch(&mut self, flag: &str) -> bool {
+        let known = flag == "--reject-unknown-fields";
+        self.strict |= known;
+        known
+    }
+
+    /// Takes `flag value`. `None` if either is bad.
+    pub fn flag(&mut self, flag: &str, value: String) -> Option<()> {
+        match flag {
+            "--host" => self.host = value,
+            "--port" => self.port = value.parse().ok()?,
+            "--max-model-len" => self.max_model_len = value.parse().ok()?,
+            "--slots" => self.slots = value.parse().ok()?,
+            "--max-connections" => self.max_connections = value.parse().ok()?,
+            "--served-model-name" => self.name = Some(value),
+            "--task" if value == "generate" => self.task = Task::Generate,
+            "--task" if value == "embed" => self.task = Task::Embed,
+            "--task" if value == "paint" => self.task = Task::Paint,
+            "--task" if value == "klein" => self.task = Task::Klein,
+            "--image-size" => self.image_size = value.parse().ok()?,
+            _ => return None,
+        }
+        Some(())
+    }
+}
+
+/// Loads the model, then answers requests until killed.
+pub fn run(options: Options) -> Result<(), String> {
+    let slot: Slot = Arc::new(OnceLock::new());
+    let (host, port) = (options.host.clone(), options.port);
+    let limits = crate::http::Limits {
+        max_connections: options.max_connections,
+        ..Default::default()
+    };
+    let loading = slot.clone();
+    std::thread::spawn(move || load(options, loading));
+    let listener = TcpListener::bind((host.as_str(), port)).map_err(|e| e.to_string())?;
+    eprintln!("listening on {host}:{port}");
+    crate::http::run(listener, limits, move |request| {
+        crate::route(&slot, request)
+    });
+    Ok(())
+}
+
+/// The lowering choices, with the model's pins by default.
+fn lowering(options: &Options, pins: Option<Pins>) -> Recipe {
+    let mut recipe = options.lower.clone().unwrap_or_default();
+    if recipe.pins == Pins::default() {
+        recipe.pins = pins.unwrap_or_else(|| Pins::all(engine::form::BF16_FORM));
+    }
+    recipe
+}
+
+/// Loads the generator, fills `slot`, then steps jobs.
+fn engine_thread(o: &Options, settings: &Settings, info: Info, slot: &Slot) -> Result<(), String> {
+    let start = Instant::now();
+    let rules = match &settings.names {
+        Some(path) => std::fs::read_to_string(path)
+            .map_err(|e| e.to_string())
+            .and_then(|text| bundle::names::rules(&text).map_err(|e| e.to_string()))?,
+        None => Vec::new(),
+    };
+    let (slots, context) = (o.slots as u64, o.max_model_len as u64);
+    let loaded = bundle::load_named(&o.model, slots, context, &rules).map_err(|e| e.to_string())?;
+    let recipe = lowering(o, loaded.pins);
+    let opened = Engine::open(loaded.graph, o.max_model_len, &recipe, settings);
+    let mut engine = opened.map_err(|e| e.to_string())?;
+    engine.load(&loaded.weights).map_err(|e| e.to_string())?;
+    let seconds = start.elapsed().as_secs_f64();
+    eprintln!("{}: loaded in {seconds:.1} s", engine.device());
+    let generate = Arc::new(Generate {
+        tokenizer: loaded.tokenizer,
+        template: loaded.template,
+        stop: loaded.stop,
+    });
+    let (queue, jobs) = mpsc::channel::<Job>();
+    let queued = Queued {
+        generate: generate.clone(),
+        jobs: Mutex::new(queue),
+    };
+    let model = Model {
+        info,
+        tokens: generate.clone(),
+        chat: Some(generate),
+        generator: Some(Arc::new(queued)),
+        embed: None,
+        paint: None,
+        strict: o.strict,
+    };
+    let _ = slot.set(model);
+    let mut batch = Batch::new(&mut engine, Box::new(Fair));
+    loop {
+        // Takes every job that has arrived. Waits only when idle.
+        let job = match batch.busy() {
+            true => jobs.try_recv().ok(),
+            false => match jobs.recv() {
+                Ok(job) => Some(job),
+                Err(_) => return Ok(()),
+            },
+        };
+        if let Some((request, sink)) = job {
+            batch.submit(request, sink);
+            continue;
+        }
+        batch.step().map_err(|e| e.to_string())?;
+    }
+}
+
+/// Loads the model into `slot`. A failure ends the process.
+fn load(options: Options, slot: Slot) {
+    let mut settings = frontend_settings::read();
+    settings.names = options.names.clone().or(settings.names);
+    let info = Info {
+        name: options
+            .name
+            .clone()
+            .unwrap_or_else(|| options.model.display().to_string()),
+        context: options.max_model_len,
+    };
+    let strict = options.strict;
+    // A task the worker thread serves, by its traits.
+    let set = |info, tokens: Arc<dyn Tokens>, embed, paint| {
+        let chat = None;
+        let generator = None;
+        let model = Model {
+            info,
+            tokens,
+            chat,
+            generator,
+            embed,
+            paint,
+            strict,
+        };
+        let _ = slot.set(model);
+    };
+    let failed = match options.task {
+        Task::Generate => engine_thread(&options, &settings, info, &slot),
+        Task::Embed => Threaded::open(options.model, settings)
+            .map(|e| {
+                let e = Arc::new(e);
+                set(info, e.clone(), Some(e as Arc<dyn Embed>), None);
+            })
+            .map_err(|e| e.to_string()),
+        Task::Paint => Worker::<Painter>::open(options.model, settings, options.slots)
+            .map(|p| painter(p, |t, p| set(info, t, None, Some(p))))
+            .map_err(|e| e.to_string()),
+        Task::Klein => Worker::<Klein>::open(options.model, settings, options.image_size)
+            .map(|p| painter(p, |t, p| set(info, t, None, Some(p))))
+            .map_err(|e| e.to_string()),
+    };
+    if let Err(e) = failed {
+        eprintln!("tessera: {e}");
+        std::process::exit(1);
+    }
+}

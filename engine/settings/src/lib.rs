@@ -44,6 +44,8 @@ pub struct Settings {
     pub check: Option<PathBuf>,
     /// A JSON file of weight-name rules, applied last.
     pub names: Option<PathBuf>,
+    /// Where fetched recipes and their weights are kept.
+    pub recipes: Option<PathBuf>,
     /// The GPU whose tile rounding the host imitates.
     pub emulate: Option<Backend>,
     /// RDMA port specs the loopback tests run over.
@@ -60,6 +62,7 @@ impl Default for Settings {
             costs: None,
             check: None,
             names: None,
+            recipes: None,
             emulate: None,
             verbs: None,
             memory: Memory::Device,

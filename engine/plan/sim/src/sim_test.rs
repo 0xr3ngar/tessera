@@ -1,6 +1,6 @@
 use crate::known::{known, m3_pro};
 use crate::nvidia::gb10;
-use crate::{Chip, Const, Fit, Limit, Load, Ops, Pool, Tag};
+use crate::{Chip, Fit, Limit, Load, Ops, Pool, Tag};
 
 /// The Radeon 8060S of a Ryzen AI Max, through ROCm.
 fn strix_halo() -> Pool {
@@ -18,6 +18,7 @@ fn strix_halo() -> Pool {
         scan: 1.19e11,
         write: 2.04e11,
         tile: 1.5e13,
+        ..Fit::default()
     };
     fit.pool("rocm Radeon 8060S")
 }
@@ -74,24 +75,26 @@ fn gb10_streams_and_stalls() {
     assert!(measured.count() > constants.len() / 2);
 }
 
-fn pool() -> Pool {
-    let c = |value| Const::measured(value, "a test value");
-    Pool {
-        name: "a test pool".into(),
-        floor: c(3e-6),
-        spawn: c(1e-10),
-        step: c(20e-9),
-        curve: c(60e-9),
-        rate: c(400e9),
-        wait: c(300e-9),
-        near: c(40e-9),
-        cache: c(8e6),
-        cached: c(250e9),
-        read: c(125e9),
-        scan: c(100e9),
-        write: c(110e9),
-        tile: c(0.0),
+fn fit() -> Fit {
+    Fit {
+        floor: 3e-6,
+        spawn: 1e-10,
+        step: 20e-9,
+        curve: 60e-9,
+        rate: 400e9,
+        wait: 300e-9,
+        near: 40e-9,
+        cache: 8e6,
+        cached: 250e9,
+        read: 125e9,
+        scan: 100e9,
+        write: 110e9,
+        ..Fit::default()
     }
+}
+
+fn pool() -> Pool {
+    fit().pool("a test pool")
 }
 
 #[test]
@@ -193,4 +196,41 @@ fn ring_rounds() {
     let ring = c.all_reduce(&[0, b, d], 3e6).unwrap();
     assert!((ring - 4.0 * (1e-5 + 1e-3)).abs() < 1e-9, "{ring}");
     assert_eq!(c.all_reduce(&[0, d, b], 3e6), None);
+}
+
+#[test]
+fn residency_sets_waves() {
+    let fit = Fit {
+        tile: 1e15,
+        cores: 1.0,
+        store: 64e3,
+        resident: 1024.0,
+        held: 128.0,
+        mma: 1e-9,
+        spill: 1e-6,
+        ..fit()
+    };
+    let chip = fit.pool("a resident pool");
+    let tiled = |group_bytes, held| Load {
+        threads: 1024,
+        group: 128,
+        trips: 100.0,
+        trip: Ops {
+            tile_flops: 500.0,
+            held,
+            ..Ops::default()
+        },
+        group_bytes,
+        ..Load::default()
+    };
+    let wave = 100.0 * 500.0 * 1e-9;
+    let start = 3e-6 + 1024.0 * 1e-10;
+    let seconds = |bytes, held| chip.estimate(&tiled(bytes, held)).seconds - start;
+    // Eight groups fit the store at once, then four.
+    assert!((seconds(8e3, 0.0) - wave).abs() < 1e-12);
+    assert!((seconds(16e3, 0.0) - 2.0 * wave).abs() < 1e-12);
+    // Registers share the store, and past the cap they spill.
+    assert!((seconds(8e3, 64.0) - 8.0 * wave).abs() < 1e-12);
+    let spilled = 8.0 * 100.0 * (200.0 - 56e3 / 512.0) * 1e-6;
+    assert!((seconds(8e3, 200.0) - 8.0 * wave - spilled).abs() < 1e-9);
 }

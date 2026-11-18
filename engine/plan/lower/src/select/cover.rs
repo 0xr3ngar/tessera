@@ -141,7 +141,7 @@ impl Cover<'_> {
         let (mut best, mut offered): (Option<Choice>, _) = (None, Vec::new());
         let mut proposed = false;
         for rule in self.rules.clone() {
-            let Some(drafts) = (rule.propose)(self.tree, t) else {
+            let Some(drafts) = rule.propose.at(self.tree, t) else {
                 continue;
             };
             proposed = true;
@@ -232,7 +232,7 @@ impl Cover<'_> {
             if n == t {
                 continue;
             }
-            let Some(drafts) = (favorite.propose)(self.tree, n) else {
+            let Some(drafts) = favorite.propose.at(self.tree, n) else {
                 continue;
             };
             if drafts.iter().all(|d| fits(d, kind)) {

@@ -9,6 +9,9 @@ use std::collections::HashMap;
 /// Bytes in a cache line.
 const LINE: f64 = 64.0;
 
+/// Registers a tile kernel holds besides tiles. M3 fit.
+const HELD: f64 = 48.0;
+
 /// How an address moves with the loop variable, per trip.
 #[derive(Clone, Copy, PartialEq)]
 enum Advance {
@@ -78,6 +81,7 @@ impl Counter {
         t.loads += ops.loads * n;
         t.stores += ops.stores * n;
         t.tile_flops += ops.tile_flops * n;
+        t.shared += ops.shared * n;
         t.f16 += ops.f16 * n;
         t.e4m3 += ops.e4m3 * n;
         t.e2m1 += ops.e2m1 * n;
@@ -326,14 +330,17 @@ impl Counter {
                 let Some((rows, cols)) = self.tiles.get(acc).copied() else {
                     panic!("`{acc}` is not a tile block");
                 };
+                let lane = |n: usize| n as f64 / LANES as f64;
                 // A lane's share of the block's multiply-adds, as tile flops.
                 self.add(Ops {
-                    tile_flops: (2 * rows * cols * depth) as f64 / LANES as f64,
-                    float: (rows * cols) as f64 / LANES as f64,
-                    loads: ((rows + cols) * depth) as f64 / LANES as f64,
-                    width: 4.0,
+                    tile_flops: lane(2 * rows * cols * depth),
+                    float: lane(rows * cols),
+                    shared: lane((rows + cols) * depth),
                     ..Ops::default()
                 });
+                // Sums twice over, and every unrolled operand at once.
+                let held = lane(2 * rows * cols + (rows + cols) * depth) + HELD;
+                self.trip.held = self.trip.held.max(held);
             }
             Stmt::TileEach { body, .. } => self.stmts(body),
             Stmt::TileZero { .. } => {}

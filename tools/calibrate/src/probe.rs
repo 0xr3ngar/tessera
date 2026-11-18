@@ -132,20 +132,21 @@ fn probe_chase(x: Buf<U32>, mut out: BufMut<U32>, threads: u32, trips: u32, len:
     out[gid() as u64] = at;
 }
 
-/// Repeats a SIMD group's 32x32 block over 32 staged columns.
+/// Repeats a SIMD group's 16x16 block over 32 staged columns.
 #[kernel]
 fn probe_tile(x: Buf<F32>, mut out: BufMut<F32>, threads: u32, trips: u32, len: u32) {
     if gid() >= threads {
         return;
     }
-    let mut s = shared::<f32>(64 * 36);
-    for i in (lid()..64 * 36).by(256) {
+    let mut s = shared::<f32>(32 * 36);
+    for i in (lid()..32 * 36).by(256) {
         s[i] = x[i as u64];
     }
     barrier();
-    let mut acc = tiles(32, 32);
+    // A larger block spills on an M3.
+    let mut acc = tiles(16, 16);
     for it in 0..trips {
-        acc.block(&s, 0, &s, 32 * 36, 36, 32);
+        acc.block(&s, 0, &s, 16 * 36, 36, 32);
     }
     let mut sum = 0.0f32;
     acc.each(|r, c, v| {
@@ -164,7 +165,7 @@ impl Probe {
             Kind::Scan => [all, self.threads],
             Kind::Write => [16, all.max(self.threads)],
             Kind::Chase => [CHASE, self.threads],
-            Kind::Tile => [64 * 36, self.threads],
+            Kind::Tile => [32 * 36, self.threads],
         }
     }
 
@@ -372,8 +373,8 @@ pub fn fit(readings: &[Reading]) -> Fit {
     let wait = of(Kind::Read { depth: 1 }, 256, LARGE).per_trip();
     let near = (of(Kind::Scan, 256, SMALL).per_trip() - step).max(0.0);
     let curve = (of(Kind::Curve, 256, 0).seconds - floor) / 4096.0;
-    // A SIMD group's trip does 65536 tile flops.
-    let tiles = |r: &Reading| (r.probe.threads / 32 * r.probe.trips) as f64 * 65_536.0;
+    // A SIMD group's trip does 16384 tile flops.
+    let tiles = |r: &Reading| (r.probe.threads / 32 * r.probe.trips) as f64 * 16_384.0;
     Fit {
         floor,
         spawn,
@@ -389,6 +390,7 @@ pub fn fit(readings: &[Reading]) -> Fit {
         scan: fastest(&|r| scans(r) && r.bytes() == LARGE, &bytes),
         write: fastest(&|r| r.probe.kind == Kind::Write, &bytes),
         tile: fastest(&|r| r.probe.kind == Kind::Tile, &tiles),
+        ..Fit::default()
     }
 }
 

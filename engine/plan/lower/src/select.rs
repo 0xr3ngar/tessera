@@ -11,7 +11,7 @@ use crate::error::Uncovered;
 use crate::form::{self, Load};
 use crate::kernel::KernelRef;
 use crate::plan::Share;
-use crate::rule::{Read, linked, rules};
+use crate::rule::{Read, linked};
 use crate::tree::{T, Term, Tree};
 use crate::{Error, Unsupported};
 use graph::{DimName, Graph, NodeId, View};
@@ -109,7 +109,7 @@ pub(crate) fn select_upto(
     upto: &[DimName],
     device: &Device,
 ) -> Result<Selected, Error> {
-    let rules = rules();
+    let rules = device.rules();
     linked(&rules)?;
     let (parts, rank) = (device.division(), device.rank);
     let tree = Tree::upto(

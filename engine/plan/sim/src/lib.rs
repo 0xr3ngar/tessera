@@ -66,6 +66,10 @@ pub struct Ops {
     pub width: f64,
     /// Flops done on the matrix unit, with f32 operands.
     pub tile_flops: f64,
+    /// Floats loaded from group memory into tiles.
+    pub shared: f64,
+    /// Registers each thread holds for tiles. Zero: unknown.
+    pub held: f64,
     /// Fields read as narrow floats, counted per format.
     pub f16: f64,
     pub e4m3: f64,
@@ -111,6 +115,8 @@ pub struct Load {
     pub written: f64,
     /// Bytes one thread waits on at a time.
     pub flight: f64,
+    /// Group memory each group of threads takes.
+    pub group_bytes: f64,
 }
 
 impl Load {
@@ -145,6 +151,8 @@ pub enum Limit {
     Read,
     /// Bytes from cache.
     Cache,
+    /// Bytes from group memory.
+    Shared,
     Write,
 }
 
