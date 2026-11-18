@@ -187,6 +187,7 @@ impl Probe {
             write: slot(1, write),
             covers: Vec::new(),
             zone: 0,
+            table: None,
         };
         Plan {
             buffers: vec![4 * read, 4 * write],

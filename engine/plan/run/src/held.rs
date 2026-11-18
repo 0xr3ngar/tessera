@@ -5,6 +5,14 @@ use lower::{Plan, Slot};
 use mem::{Buffer, View, ViewMut};
 use std::collections::HashMap;
 
+/// What owns a buffer that outlives a plan.
+#[derive(Clone, Copy)]
+enum Owner {
+    Weight((u32, Option<u8>)),
+    Kept(u32),
+    Table,
+}
+
 /// Buffers that outlive one plan.
 #[derive(Default)]
 pub struct Held {
@@ -13,6 +21,8 @@ pub struct Held {
     /// By weight, and part when a file splits.
     weights: HashMap<(u32, Option<u8>), usize>,
     kept: HashMap<u32, usize>,
+    /// The page table, when kept rows are paged.
+    table: Option<usize>,
     /// Where each of the plan's buffers lies in `all`.
     bound: Vec<usize>,
 }
@@ -50,7 +60,7 @@ impl Held {
         self.all[at].view_mut(slot.start(), slot.form.dtype(), vec![slot.len])
     }
 
-    /// Binds `plan`'s buffers. Weights and kept rows stay as loaded.
+    /// Binds `plan`'s buffers. Weights, kept rows and tables stay.
     pub fn bind(
         &mut self,
         plan: &Plan,
@@ -58,7 +68,8 @@ impl Held {
     ) -> Result<(), Error> {
         let old = std::mem::take(&mut self.all).into_iter().map(Some);
         let mut old: Vec<Option<Buffer>> = old.collect();
-        for at in self.weights.values_mut().chain(self.kept.values_mut()) {
+        let named = self.weights.values_mut().chain(self.kept.values_mut());
+        for at in named.chain(&mut self.table) {
             self.all.push(old[*at].take().expect("each is held once"));
             *at = self.all.len() - 1;
         }
@@ -66,10 +77,13 @@ impl Held {
         let mut spare: Vec<Buffer> = old.into_iter().flatten().collect();
         let mut owner = vec![None; plan.buffers.len()];
         for l in &plan.weights {
-            owner[l.slot.buffer as usize] = Some((false, (l.weight, l.part)));
+            owner[l.slot.buffer as usize] = Some(Owner::Weight((l.weight, l.part)));
         }
         for (index, slot) in &plan.kept {
-            owner[slot.buffer as usize] = Some((true, (*index, None)));
+            owner[slot.buffer as usize] = Some(Owner::Kept(*index));
+        }
+        if let Some(slot) = plan.table {
+            owner[slot.buffer as usize] = Some(Owner::Table);
         }
         self.bound.clear();
         for (b, (&bytes, owner)) in plan.buffers.iter().zip(owner).enumerate() {
@@ -77,8 +91,9 @@ impl Held {
             // Named buffers fit exactly. Scratch may be larger.
             let fits = |buffer: &Buffer| buffer.zone == zone && buffer.bytes() >= bytes;
             let held = match owner {
-                Some((true, (index, _))) => self.kept.get(&index).copied(),
-                Some((false, key)) => self.weights.get(&key).copied(),
+                Some(Owner::Kept(index)) => self.kept.get(&index).copied(),
+                Some(Owner::Weight(key)) => self.weights.get(&key).copied(),
+                Some(Owner::Table) => self.table,
                 None => spare.iter().position(fits).map(|at| {
                     self.all.push(spare.swap_remove(at));
                     self.all.len() - 1
@@ -98,10 +113,11 @@ impl Held {
                 }
             };
             match owner {
-                Some((true, (index, _))) => self.kept.insert(index, at),
-                Some((false, key)) => self.weights.insert(key, at),
-                None => None,
-            };
+                Some(Owner::Kept(index)) => _ = self.kept.insert(index, at),
+                Some(Owner::Weight(key)) => _ = self.weights.insert(key, at),
+                Some(Owner::Table) => self.table = Some(at),
+                None => {}
+            }
             self.bound.push(at);
         }
         Ok(())

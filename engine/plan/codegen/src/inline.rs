@@ -1,6 +1,6 @@
 //! One kernel's tree inlined into another's, at build time.
 
-use crate::ir::{Body, Expr, Helper, Param, Stmt};
+use crate::ir::{Body, Expr, Helper, Intrinsic, Param, Stmt};
 use std::collections::HashMap;
 
 /// The prefix of the fields a kernel's returned group declares.
@@ -180,7 +180,7 @@ impl Inliner {
             };
             names.insert(name, fresh);
         }
-        let renamer = Rename { names };
+        let renamer = Rename { names, call: None };
         pre.extend(body.stmts.iter().map(|s| renamer.stmt(s)));
         for h in body.helpers {
             self.helper(h);
@@ -241,12 +241,24 @@ fn declares(stmts: &[Stmt], out: &mut Vec<String>) {
     }
 }
 
-/// Rewrites a tree with the callee's names replaced.
-struct Rename {
-    names: HashMap<String, String>,
+/// `stmts` with each `intrinsic` call replaced by `with`.
+pub(crate) fn replace(stmts: &[Stmt], intrinsic: Intrinsic, with: Replace<'_>) -> Vec<Stmt> {
+    let names = HashMap::new();
+    let call = Some((intrinsic, with));
+    Rename { names, call }.block(stmts)
 }
 
-impl Rename {
+/// Gives a call's value from its arguments.
+type Replace<'a> = &'a dyn Fn(Vec<Expr>) -> Expr;
+
+/// Rewrites a tree with the callee's names replaced.
+struct Rename<'a> {
+    names: HashMap<String, String>,
+    /// Calls of this intrinsic become the function's value.
+    call: Option<(Intrinsic, Replace<'a>)>,
+}
+
+impl Rename<'_> {
     fn name(&self, name: &str) -> String {
         self.names.get(name).cloned().unwrap_or_else(|| name.into())
     }
@@ -266,7 +278,13 @@ impl Rename {
             Expr::Cast(ty, a) => Expr::Cast(*ty, sub(a)),
             Expr::Index(base, at) => Expr::Index(sub(base), sub(at)),
             Expr::Field(base, h) => Expr::Field(sub(base), *h),
-            Expr::Call(i, args) => Expr::Call(*i, args.iter().map(|a| self.expr(a)).collect()),
+            Expr::Call(i, args) => {
+                let args = args.iter().map(|a| self.expr(a)).collect();
+                match self.call {
+                    Some((to, with)) if to == *i => with(args),
+                    _ => Expr::Call(*i, args),
+                }
+            }
             Expr::Select(c, a, b) => Expr::Select(sub(c), sub(a), sub(b)),
             Expr::Fn(name, ty, args) => Expr::Fn(
                 name.clone(),

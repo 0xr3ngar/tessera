@@ -3,7 +3,6 @@
 use crate::LANES;
 use crate::form::{Load, U8_FORM};
 use crate::ir::{Expr, Intrinsic, Param, Stmt, Ty, element};
-use crate::kept::Layout;
 use std::collections::HashMap;
 
 /// Every name in scope and what it is.
@@ -28,7 +27,6 @@ pub(crate) struct Printer<'a> {
     indent: usize,
     pub(crate) lane: bool,
     pub(crate) params: &'a [Param],
-    pub(crate) layout: Option<&'static dyn Layout>,
     pub(crate) wgsl: bool,
     /// Set when WGSL has no spelling for a part.
     pub(crate) refused: Option<String>,
@@ -39,18 +37,13 @@ pub(crate) struct Printer<'a> {
 }
 
 impl<'a> Printer<'a> {
-    pub(crate) fn new(
-        params: &'a [Param],
-        layout: Option<&'static dyn Layout>,
-        wgsl: bool,
-    ) -> Self {
+    pub(crate) fn new(params: &'a [Param], wgsl: bool) -> Self {
         Printer {
             scope: vec![HashMap::new()],
             lines: Vec::new(),
             indent: 1,
             lane: false,
             params,
-            layout,
             wgsl,
             refused: None,
             used: Vec::new(),

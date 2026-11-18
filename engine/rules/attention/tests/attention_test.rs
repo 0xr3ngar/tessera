@@ -6,6 +6,7 @@ use kernels as _;
 use graph::DimName::{Context, HeadDim, Heads, KvHeads, Rows, Segments, Seqs};
 use graph::{DType, Dim, Graph, Size, TensorType};
 use interp::{Store, Tensor, run, run_kept};
+use lower::kept::{self, Layout};
 use lower::{Device, Settings, View, lower, rules};
 use run::testing::{host, runs};
 use run::{Run, open};
@@ -135,10 +136,25 @@ fn ragged_rows_match_cpu() {
         &[(0, 0, 20), (1, 0, 5), (2, 0, 15)],
         &[(0, 20, 1), (1, 5, 1), (3, 0, 3), (2, 15, 1)],
     ];
+    // Reversed pages: no slot's rows lie where dense ones would.
+    let layouts: [&'static dyn Layout; 2] = [kept::DENSE, &kept::PAGED16];
+    let reversed = |n: usize| {
+        (0..n as u32)
+            .rev()
+            .flat_map(u32::to_le_bytes)
+            .collect::<Vec<u8>>()
+    };
     for (heads, kv_heads, width) in [(2u64, 2u64, 16u64), (4, 2, 64)] {
         let g = ragged(heads, kv_heads, width);
-        let favors = ["flash", "attend"];
-        for (settings, favored) in runs().iter().flat_map(|s| favors.map(|f| (s, f))) {
+        let mut cases = Vec::new();
+        for settings in runs() {
+            for favored in ["flash", "attend"] {
+                for layout in layouts {
+                    cases.push((settings.clone(), favored, layout));
+                }
+            }
+        }
+        for &(ref settings, favored, layout) in &cases {
             let (mut store, mut runner): (Store, Option<Box<dyn Run>>) = (Store::default(), None);
             for runs in launches {
                 let (slots, positions) = rows(runs);
@@ -163,7 +179,8 @@ fn ragged_rows_match_cpu() {
                     (Context, furthest),
                     (Segments, runs.len() as u64),
                 ];
-                let device = Device::guess(settings).favoring(favored);
+                let mut device = Device::guess(settings).favoring(favored);
+                device.kept = layout;
                 let plan = lower(&g, 0, &sizes, &device).unwrap();
                 let names: Vec<&str> = plan.steps.iter().map(|s| s.kernel.name()).collect();
                 let kernel = format!("{favored}_rows");
@@ -173,14 +190,21 @@ fn ragged_rows_match_cpu() {
                         r.replan(&plan).unwrap();
                         r
                     }
-                    None => runner.insert(open(plan, settings).unwrap()),
+                    None => {
+                        let table = plan.table;
+                        let r = runner.insert(open(plan, settings).unwrap());
+                        if let Some(table) = table {
+                            r.held_mut().upload(table, &reversed(table.len)).unwrap();
+                        }
+                        r
+                    }
                 };
                 let views: Vec<_> = inputs.iter().map(|t| t.view()).collect();
                 let got = r.run(&views).unwrap().remove(0);
                 let off = max_abs_diff(got.floats().unwrap(), want[0].floats().unwrap());
                 assert!(
                     off < 1e-3,
-                    "{favored} on {runs:?} at {width}: off by {off:e}"
+                    "{favored} {layout:?} on {runs:?} at {width}: off by {off:e}"
                 );
             }
         }

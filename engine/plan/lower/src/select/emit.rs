@@ -3,6 +3,7 @@
 use crate::Error;
 use crate::Unsupported;
 use crate::form::{self, Load};
+use crate::kept;
 use crate::kernel::{Kernel, KernelRef};
 use crate::kernels::{Move, Scatter, Widen};
 use crate::rule::Draft;
@@ -148,6 +149,8 @@ impl Emit {
         let stride = most.map_or(0, |d| d.size.max() as usize);
         let width: usize = all[2..].iter().product();
         let room = tree.kept.rows(all[0], stride) * width;
+        let entries = kept::entries(tree.kept, all[0], stride);
+        self.out.table = self.out.table.max(entries);
         let len: usize = all.iter().product();
         let write = self.value(len, Home::Kept { index, room }, EDGE, form::F32_FORM);
         let [rows, slots, positions] = args.map(|v| self.bring(v, EDGE));

@@ -53,8 +53,14 @@ fn scatter_launches(k: &Scatter, step: &Step) -> Vec<Launch> {
     let values = k.kept.values(k.slots, k.context);
     let kept = values.into_iter().map(|v| Arg::count(v as usize));
     let args = [step.read(0), step.read(1), step.read(2), step.out()];
+    let table = step.kept(k.kept);
     vec![Launch {
-        args: args.into_iter().chain(sizes).chain(kept).collect(),
+        args: args
+            .into_iter()
+            .chain(table)
+            .chain(sizes)
+            .chain(kept)
+            .collect(),
         shape: Shape::Line(k.rows * k.width),
     }]
 }

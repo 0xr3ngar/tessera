@@ -67,6 +67,8 @@ pub struct Selected {
     pub ops: Vec<Op>,
     pub inputs: Vec<Val>,
     pub outputs: Vec<(Val, Vec<usize>)>,
+    /// Page table entries, when kept rows are paged.
+    pub table: usize,
     /// Rules that competed with another at some site.
     pub contested: BTreeSet<&'static str>,
     /// Ranks that run together, and which this is.
