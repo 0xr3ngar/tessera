@@ -270,7 +270,13 @@ pub fn derive(input: DeriveInput) -> Result<Tokens, Error> {
     let load = line.expr("load").map(|e| {
         let call = applied(e, &[quote!(self), quote!(len)]);
         let body = body.as_ref().map(|b| quote!(let body = #b;));
-        quote!(fn load(&self, len: usize) -> Option<#krate::Load> { #body #call })
+        // The group memory comes from what the kernel needs.
+        quote!(fn load(&self, len: usize) -> Option<#krate::Load> {
+            #body
+            let mut load = #call?;
+            load.group_bytes = #krate::Kernel::needs(self).group_bytes as f64;
+            Some(load)
+        })
     });
     let accepts = line.expr("accepts").map(|e| {
         let call = applied(e, &[quote!(self), quote!(input), quote!(form)]);

@@ -61,6 +61,9 @@ pub(crate) struct Sm {
     pub cvt8: Const,
 }
 
+/// Tile flops run as three tf32 products at half rate.
+const SPLIT: f64 = 6.0;
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Nvidia {
     pub name: String,
@@ -141,7 +144,7 @@ impl Chip for Nvidia {
             (t.float + 1.0, s.float.value),
             (t.int, s.int.value),
             (t.special, s.special.value),
-            (t.loads + t.stores, s.memory.value),
+            (t.loads + t.stores + t.shared, s.memory.value),
         ];
         let count: f64 = pipes.iter().map(|(n, _)| n * l.trips).sum();
         let rate = s.issue.value.min(per_scheduler / s.lone.value);
@@ -172,9 +175,11 @@ impl Chip for Nvidia {
         }
         let cached = l.loaded() / through(s.cached.value, s.near.value);
         let seconds = |cycles: f64| rounds * cycles / s.clock.value;
+        let tiled = l.threads as f64 * l.trips * t.tile_flops;
         let limits = [
             (Limit::Issue, seconds(issue)),
             (Limit::Pipe, seconds(pipe)),
+            (Limit::Compute, tiled * SPLIT / s.fp16.value),
             (Limit::Chain, chain),
             (Limit::Read, moved),
             (Limit::Cache, cached),

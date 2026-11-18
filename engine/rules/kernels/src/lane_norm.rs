@@ -81,6 +81,7 @@ fn norm_lanes<const WIDE: u32, const AHEAD: u32, const WEIGHTED: bool>(
         ],
         written: 4.0 * len as f64,
         flight: (4 * WIDE * AHEAD) as f64,
+        ..Load::default()
     }),
     unproven,
 )]

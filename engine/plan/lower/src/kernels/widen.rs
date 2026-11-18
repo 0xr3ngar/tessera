@@ -52,6 +52,7 @@ fn widen_load(k: &Widen, _: usize) -> Option<Load> {
         reads: vec![k.form.bytes(k.len) as f64],
         written: 4.0 * len,
         flight: 4.0,
+        ..Load::default()
     })
 }
 

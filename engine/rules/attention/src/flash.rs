@@ -507,6 +507,7 @@ fn flash_load(k: &Flash, len: usize) -> Option<Load> {
         ],
         written: 4.0 * len as f64,
         flight: 16.0,
+        ..Load::default()
     })
 }
 
@@ -594,6 +595,7 @@ fn rows_load(k: &FlashRows, len: usize) -> Option<Load> {
         reads: vec![4.0 * len as f64, streamed, streamed],
         written: 4.0 * len as f64,
         flight: 16.0,
+        ..Load::default()
     })
 }
 

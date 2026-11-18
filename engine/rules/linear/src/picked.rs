@@ -91,6 +91,7 @@ fn picked_load(k: &Picked, _: usize) -> Option<Load> {
         reads: vec![form.bytes(m * n * depth) as f64, (4 * m * depth) as f64],
         written: 4.0 * (m * n) as f64,
         flight: 64.0,
+        ..Load::default()
     })
 }
 

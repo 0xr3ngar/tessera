@@ -83,6 +83,7 @@ fn thin_load(k: &Thin, _: usize) -> Option<Load> {
         reads: form.matmul_bytes(m, n, depth),
         written: 4.0 * (m * n) as f64,
         flight: 64.0,
+        ..Load::default()
     })
 }
 

@@ -183,6 +183,7 @@ fn map_load(k: &Map, len: usize) -> Option<Load> {
         reads: reads.collect(),
         written: 4.0 * len as f64,
         flight: 4.0 * inputs as f64,
+        ..Load::default()
     })
 }
 

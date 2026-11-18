@@ -120,6 +120,7 @@ fn lanes_load(k: &Lanes, _: usize) -> Option<Load> {
         reads: form.matmul_bytes(m, n, depth),
         written: (4 * m * n) as f64,
         flight: (bytes * AHEAD as usize) as f64,
+        ..Load::default()
     })
 }
 

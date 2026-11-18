@@ -38,5 +38,6 @@ pub(crate) fn per_row(rows: usize, width: usize, trip: Ops, shared: f64) -> Load
         reads: vec![all, shared],
         written: all,
         flight: 64.0,
+        ..Load::default()
     }
 }

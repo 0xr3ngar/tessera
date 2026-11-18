@@ -63,7 +63,7 @@ fn run(settings: &Settings) -> Result<(), Box<dyn Error>> {
         "{}: timed {launches} launches in {seconds:.0} s",
         device.name
     );
-    let fit = fit(&readings);
+    let fit = fit(&readings).filled(&device.name);
     let pool = fit.pool(&format!("{}, probed", device.name));
     for (name, c) in pool.constants() {
         println!("  {name:7} {:10.4e}  {}", c.value, c.note);

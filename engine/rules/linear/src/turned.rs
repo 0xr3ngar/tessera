@@ -128,6 +128,7 @@ fn turned_load(t: &Turned, _: usize) -> Option<Load> {
         ],
         written: 4.0 * (m * n) as f64,
         flight: 64.0,
+        ..Load::default()
     })
 }
 
