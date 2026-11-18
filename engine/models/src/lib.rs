@@ -10,5 +10,6 @@ mod shared;
 pub mod small;
 pub mod sprite;
 pub mod tagger;
+pub mod vae;
 
 pub use shared::{Attend, Dense, FEW, Rotated, Side, Stack};

@@ -1194,6 +1194,7 @@ dependencies = [
  "codegen",
  "graph",
  "interp",
+ "linear",
  "lower",
  "run",
  "sim",

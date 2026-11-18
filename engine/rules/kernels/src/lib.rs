@@ -11,6 +11,7 @@ mod hadamard;
 mod lane_norm;
 mod mask;
 mod mean;
+mod neighbours;
 mod rms_norm;
 mod rope;
 mod softmax;

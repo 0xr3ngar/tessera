@@ -116,17 +116,25 @@ impl Buffers<'_> {
         self.slots[v.0 as usize].expect("written before it is read")
     }
 
-    /// Reuses a free buffer of the value's size, if any.
+    /// The smallest free buffer that fits, else the largest, grown.
     fn alloc(&mut self, v: Val) -> Slot {
         let Value {
             len, zone, form, ..
         } = self.s.values[v.0 as usize];
         let bytes = form.bytes(len);
-        let fits = |b: &u32| self.plan.buffers[*b as usize] == bytes && self.plan.zone(*b) == zone;
-        let buffer = match self.free.iter().position(fits) {
+        let size = |at: &usize| self.plan.buffers[self.free[*at] as usize];
+        let free = (0..self.free.len()).filter(|&at| self.plan.zone(self.free[at]) == zone);
+        let (fit, short): (Vec<usize>, Vec<usize>) = free.partition(|at| size(at) >= bytes);
+        let pick = fit
+            .into_iter()
+            .min_by_key(size)
+            .or_else(|| short.into_iter().max_by_key(size));
+        let buffer = match pick {
             Some(at) => self.free.swap_remove(at),
             None => self.buffer(bytes, zone),
         };
+        let held = &mut self.plan.buffers[buffer as usize];
+        *held = (*held).max(bytes);
         let slot = Slot {
             buffer,
             offset: 0,
