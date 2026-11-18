@@ -1,21 +1,25 @@
 //! Pictures for `/v1/images/generations`.
 
 use tasks::Error;
-use tasks::api::{Image, Paint};
+use tasks::api::{Image, Paint, Sizes};
 
-/// 2x2 pictures. Red is the seed, blue the index.
+/// Red is the seed, blue the index.
 pub(super) struct MockPaint;
 
 impl Paint for MockPaint {
-    fn side(&self) -> usize {
-        2
+    fn sizes(&self) -> Sizes {
+        Sizes {
+            step: 2,
+            largest: 8,
+            default: 2,
+        }
     }
 
-    fn paint(&self, _: &str, n: usize, seed: u32) -> Result<Vec<Image>, Error> {
+    fn paint(&self, _: &str, n: usize, seed: u32, size: usize) -> Result<Vec<Image>, Error> {
         let one = |i: usize| Image {
-            width: 2,
-            height: 2,
-            rgba: [seed as u8, 0, i as u8, 255].repeat(4),
+            width: size,
+            height: size,
+            rgba: [seed as u8, 0, i as u8, 255].repeat(size * size),
         };
         Ok((0..n).map(one).collect())
     }

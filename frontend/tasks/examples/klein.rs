@@ -2,24 +2,8 @@
 
 use checkpoint::File;
 use std::time::Instant;
-use tasks::klein::Klein;
+use tasks::klein::{Klein, noise};
 use tasks::png;
-
-/// Standard normal values from a seed, by Box-Muller.
-fn noise(seed: u64, n: usize) -> Vec<f32> {
-    let mut s = seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
-    let mut uniform = || {
-        s ^= s << 13;
-        s ^= s >> 7;
-        s ^= s << 17;
-        ((s >> 11) as f64 + 0.5) / (1u64 << 53) as f64
-    };
-    (0..n)
-        .map(|_| {
-            ((-2.0 * uniform().ln()).sqrt() * (std::f64::consts::TAU * uniform()).cos()) as f32
-        })
-        .collect()
-}
 
 fn main() -> Result<(), tasks::Error> {
     let args: Vec<String> = std::env::args().collect();
@@ -33,11 +17,9 @@ fn main() -> Result<(), tasks::Error> {
         Ok(seed) => noise(seed, side * side * 128),
         Err(_) => File::open(from.as_ref())?.floats("noise")?,
     };
-    let klein = Klein {
-        dir: dir.into(),
-        settings: frontend_settings::read(),
-        steps: 4,
-    };
+    let started = Instant::now();
+    let mut klein = Klein::open(dir.into(), frontend_settings::read(), side * 16)?;
+    eprintln!("opened in {:?}", started.elapsed());
     let started = Instant::now();
     let picture = klein.paint(&prompt.join(" "), side, &start)?;
     eprintln!(

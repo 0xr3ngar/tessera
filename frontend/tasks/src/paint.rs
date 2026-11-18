@@ -1,7 +1,7 @@
 //! Prompts to 16x16 sprites by masked diffusion.
 
 use crate::Error;
-use crate::api::{Image, Paint, Tokens};
+use crate::api::{Image, Paint, Sizes, Tokens};
 use crate::worker::Worker;
 use bundle::sprite::{denoiser, text_tower};
 use bundle::tokenize::hf::Hf;
@@ -221,11 +221,16 @@ impl Worker<Painter> {
 }
 
 impl Paint for Worker<Painter> {
-    fn side(&self) -> usize {
-        GRID
+    /// Sprites are painted 16 a side, then enlarged.
+    fn sizes(&self) -> Sizes {
+        Sizes {
+            step: GRID,
+            largest: 1024,
+            default: 256,
+        }
     }
 
-    fn paint(&self, prompt: &str, n: usize, seed: u32) -> Result<Vec<Image>, Error> {
+    fn paint(&self, prompt: &str, n: usize, seed: u32, size: usize) -> Result<Vec<Image>, Error> {
         let prompt = prompt.to_string();
         self.run(move |p| {
             let options = Options {
@@ -233,7 +238,8 @@ impl Paint for Worker<Painter> {
                 ..Options::default()
             };
             let sprites = p.paint(&prompt, n, &options)?;
-            Ok(sprites.iter().map(|t| p.image(t)).collect())
+            let scaled = |t: &Vec<u32>| p.image(t).scaled(size / GRID);
+            Ok(sprites.iter().map(scaled).collect())
         })?
     }
 }

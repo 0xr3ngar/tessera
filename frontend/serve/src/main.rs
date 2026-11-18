@@ -8,12 +8,14 @@ use std::process::ExitCode;
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::Instant;
 use tasks::api::{Embed, Info, Paint, Tokens};
+use tasks::klein::Klein;
 use tasks::paint::Painter;
 use tasks::{Generate, Job, Queued, Threaded, Worker};
 
 const USAGE: &str = "usage: tessera-serve --model <dir> [--host <addr>] [--port <n>] \
 [--max-model-len <tokens>] [--slots <n>] [--served-model-name <name>] \
-[--task generate|embed|paint] [--max-connections <n>] [--reject-unknown-fields]";
+[--task generate|embed|paint|klein] [--image-size <px>] [--max-connections <n>] \
+[--reject-unknown-fields]";
 
 /// What the loaded model serves.
 #[derive(Clone, Copy, PartialEq)]
@@ -22,6 +24,14 @@ enum Task {
     Embed,
     /// Pictures. `--model` holds the weights and `clip/`.
     Paint,
+    /// FLUX.2 klein pictures. `--model` is the diffusers repository.
+    Klein,
+}
+
+/// One painter as both of the traits the routes read.
+fn painter<P: Paint + Tokens + 'static>(p: P, set: impl FnOnce(Arc<dyn Tokens>, Arc<dyn Paint>)) {
+    let p = Arc::new(p);
+    set(p.clone(), p);
 }
 
 struct Args {
@@ -37,6 +47,8 @@ struct Args {
     /// Unknown request fields refuse the request.
     strict: bool,
     max_connections: usize,
+    /// The largest picture klein paints, in pixels a side.
+    image_size: usize,
 }
 
 fn args() -> Option<Args> {
@@ -50,6 +62,7 @@ fn args() -> Option<Args> {
         task: Task::Generate,
         strict: false,
         max_connections: 64,
+        image_size: 512,
     };
     let mut given = std::env::args().skip(1);
     while let Some(flag) = given.next() {
@@ -69,6 +82,8 @@ fn args() -> Option<Args> {
             "--task" if value == "generate" => args.task = Task::Generate,
             "--task" if value == "embed" => args.task = Task::Embed,
             "--task" if value == "paint" => args.task = Task::Paint,
+            "--task" if value == "klein" => args.task = Task::Klein,
+            "--image-size" => args.image_size = value.parse().ok()?,
             _ => return None,
         }
     }
@@ -169,10 +184,10 @@ fn load(args: Args, slot: Slot) {
             })
             .map_err(|e| e.to_string()),
         Task::Paint => Worker::<Painter>::open(args.model, settings, args.slots)
-            .map(|p| {
-                let p = Arc::new(p);
-                set(info, p.clone(), None, Some(p as Arc<dyn Paint>));
-            })
+            .map(|p| painter(p, |t, p| set(info, t, None, Some(p))))
+            .map_err(|e| e.to_string()),
+        Task::Klein => Worker::<Klein>::open(args.model, settings, args.image_size)
+            .map(|p| painter(p, |t, p| set(info, t, None, Some(p))))
             .map_err(|e| e.to_string()),
     };
     if let Err(e) = failed {

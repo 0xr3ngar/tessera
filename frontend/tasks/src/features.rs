@@ -3,6 +3,7 @@
 use crate::Error;
 use bundle::Message;
 use bundle::taps::{Tapped, tapped};
+use bundle::tokenize::hf::Hf;
 use engine::{Model, Recipe, Settings, Tensor};
 use std::path::Path;
 
@@ -33,6 +34,10 @@ impl Features {
             tapped: t,
             rows,
         })
+    }
+
+    pub fn tokenizer(&self) -> &Hf {
+        &self.tapped.tokenizer
     }
 
     /// The prompt as a user turn, without thinking.
