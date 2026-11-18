@@ -51,6 +51,8 @@ pub struct Recipe {
     pub names: Option<PathBuf>,
     /// Lowering choices. `None` keeps the model's own.
     pub lower: Option<engine::Recipe>,
+    /// A wasm module of lowering rules, relative to the recipe.
+    pub module: Option<PathBuf>,
     /// Serve flags by name, with `_` for `-`.
     #[serde(default)]
     pub serve: toml::Table,
@@ -78,6 +80,11 @@ impl Recipe {
     /// The weight-name rules file, if the recipe has one.
     pub fn names(&self) -> Option<PathBuf> {
         self.names.as_ref().map(|n| self.dir.join(n))
+    }
+
+    /// The rules module, if the recipe has one.
+    pub fn module(&self) -> Option<PathBuf> {
+        self.module.as_ref().map(|m| self.dir.join(m))
     }
 
     /// The weights directory, fetched into `cache` when remote.

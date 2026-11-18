@@ -65,6 +65,7 @@ tasks = { path = "frontend/tasks" }
 testkit = { path = "engine/ir/testkit" }
 trace = { path = "engine/ir/trace" }
 trace-derive = { path = "engine/ir/trace-derive" }
+wasm = { path = "engine/rules/wasm" }
 
 # The host executor interprets whole kernels, so tests need it optimized.
 [profile.dev.package.host]

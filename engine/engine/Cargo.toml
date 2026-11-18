@@ -17,6 +17,7 @@ engine-settings = { workspace = true }
 graph = { workspace = true }
 interp = { workspace = true }
 rules = { workspace = true }
+wasm = { workspace = true }
 lower = { workspace = true }
 mem = { workspace = true }
 models = { workspace = true }
