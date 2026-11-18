@@ -68,6 +68,10 @@ impl Context {
                     attr(hip::ATTR_COMPUTE_CAPABILITY_MAJOR),
                     attr(hip::ATTR_COMPUTE_CAPABILITY_MINOR),
                 );
+                let mut total: usize = 0;
+                let device = self.device();
+                unsafe { (self.runtime().hip_device_total_mem)(&mut total, device) };
+                let integrated = attr(hip::ATTR_INTEGRATED) != 0;
                 Platform::new(Asked {
                     backend: "rocm",
                     arch: format!("gfx{major}_{minor}"),
@@ -79,7 +83,8 @@ impl Context {
                         attr(hip::ATTR_MEMORY_CLOCK_RATE),
                         attr(hip::ATTR_MEMORY_BUS_WIDTH),
                     ),
-                    integrated: attr(hip::ATTR_INTEGRATED) != 0,
+                    integrated,
+                    memory: platform::device_memory(total as u64, integrated),
                 })
             })
             .clone()

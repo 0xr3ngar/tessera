@@ -59,6 +59,9 @@ pub struct Platform {
     /// Bytes a second from clock and bus, or zero.
     pub bandwidth: f64,
     pub integrated: bool,
+    /// Bytes plans may hold here, or zero when unknown.
+    #[serde(default)]
+    pub memory: u64,
     pub row: Option<Row>,
 }
 
@@ -72,6 +75,7 @@ pub struct Asked {
     pub units: usize,
     pub bandwidth: f64,
     pub integrated: bool,
+    pub memory: u64,
 }
 
 impl Platform {
@@ -90,6 +94,7 @@ impl Platform {
             units: asked.units,
             bandwidth: asked.bandwidth,
             integrated: asked.integrated,
+            memory: asked.memory,
             row,
         }
     }
@@ -99,6 +104,7 @@ impl Platform {
         Self {
             backend: "host".into(),
             arch: "cpu".into(),
+            memory: host_memory(),
             ..Self::assumed(limits)
         }
     }
@@ -148,4 +154,42 @@ pub(crate) fn row_for(id: &str) -> Option<Row> {
 pub fn bandwidth(clock_khz: i32, bus_bits: i32) -> f64 {
     // Memory moves on both clock edges.
     2.0 * clock_khz as f64 * 1e3 * bus_bits as f64 / 8.0
+}
+
+/// A device's memory. Integrated devices may use all host memory.
+pub fn device_memory(total: u64, integrated: bool) -> u64 {
+    match integrated {
+        true => total.max(host_memory()),
+        false => total,
+    }
+}
+
+/// Physical memory on this machine, or zero when unknown.
+#[cfg(target_os = "macos")]
+fn host_memory() -> u64 {
+    unsafe extern "C" {
+        fn sysctlbyname(
+            name: *const std::ffi::c_char,
+            old: *mut std::ffi::c_void,
+            len: *mut usize,
+            new: *const std::ffi::c_void,
+            new_len: usize,
+        ) -> std::ffi::c_int;
+    }
+    let mut bytes: u64 = 0;
+    let mut len = size_of::<u64>();
+    let out = (&raw mut bytes).cast();
+    // SAFETY: `hw.memsize` writes one u64 into `bytes`.
+    let failed =
+        unsafe { sysctlbyname(c"hw.memsize".as_ptr(), out, &mut len, std::ptr::null(), 0) };
+    if failed != 0 { 0 } else { bytes }
+}
+
+/// Physical memory on this machine, or zero when unknown.
+#[cfg(not(target_os = "macos"))]
+fn host_memory() -> u64 {
+    let info = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    let line = info.lines().find_map(|l| l.strip_prefix("MemTotal:"));
+    let kib = line.and_then(|l| l.trim().trim_end_matches("kB").trim().parse::<u64>().ok());
+    kib.unwrap_or(0) * 1024
 }

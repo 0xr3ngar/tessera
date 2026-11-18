@@ -69,6 +69,10 @@ impl Context {
         let version = driver.int("cuDriverGetVersion", |v| unsafe {
             (driver.cu_driver_get_version)(v)
         });
+        let mut total: usize = 0;
+        let asked = unsafe { (driver.cu_device_total_mem)(&mut total, device) };
+        driver.check(asked, "cuDeviceTotalMem")?;
+        let integrated = attr(CU_DEVICE_ATTRIBUTE_INTEGRATED)? != 0;
         let platform = Platform::new(Asked {
             backend: "cuda",
             arch: format!("sm_{major}{minor}"),
@@ -81,7 +85,8 @@ impl Context {
                 attr(CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE)?,
                 attr(CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH)?,
             ),
-            integrated: attr(CU_DEVICE_ATTRIBUTE_INTEGRATED)? != 0,
+            integrated,
+            memory: platform::device_memory(total as u64, integrated),
         });
         let own = Own {
             raw,

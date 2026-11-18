@@ -4,6 +4,7 @@ use crate::Error;
 use crate::kernels::Kernels;
 use crate::run::{Base, Run};
 use codegen::Dialect;
+use engine_settings::Memory;
 use gpukit::backend::Backend;
 use gpukit::device::{Device, DeviceBuffer, cached_context, cached_source};
 use gpukit::launch::{KernelArgs, Launch, launch_1d, launch_grid};
@@ -37,11 +38,11 @@ fn dialect(backend: Backend) -> Dialect {
 }
 
 impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
-    pub fn new(plan: Plan) -> Result<Self, Error> {
+    pub fn new(plan: Plan, memory: Memory) -> Result<Self, Error> {
         let ctx = cached_context::<D>()?;
         let mut runner = Self {
             ctx,
-            base: Base::default(),
+            base: Base::new(memory, &ctx.platform()),
             kernels: Vec::new(),
             compiled: Kernels::default(),
             graphs: HashMap::new(),

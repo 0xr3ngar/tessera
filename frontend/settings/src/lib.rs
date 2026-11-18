@@ -1,6 +1,6 @@
 //! Settings read once from the environment, passed down.
 
-use engine::{Backend, Pick, Settings};
+use engine::{Backend, Memory, Pick, Settings};
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -14,6 +14,8 @@ struct Env {
     names: Option<PathBuf>,
     emulate: Option<Backend>,
     verbs: Option<String>,
+    /// Bytes, maybe suffixed K, M, G or T, or `off`.
+    memory: Option<String>,
 }
 
 /// The only reader of the process environment. Bad values panic.
@@ -38,6 +40,23 @@ pub fn read() -> Settings {
         names: env.names,
         emulate: env.emulate,
         verbs: env.verbs,
+        memory: env.memory.map_or(Memory::Device, |m| memory(&m)),
+    }
+}
+
+/// A `TESSERA_MEMORY` value. Bad values panic.
+fn memory(value: &str) -> Memory {
+    if value == "off" {
+        return Memory::Off;
+    }
+    let units = [("K", 10), ("M", 20), ("G", 30), ("T", 40)];
+    let (digits, shift) = units
+        .iter()
+        .find_map(|(u, shift)| Some((value.strip_suffix(u)?, *shift)))
+        .unwrap_or((value, 0));
+    match digits.parse::<u64>() {
+        Ok(n) => Memory::Bytes(n << shift),
+        Err(e) => panic!("TESSERA_MEMORY={value}: {e}"),
     }
 }
 
