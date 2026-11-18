@@ -369,6 +369,8 @@ impl Device {
         let (_, mut device): (u32, Device) = serde_json::from_str(&text)?;
         device.timed.restore();
         device.host.restore();
+        // Files from before residency take the table's constants.
+        device.fit = device.fit.map(|fit| fit.filled(&device.name));
         device.pool = device.fit.map(|fit| fit.pool("fitted"));
         device.generation = fresh();
         Ok(device)

@@ -10,9 +10,10 @@ use interp::{Tensor, run};
 mod common;
 use common::{linear, noise, terms};
 use graph::F16;
-use linear::{SCHEDULES, Schedule};
-use lower::form::{LOADS, named};
-use lower::{Device, Dialect, Pins, Settings, Source, Weight, lower};
+use linear::{Product, SCHEDULES, Schedule, Tiled};
+use lower::form::{BF16_FORM, LOADS, named};
+use lower::sites::After;
+use lower::{Device, Dialect, Kernel, Pins, Settings, Source, Weight, lower};
 use run::open;
 use run::testing::{emulations, host, runs};
 use testkit::{Noise, cosine_f32, max_abs_diff};
@@ -159,4 +160,29 @@ fn codes_match_decode() {
             assert!(cos > 0.99999, "{}, {rows} rows: cos {cos}", form.name());
         }
     }
+}
+
+/// Unsampled, the M3 model puts both `w16` schedules first.
+#[test]
+fn m3_ranks() {
+    let seconds = |schedule: &&Schedule| {
+        let product = Product {
+            m: 1536,
+            n: 3072,
+            k: 3072,
+            form: BF16_FORM,
+            after: After::default(),
+            picked: None,
+        };
+        let load = Tiled {
+            product,
+            schedule: **schedule,
+        }
+        .load(0)
+        .unwrap();
+        sim::Chip::estimate(&sim::m3_pro(), &load).seconds
+    };
+    let (w16, rest): (Vec<_>, Vec<_>) = SCHEDULES.iter().partition(|s| s.name.ends_with("w16"));
+    let slowest = w16.iter().map(seconds).fold(0.0, f64::max);
+    assert!(rest.iter().all(|s| seconds(s) > slowest));
 }

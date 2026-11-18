@@ -33,10 +33,26 @@ pub struct Pool {
     pub write: Const,
     /// Flops a second on the matrix unit. Zero: none.
     pub tile: Const,
+    /// Compute units. Zero: every thread resident at once.
+    pub cores: Const,
+    /// Bytes of registers and group memory one core holds.
+    pub store: Const,
+    /// Threads one core keeps resident.
+    pub resident: Const,
+    /// Registers a thread may hold before it spills.
+    pub held: Const,
+    /// Seconds a thread waits per float from group memory.
+    pub shared: Const,
+    /// Bytes a second out of one core's group memory.
+    pub banked: Const,
+    /// Seconds a thread takes per tile flop, in a chain.
+    pub mma: Const,
+    /// Seconds each spilled register adds to a trip.
+    pub spill: Const,
 }
 
 /// A pool's constants as plain numbers, as probes fit them.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq)]
 pub struct Fit {
     pub floor: f64,
     pub spawn: f64,
@@ -52,12 +68,28 @@ pub struct Fit {
     pub write: f64,
     #[serde(default)]
     pub tile: f64,
+    #[serde(default)]
+    pub cores: f64,
+    #[serde(default)]
+    pub store: f64,
+    #[serde(default)]
+    pub resident: f64,
+    #[serde(default)]
+    pub held: f64,
+    #[serde(default)]
+    pub shared: f64,
+    #[serde(default)]
+    pub banked: f64,
+    #[serde(default)]
+    pub mma: f64,
+    #[serde(default)]
+    pub spill: f64,
 }
 
 impl Fit {
     /// Pairs each value with its probe.
     pub fn pool(&self, name: &str) -> Pool {
-        let m = Const::measured;
+        let (m, inferred) = (Const::measured, Const::inferred);
         Pool {
             name: name.into(),
             floor: m(self.floor, "256 threads that do nothing"),
@@ -67,13 +99,95 @@ impl Fit {
             rate: m(self.rate, "the multiply-add loop at its best thread count"),
             wait: m(self.wait, "256 threads, each load on a new line of 512 MB"),
             near: m(self.near, "256 threads, each along its own 16 KB"),
-            cache: Const::inferred(self.cache, "the small probe buffer; larger sizes unprobed"),
+            cache: inferred(self.cache, "the small probe buffer; larger sizes unprobed"),
             cached: m(self.cached, "4 MB read again at the best thread count"),
             read: m(self.read, "512 MB read at the best thread count"),
             scan: m(self.scan, "512 MB read in separate stretches"),
             write: m(self.write, "256 MB written at the best thread count"),
             tile: m(self.tile, "tile multiplies looping on registers"),
+            cores: Const::assumed(self.cores, "the system's count"),
+            store: inferred(self.store, "tiled schedules forced in turn"),
+            resident: inferred(self.resident, "tiled schedules forced in turn"),
+            held: Const::assumed(self.held, "Apple G13: 128 registers a thread"),
+            shared: inferred(self.shared, "tiled schedules forced in turn"),
+            banked: Const::assumed(self.banked, "128 bytes a cycle"),
+            mma: inferred(self.mma, "tiled schedules forced in turn"),
+            spill: inferred(self.spill, "tiled schedules forced in turn"),
         }
+    }
+
+    /// The same, with residency constants from a known table.
+    pub fn filled(mut self, device: &str) -> Fit {
+        let Some(known) = crate::known::fit(device) else {
+            return self;
+        };
+        let pairs = [
+            (&mut self.cores, known.cores),
+            (&mut self.store, known.store),
+            (&mut self.resident, known.resident),
+            (&mut self.held, known.held),
+            (&mut self.shared, known.shared),
+            (&mut self.banked, known.banked),
+            (&mut self.mma, known.mma),
+            (&mut self.spill, known.spill),
+        ];
+        for (own, table) in pairs {
+            if *own == 0.0 {
+                *own = table;
+            }
+        }
+        self
+    }
+}
+
+/// How a launch's groups share the cores.
+struct Residency {
+    /// Rounds of resident groups the launch takes.
+    waves: f64,
+    /// Threads resident across the chip.
+    threads: f64,
+    /// Registers each thread spills.
+    spilled: f64,
+}
+
+impl Pool {
+    /// Groups per core: the least that memory and threads allow.
+    fn residency(&self, l: &Load) -> Residency {
+        let threads = l.threads as f64;
+        if self.cores.value == 0.0 {
+            let spilled = 0.0;
+            return Residency {
+                waves: 1.0,
+                threads,
+                spilled,
+            };
+        }
+        let (group, bytes) = (l.group.max(1) as f64, l.group_bytes);
+        // A group that cannot fit gets fewer registers.
+        let room = (self.store.value - bytes) / (4.0 * group);
+        let cap = self.held.value.min(room).max(0.0);
+        let held = l.trip.held.min(cap);
+        let footprint = bytes + 4.0 * group * held;
+        let by_store = match footprint > 0.0 {
+            true => (self.store.value / footprint).floor(),
+            false => f64::INFINITY,
+        };
+        let by_threads = (self.resident.value / group).floor();
+        let fit = by_store.min(by_threads).max(1.0);
+        let groups = (threads / group).ceil();
+        let per_core = (groups / self.cores.value).ceil();
+        Residency {
+            waves: (per_core / fit).ceil(),
+            threads: threads.min(fit * group * self.cores.value),
+            spilled: (l.trip.held - cap).max(0.0),
+        }
+    }
+
+    /// Seconds the group memory takes to feed the tiles.
+    fn banked(&self, l: &Load) -> f64 {
+        let rate = self.cores.value * self.banked.value;
+        let bytes = 4.0 * l.threads as f64 * l.trips * l.trip.shared;
+        if rate > 0.0 { bytes / rate } else { 0.0 }
     }
 }
 
@@ -89,7 +203,10 @@ impl Chip for Pool {
         // Streams cross lines together, so their waits overlap.
         let fresh = if t.loads > 0.0 { t.fresh } else { 0.0 };
         let waits = fresh * self.wait.value + (1.0 - fresh) * t.loads * self.near.value;
-        let chain = l.trips * (ops + waits);
+        let r = self.residency(l);
+        let tiles = t.shared * self.shared.value + t.tile_flops * self.mma.value;
+        let spills = r.spilled * self.spill.value;
+        let chain = r.waves * l.trips * (ops + waits + tiles + spills);
         let compute = threads * l.trips * ops / self.step.value / self.rate.value;
         // Without a matrix unit, tile flops run as floats.
         let tiled = threads * l.trips * t.tile_flops;
@@ -98,7 +215,7 @@ impl Chip for Pool {
             false => compute + tiled / self.rate.value,
         };
         // Little's law: bytes in flight over the wait.
-        let flow = threads * l.flight / self.wait.value;
+        let flow = r.threads * l.flight / self.wait.value;
         let through = |peak: f64| if flow > 0.0 { peak.min(flow) } else { peak };
         let cold = |bytes: &&f64| **bytes > self.cache.value;
         let far: f64 = l.reads.iter().filter(cold).sum();
@@ -110,6 +227,7 @@ impl Chip for Pool {
             (Limit::Compute, compute),
             (Limit::Read, moved),
             (Limit::Cache, l.loaded() / through(self.cached.value)),
+            (Limit::Shared, self.banked(l)),
         ];
         let mut slowest = Estimate::slowest(start, &limits);
         if slowest.limit == Limit::Read && l.written > far {
@@ -151,6 +269,14 @@ impl Chip for Pool {
             ("scan", self.scan),
             ("write", self.write),
             ("tile", self.tile),
+            ("cores", self.cores),
+            ("store", self.store),
+            ("resident", self.resident),
+            ("held", self.held),
+            ("shared", self.shared),
+            ("banked", self.banked),
+            ("mma", self.mma),
+            ("spill", self.spill),
         ]
     }
 }
