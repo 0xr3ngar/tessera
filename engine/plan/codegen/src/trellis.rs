@@ -1,15 +1,15 @@
 //! The exlr8 trellis form in kernel text: tiles and codebook.
 
-use crate as codegen;
+use crate as sensai_codegen;
 use crate::form::{Load, form, named};
 use crate::ir::Helper;
 use crate::prelude::{Bits, Buf, F32x4, U8, helper};
-use mem::trellis::{HEAD, INPUT_SIDE, MCG, Trellis};
-use mem::trellis::{
+use sensai_mem::trellis::{HEAD, INPUT_SIDE, MCG, Trellis};
+use sensai_mem::trellis::{
     TRELLIS_K2, TRELLIS_K2_ROT, TRELLIS_K3, TRELLIS_K3_ROT, TRELLIS_K4, TRELLIS_K4_ROT,
 };
 
-pub use mem::trellis::packed;
+pub use sensai_mem::trellis::packed;
 
 /// `x` rounded to nearest even, `e` and `m` bits.
 #[helper("{name}")]
@@ -160,7 +160,7 @@ impl<const K: u32> Load for Trellis<K> {
 
 /// The form for `k` bits a weight.
 pub fn form_for(k: u32) -> Option<&'static dyn Load> {
-    named(mem::trellis::form_for(k)?.name())
+    named(sensai_mem::trellis::form_for(k)?.name())
 }
 
 form!(TRELLIS_K2);

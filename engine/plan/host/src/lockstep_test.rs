@@ -1,5 +1,5 @@
 use crate::lockstep::{self, BLOCK, Dots, dots_form};
-use codegen::form::{BF16_FORM, F32_FORM, Load};
+use sensai_codegen::form::{BF16_FORM, F32_FORM, Load};
 
 #[test]
 fn odd_length_dots() {

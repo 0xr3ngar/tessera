@@ -1,8 +1,8 @@
 //! RMS norm, a SIMD group per row, summed by shuffles.
 
-use codegen::prelude::*;
-use graph::Order;
-use lower::{Kernel, Load, Needs, stage_rule};
+use sensai_codegen::prelude::*;
+use sensai_graph::Order;
+use sensai_lower::{Kernel, Load, Needs, stage_rule};
 
 /// Elements one wide load brings a lane.
 const WIDE: u32 = 4;

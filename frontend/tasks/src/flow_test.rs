@@ -1,11 +1,11 @@
 use crate::flow::Flow;
-use checkpoint::File;
-use engine::{Pick, Settings};
-use testkit::cosine_f32;
+use sensai_checkpoint::File;
+use sensai_engine::{Pick, Settings};
+use sensai_testkit::cosine_f32;
 
 #[test]
 fn matches_torch() {
-    let Some(dir) = testkit::reference("flux2-klein") else {
+    let Some(dir) = sensai_testkit::reference("flux2-klein") else {
         return eprintln!("no flux2-klein reference here; skipped");
     };
     let r = File::open(&dir.join("ref.safetensors")).unwrap();

@@ -2,9 +2,9 @@
 
 use crate::file::{Error, File};
 use crate::offer::{Offer, Slice, Stored};
-use engine::storage::Form;
-pub use engine::trellis::rotated;
-use engine::{E4M3, F16, block, trellis};
+use sensai_engine::storage::Form;
+pub use sensai_engine::trellis::rotated;
+use sensai_engine::{E4M3, F16, block, trellis};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

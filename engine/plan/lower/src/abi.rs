@@ -2,9 +2,9 @@
 
 use crate::extent::Extent;
 use crate::plan::{Slot, Step};
-use codegen::ir::{Body, Param};
-use codegen::{Dialect, hash};
-use graph::DimName;
+use sensai_codegen::ir::{Body, Param};
+use sensai_codegen::{Dialect, hash};
+use sensai_graph::DimName;
 
 /// One kernel argument, in the order its source declares.
 #[derive(Clone, Debug, PartialEq)]

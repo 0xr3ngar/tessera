@@ -9,7 +9,7 @@ use crate::stages::Setup;
 #[test]
 fn uneven_ranks_meet() {
     let specs = [spec("strix:3").unwrap(), spec("gb10:1").unwrap()];
-    let parts = graph::Parts(vec![3, 1]);
+    let parts = sensai_graph::Parts(vec![3, 1]);
     let model = Model::new("qwen3".into(), named("qwen3", false).unwrap(), &parts).unwrap();
     let setup = Setup {
         model: &model,
@@ -18,7 +18,7 @@ fn uneven_ranks_meet() {
             latency: 1e-5,
             rate: 1e9,
         },
-        pins: lower::Pins::default(),
+        pins: sensai_lower::Pins::default(),
     };
     let passes = passes(&setup, 4, 1).unwrap();
     let held = |r: usize| {

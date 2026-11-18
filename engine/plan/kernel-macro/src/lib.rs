@@ -56,17 +56,17 @@ fn group(input: &syn::DeriveInput) -> Res {
             return Err(Error::new(ident.span(), "x, y, z and w are vector lanes"));
         }
         params.push(param(
-            &quote!(codegen::inline::member(name, #field)),
+            &quote!(sensai_codegen::inline::member(name, #field)),
             &f.ty,
             None,
         )?);
     }
     let ty = &input.ident;
     Ok(quote! {
-        impl codegen::inline::Group for #ty {
-            fn params(name: &str) -> Vec<codegen::ir::Param> {
+        impl sensai_codegen::inline::Group for #ty {
+            fn params(name: &str) -> Vec<sensai_codegen::ir::Param> {
                 #[allow(unused_imports)]
-                use codegen::ir::{Param, Ty};
+                use sensai_codegen::ir::{Param, Ty};
                 vec![#(#params),*]
             }
         }
@@ -154,15 +154,19 @@ fn tree(f: &mut ItemFn, helper: Option<Tokens>) -> Res {
                 let (ident, ty) = (&ident.ident, &p.ty);
                 build.push(quote!(#ident: #ty));
                 ctx.build.push(name);
-                takes.push(quote!(#taken: impl codegen::inline::Pass<#ty>));
+                takes.push(quote!(#taken: impl sensai_codegen::inline::Pass<#ty>));
                 binds.push(quote!(let #ident = #taken.pass();));
                 passes.push(quote!(#ident));
             }
             false => {
-                takes.push(quote!(#taken: impl codegen::inline::Pass<codegen::ir::Expr>));
+                takes.push(
+                    quote!(#taken: impl sensai_codegen::inline::Pass<sensai_codegen::ir::Expr>),
+                );
                 if let Some(g) = group_ty(&p.ty) {
-                    params.push(quote!(<#g as codegen::inline::Group>::params(#name)));
-                    binds.push(quote!(args.extend(codegen::inline::fields::<#g>(#taken.pass()));));
+                    params.push(quote!(<#g as sensai_codegen::inline::Group>::params(#name)));
+                    binds.push(
+                        quote!(args.extend(sensai_codegen::inline::fields::<#g>(#taken.pass()));),
+                    );
                 } else {
                     let one = param(&quote!(#name), &p.ty, form)?;
                     params.push(quote!(vec![#one]));
@@ -179,7 +183,7 @@ fn tree(f: &mut ItemFn, helper: Option<Tokens>) -> Res {
         {
             let (rest, built) = (
                 block(rest, &ctx)?,
-                build_group(&quote!(codegen::inline::BUILT), lit, &ctx)?,
+                build_group(&quote!(sensai_codegen::inline::BUILT), lit, &ctx)?,
             );
             (
                 quote!({ let mut b = #rest; b.extend(#built); b }),
@@ -214,35 +218,35 @@ fn tree(f: &mut ItemFn, helper: Option<Tokens>) -> Res {
         }
     };
     let (item, built, callee) = match helper {
-        None => (quote!(codegen::ir::Body), body, quote!(Kernel)),
+        None => (quote!(sensai_codegen::ir::Body), body, quote!(Kernel)),
         Some(name) => {
             let ReturnType::Type(_, ty) = &f.sig.output else {
                 return Err(Error::new(f.sig.span(), "a helper has a value"));
             };
             let ret = value_ty(ty)?;
-            let built = quote!(codegen::ir::Helper { name: #name, ret: #ret, body: #body });
-            (quote!(codegen::ir::Helper), built, quote!(Helper))
+            let built = quote!(sensai_codegen::ir::Helper { name: #name, ret: #ret, body: #body });
+            (quote!(sensai_codegen::ir::Helper), built, quote!(Helper))
         }
     };
     Ok(quote! {
         #[allow(clippy::all, unused_mut, unused_parens)]
         #vis fn #ir_name #impl_generics (#(#build),*) -> #item #where_clause {
             #[allow(unused_imports)]
-            use codegen::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt, Ty};
-            let mut inl = codegen::inline::Inliner::default();
+            use sensai_codegen::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt, Ty};
+            let mut inl = sensai_codegen::inline::Inliner::default();
             let mut stmts: Vec<Stmt> = #stmts;
             let ret: Option<Expr> = #ret;
             #built
         }
 
         #[allow(clippy::too_many_arguments, unused_mut)]
-        #vis fn #inline_name #impl_generics (#(#takes),*) -> codegen::inline::Inline #where_clause {
+        #vis fn #inline_name #impl_generics (#(#takes),*) -> sensai_codegen::inline::Inline #where_clause {
             #[allow(unused_imports)]
-            use codegen::inline::Pass;
-            let mut args: Vec<codegen::ir::Expr> = Vec::new();
+            use sensai_codegen::inline::Pass;
+            let mut args: Vec<sensai_codegen::ir::Expr> = Vec::new();
             #(#binds)*
-            codegen::inline::Inline {
-                callee: codegen::inline::Callee::#callee(#ir_name #turbofish (#(#passes),*)),
+            sensai_codegen::inline::Inline {
+                callee: sensai_codegen::inline::Callee::#callee(#ir_name #turbofish (#(#passes),*)),
                 args,
             }
         }
@@ -333,7 +337,9 @@ fn param(name: &Tokens, ty: &Type, picked: Option<Ident>) -> Res {
     let form = |args: &PathArguments| match (&picked, args) {
         (Some(f), _) => Ok(quote!(#f)),
         (None, PathArguments::AngleBracketed(a)) => match a.args.first() {
-            Some(GenericArgument::Type(t)) => Ok(quote!(<#t as codegen::prelude::Form>::FORM)),
+            Some(GenericArgument::Type(t)) => {
+                Ok(quote!(<#t as sensai_codegen::prelude::Form>::FORM))
+            }
             _ => Err(Error::new(a.span(), "a form, like `F32` or `F`")),
         },
         _ => Err(Error::new(last.span(), "`Buf<F>` names its form")),
@@ -467,7 +473,7 @@ fn build_group(name: &Tokens, lit: &syn::ExprStruct, ctx: &Ctx) -> Res {
     for f in &lit.fields {
         let member = &f.member;
         let field = quote!(#member).to_string();
-        let named = quote!(codegen::inline::member(#name, #field));
+        let named = quote!(sensai_codegen::inline::member(#name, #field));
         lets.push(declare(&named, &f.expr, ctx)?);
     }
     Ok(quote!(vec![#(#lets),*]))
@@ -809,7 +815,7 @@ fn is_const(e: &Expr, ctx: &Ctx) -> bool {
 fn expr(e: &Expr, ctx: &Ctx) -> Res {
     // A build value: `Pass` picks the literal from its type.
     if is_const(e, ctx) && !matches!(e, Expr::Lit(_)) {
-        return Ok(quote!(codegen::inline::Pass::<Expr>::pass(#e)));
+        return Ok(quote!(sensai_codegen::inline::Pass::<Expr>::pass(#e)));
     }
     let sub = |e: &Expr| expr(e, ctx);
     match e {

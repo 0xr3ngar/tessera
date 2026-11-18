@@ -1,9 +1,9 @@
 //! The nanogpt's recorded logits.
 
-use interp::Tensor;
-use parity::{Case, Reference, turn};
-use testkit::{Noise, weights_with};
-use trace::Graph;
+use sensai_interp::Tensor;
+use sensai_parity::{Case, Reference, turn};
+use sensai_testkit::{Noise, weights_with};
+use sensai_trace::Graph;
 
 /// Two sequences of five tokens.
 const TOKENS: [u32; 10] = [1, 5, 2, 7, 0, 3, 3, 6, 4, 1];

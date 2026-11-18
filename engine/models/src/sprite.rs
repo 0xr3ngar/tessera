@@ -1,8 +1,8 @@
 //! A masked-diffusion model of 16x16 palette sprites.
 
 use crate::shared::{Attend, Side, join, spread};
-use trace::DimName::*;
-use trace::{
+use sensai_trace::DimName::*;
+use sensai_trace::{
     Act, DType, Dim, DimExpr, EntryKind, Graph, Linear, Mask, Model, Norm, PathSeg, Port, Role,
     Shape, Tensor, TensorType, Vector, Weights,
 };

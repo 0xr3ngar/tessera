@@ -1,11 +1,11 @@
 //! A FLUX.2 klein picture for a prompt, written to PNG.
 
-use checkpoint::File;
+use sensai_checkpoint::File;
+use sensai_tasks::klein::{Klein, noise};
+use sensai_tasks::png;
 use std::time::Instant;
-use tasks::klein::{Klein, noise};
-use tasks::png;
 
-fn main() -> Result<(), tasks::Error> {
+fn main() -> Result<(), sensai_tasks::Error> {
     let args: Vec<String> = std::env::args().collect();
     let usage =
         "usage: klein <model dir> <out.png> <latent side> <seed | noise.safetensors> <prompt>";
@@ -18,7 +18,7 @@ fn main() -> Result<(), tasks::Error> {
         Err(_) => File::open(from.as_ref())?.floats("noise")?,
     };
     let started = Instant::now();
-    let mut klein = Klein::open(dir.into(), frontend_settings::read(), side * 16)?;
+    let mut klein = Klein::open(dir.into(), sensai_frontend_settings::read(), side * 16)?;
     eprintln!("opened in {:?}", started.elapsed());
     let started = Instant::now();
     let picture = klein.paint(&prompt.join(" "), side, &start)?;

@@ -1,10 +1,10 @@
 //! The front end's graph, its sharded form, and their link.
 
-use graph::{DimName, EntryKind, Graph, NodeId, Op, Parts, Row, Size, Stage, Whole, shard};
-use models::decoder::{Config, Moe, Swiglu, stepper};
-use models::small;
+use sensai_graph::{DimName, EntryKind, Graph, NodeId, Op, Parts, Row, Size, Stage, Whole, shard};
+use sensai_models::decoder::{Config, Moe, Swiglu, stepper};
+use sensai_models::small;
+use sensai_trace::Norm;
 use std::error::Error;
-use trace::Norm;
 
 /// A graph before and after the ranks split it.
 pub struct Model {
@@ -45,7 +45,7 @@ fn sum() -> Op {
 
 impl Model {
     pub fn new(name: String, source: Graph, parts: &Parts) -> Result<Self, Box<dyn Error>> {
-        let graph::Sharded {
+        let sensai_graph::Sharded {
             graph: sharded,
             whole,
         } = shard(&source, parts)?;

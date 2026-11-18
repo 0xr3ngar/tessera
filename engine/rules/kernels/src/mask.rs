@@ -1,8 +1,8 @@
 //! Scores a query cannot see, set to -inf.
 
-use codegen::prelude::*;
-use graph::{Mask, Op};
-use lower::{Draft, Kernel, T, Term, Tree};
+use sensai_codegen::prelude::*;
+use sensai_graph::{Mask, Op};
+use sensai_lower::{Draft, Kernel, T, Term, Tree};
 
 /// One thread per score over `[.., queries, keys]`.
 #[kernel]
@@ -69,4 +69,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(masked, [node.args[0]], len)])
 }
 
-lower::rule!("mask", propose);
+sensai_lower::rule!("mask", propose);

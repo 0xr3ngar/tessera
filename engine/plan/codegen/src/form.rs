@@ -3,8 +3,8 @@
 use crate::ir::Helper;
 use std::sync::Mutex;
 
-pub use mem::form::{Bf16, F32, Form, Read, U8, U32};
-pub(crate) use mem::form::{gather, scatter};
+pub use sensai_mem::form::{Bf16, F32, Form, Read, U8, U32};
+pub(crate) use sensai_mem::form::{gather, scatter};
 
 /// Decodes its elements in kernel text.
 pub trait Load: Form {
@@ -112,19 +112,19 @@ fn interned(name: String) -> &'static str {
     }
 }
 
-mem::registry!(Load, LOADS);
+sensai_mem::registry!(Load, LOADS);
 
 /// Registers a form's loads. Pins and recipes then name it.
 macro_rules! form {
     ($form:expr) => {
-        mem::register!([$crate::form::LOADS] [$crate::form::Load] $form);
+        sensai_mem::register!([$crate::form::LOADS] [$crate::form::Load] $form);
     };
 }
 
 pub(crate) use form;
 
 /// The form that stores `dtype` as is.
-pub fn of(dtype: graph::DType) -> &'static dyn Load {
+pub fn of(dtype: sensai_graph::DType) -> &'static dyn Load {
     let name = format!("{dtype:?}").to_lowercase();
     named(&name).unwrap_or_else(|| panic!("no form stores {dtype:?}"))
 }

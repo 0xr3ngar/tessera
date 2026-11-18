@@ -3,10 +3,10 @@
 use crate::names::Rule;
 use crate::tokenize::hf::Hf;
 use crate::{Bundle, Template, head_dim, stepper};
-use checkpoint::Gguf;
-use engine::decoder::{Config, Scales};
-use engine::form::{F32_FORM, Load, named};
-use engine::{Graph, PathSeg, Pins, Stack};
+use sensai_checkpoint::Gguf;
+use sensai_engine::decoder::{Config, Scales};
+use sensai_engine::form::{F32_FORM, Load, named};
+use sensai_engine::{Graph, PathSeg, Pins, Stack};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 use std::path::Path;

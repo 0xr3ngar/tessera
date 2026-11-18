@@ -20,13 +20,13 @@ pub use run::{Base, Run};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Lower(#[from] lower::Error),
+    Lower(#[from] sensai_lower::Error),
     #[error("gpu: {0}")]
-    Gpu(#[from] gpukit::Error),
+    Gpu(#[from] sensai_gpukit::Error),
     #[error("memory: {0}")]
-    Memory(#[from] mem::Error),
+    Memory(#[from] sensai_mem::Error),
     #[error("comm: {0}")]
-    Comm(#[from] engine_comm::Error),
+    Comm(#[from] sensai_engine_comm::Error),
     #[error("{0} is hand-written")]
     Handwritten(&'static str),
     #[error("{arg:?} as {param:?} on the host")]
@@ -83,17 +83,17 @@ pub enum Error {
     InputShape(usize),
 }
 
-use codegen::Precision;
-use codegen::ir::Param;
-use engine_comm::Pinning;
-use engine_settings::Backend;
-use engine_settings::Settings;
-use lower::{Arg, Plan};
+use sensai_codegen::Precision;
+use sensai_codegen::ir::Param;
+use sensai_engine_comm::Pinning;
+use sensai_engine_settings::Backend;
+use sensai_engine_settings::Settings;
+use sensai_lower::{Arg, Plan};
 use std::sync::Arc;
 
 /// This build's GPU, when it can run kernels here.
 pub fn gpu() -> Option<Backend> {
-    use gpukit::backend as gk;
+    use sensai_gpukit::backend as gk;
     Some(match gk::picked()? {
         gk::Backend::Metal => Backend::Metal,
         gk::Backend::Cuda => Backend::Cuda,
@@ -115,12 +115,12 @@ pub fn pinning(settings: &Settings) -> Option<Arc<dyn Pinning>> {
     match settings.gpu() {
         #[cfg(feature = "cuda")]
         Some(Backend::Cuda) => {
-            let ctx = gpukit::cuda::cached_context().ok()?;
+            let ctx = sensai_gpukit::cuda::cached_context().ok()?;
             Some(Arc::new(device::Pin(ctx)))
         }
         #[cfg(feature = "rocm")]
         Some(Backend::Rocm) => {
-            let ctx = gpukit::rocm::cached_context().ok()?;
+            let ctx = sensai_gpukit::rocm::cached_context().ok()?;
             Some(Arc::new(device::Pin(ctx)))
         }
         _ => None,
@@ -131,20 +131,17 @@ pub fn pinning(settings: &Settings) -> Option<Arc<dyn Pinning>> {
 pub fn open(plan: Plan, settings: &Settings) -> Result<Box<dyn Run>, Error> {
     match settings.gpu() {
         #[cfg(target_os = "macos")]
-        Some(Backend::Metal) => Ok(Box::new(device::Runner::<gpukit::metal::Context>::new(
-            plan,
-            settings.memory,
-        )?)),
+        Some(Backend::Metal) => Ok(Box::new(
+            device::Runner::<sensai_gpukit::metal::Context>::new(plan, settings.memory)?,
+        )),
         #[cfg(feature = "cuda")]
-        Some(Backend::Cuda) => Ok(Box::new(device::Runner::<gpukit::cuda::Context>::new(
-            plan,
-            settings.memory,
-        )?)),
+        Some(Backend::Cuda) => Ok(Box::new(
+            device::Runner::<sensai_gpukit::cuda::Context>::new(plan, settings.memory)?,
+        )),
         #[cfg(feature = "rocm")]
-        Some(Backend::Rocm) => Ok(Box::new(device::Runner::<gpukit::rocm::Context>::new(
-            plan,
-            settings.memory,
-        )?)),
+        Some(Backend::Rocm) => Ok(Box::new(
+            device::Runner::<sensai_gpukit::rocm::Context>::new(plan, settings.memory)?,
+        )),
         _ => Ok(Box::new(cpu::Runner::new(
             plan,
             settings.host_lanes,

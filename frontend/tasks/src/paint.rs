@@ -3,9 +3,9 @@
 use crate::Error;
 use crate::api::{Image, Paint, Sizes, Tokens};
 use crate::worker::Worker;
-use bundle::sprite::{denoiser, text_tower};
-use bundle::tokenize::hf::Hf;
-use engine::{Model, Recipe, Settings, Tensor};
+use sensai_bundle::sprite::{denoiser, text_tower};
+use sensai_bundle::tokenize::hf::Hf;
+use sensai_engine::{Model, Recipe, Settings, Tensor};
 use std::path::{Path, PathBuf};
 
 const GRID: usize = 16;

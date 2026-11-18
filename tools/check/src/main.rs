@@ -9,8 +9,8 @@ mod tests;
 #[cfg(test)]
 mod tests_test;
 
-use findings::Report;
 use run::{Changes, Dirs};
+use sensai_findings::Report;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -38,7 +38,7 @@ fn root() -> Result<PathBuf, String> {
 fn dirs() -> Result<Dirs, String> {
     Ok(Dirs::new(
         &root()?,
-        frontend_settings::read().check.as_deref(),
+        sensai_frontend_settings::read().check.as_deref(),
     ))
 }
 
@@ -99,5 +99,5 @@ fn run(args: &[&str]) -> Result<bool, String> {
 }
 
 fn main() -> ExitCode {
-    findings::main_of("tessera-check", run)
+    sensai_findings::main_of("tessera-check", run)
 }

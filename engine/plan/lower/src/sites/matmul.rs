@@ -3,7 +3,7 @@ use crate::form::Load;
 use crate::kernels::MapStage;
 use crate::rule::Read;
 use crate::tree::{T, Term, Tree};
-use graph::{Op, Select, View};
+use sensai_graph::{Op, Select, View};
 
 /// Each output row reads one matrix of a stored set.
 #[derive(Clone, Copy, Debug)]

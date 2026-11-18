@@ -2,7 +2,7 @@
 
 use crate::model::Model;
 use crate::tensor::Tensor;
-use graph::{DType, DimExpr, DimName, PathSeg, Shape, TensorType};
+use sensai_graph::{DType, DimExpr, DimName, PathSeg, Shape, TensorType};
 
 /// Declares weights under `path`, shaped by the field's `#[shape]`.
 pub trait Weights: Sized {

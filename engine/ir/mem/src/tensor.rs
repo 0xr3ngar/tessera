@@ -4,7 +4,7 @@ use crate::buffer::Buffer;
 use crate::layout::Layout;
 use crate::view::{View, ViewMut};
 use crate::{Error, mismatch};
-use graph::DType;
+use sensai_graph::DType;
 use std::fmt;
 
 /// Row-major and contiguous, on the host.

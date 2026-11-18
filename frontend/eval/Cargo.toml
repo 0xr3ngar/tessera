@@ -1,5 +1,5 @@
 [package]
-name = "eval"
+name = "sensai-eval"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -12,14 +12,14 @@ path = "src/main.rs"
 
 [features]
 default = []
-cuda = ["engine/cuda"]
-rocm = ["engine/rocm"]
+cuda = ["sensai-engine/cuda"]
+rocm = ["sensai-engine/rocm"]
 
 [dependencies]
-engine = { workspace = true }
-bundle = { workspace = true }
-checkpoint = { workspace = true }
+sensai-engine = { workspace = true }
+sensai-bundle = { workspace = true }
+sensai-checkpoint = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tasks = { workspace = true }
-frontend-settings = { workspace = true }
+sensai-tasks = { workspace = true }
+sensai-frontend-settings = { workspace = true }

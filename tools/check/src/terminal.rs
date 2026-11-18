@@ -1,6 +1,6 @@
 //! Findings as colored text, for the hook and local runs.
 
-use findings::{Level, Report};
+use sensai_findings::{Level, Report};
 use std::fmt::Write;
 
 /// ANSI styles, or plain text off a terminal.

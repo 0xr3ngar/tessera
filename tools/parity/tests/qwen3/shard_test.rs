@@ -1,15 +1,15 @@
 //! The toy decoder over two ranks matches one.
 
-use graph::{Graph, Parts, Placement, shard};
-use interp::{Tensor, run, run_ranks};
-use lower::{Device, Plan, View, lower};
-use models::decoder::{Config, Swiglu, program, stepper};
-use parity::{pair, step_ranks};
-use run::Loopback;
-use run::testing::{host, runs};
-use testkit::{Noise, fill, max_abs_diff};
-use trace::DimName::{Context, Seqs};
-use trace::{DimName, Norm, TensorType};
+use sensai_graph::{Graph, Parts, Placement, shard};
+use sensai_interp::{Tensor, run, run_ranks};
+use sensai_lower::{Device, Plan, View, lower};
+use sensai_models::decoder::{Config, Swiglu, program, stepper};
+use sensai_parity::{pair, step_ranks};
+use sensai_run::Loopback;
+use sensai_run::testing::{host, runs};
+use sensai_testkit::{Noise, fill, max_abs_diff};
+use sensai_trace::DimName::{Context, Seqs};
+use sensai_trace::{DimName, Norm, TensorType};
 
 const SIZES: [(DimName, u64); 2] = [(Seqs, 1), (Context, 8)];
 
@@ -36,7 +36,7 @@ fn off(got: &Tensor, g: &Graph, weights: &[Tensor], inputs: &[Tensor]) -> f32 {
 fn two_ranks() {
     let (g, sharded, weights, inputs) = toy();
     let split = |axis| {
-        let is = |w: &&graph::Weight| w.ty.placement == Placement::Split { axis };
+        let is = |w: &&sensai_graph::Weight| w.ty.placement == Placement::Split { axis };
         sharded.weights.iter().filter(is).count()
     };
     // Per layer: five column splits, two row splits.
@@ -82,8 +82,9 @@ fn two_rank_plan() {
 
 /// Weights placed so, with a path step `name` if given.
 fn placed(g: &Graph, placement: Placement, name: Option<&str>) -> usize {
-    let named =
-        |w: &&graph::Weight| name.is_none_or(|n| w.path.contains(&graph::PathSeg::Field(n.into())));
+    let named = |w: &&sensai_graph::Weight| {
+        name.is_none_or(|n| w.path.contains(&sensai_graph::PathSeg::Field(n.into())))
+    };
     let on = g.weights.iter().filter(|w| w.ty.placement == placement);
     on.filter(named).count()
 }

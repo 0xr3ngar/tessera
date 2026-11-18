@@ -1,16 +1,16 @@
 //! Attention splits by tensor, the experts by matrix.
 
 use super::{SPEC, STEPPER, small};
-use graph::{Parts, Placement, Stage, shard};
-use interp::{Tensor, run, run_parts};
-use lower::{Device, lower};
-use models::decoder::{Config, Moe, Scales, program, stepper};
-use parity::{Spec, Stepper, pair, step_ranks};
-use run::Loopback;
-use run::testing::host;
-use testkit::{Noise, fill, max_abs_diff};
-use trace::DimName::{Context, Seqs};
-use trace::{DimName, TensorType};
+use sensai_graph::{Parts, Placement, Stage, shard};
+use sensai_interp::{Tensor, run, run_parts};
+use sensai_lower::{Device, lower};
+use sensai_models::decoder::{Config, Moe, Scales, program, stepper};
+use sensai_parity::{Spec, Stepper, pair, step_ranks};
+use sensai_run::Loopback;
+use sensai_run::testing::host;
+use sensai_testkit::{Noise, fill, max_abs_diff};
+use sensai_trace::DimName::{Context, Seqs};
+use sensai_trace::{DimName, TensorType};
 
 #[test]
 fn routed_experts() {
@@ -19,7 +19,7 @@ fn routed_experts() {
     // Per layer: q, k, v and both sets, then o.
     assert_eq!(placed(Placement::Split { axis: 0 }), 10);
     assert_eq!(placed(Placement::Split { axis: 1 }), 2);
-    let sums = |n: &graph::Node| matches!(&n.op, graph::Op::Row(r) if r.0 == [Stage::AllReduce]);
+    let sums = |n: &sensai_graph::Node| matches!(&n.op, sensai_graph::Op::Row(r) if r.0 == [Stage::AllReduce]);
     assert_eq!(g.nodes.iter().filter(|n| sums(n)).count(), 4);
     let routed = g
         .nodes
@@ -33,7 +33,7 @@ const SIZES: [(DimName, u64); 2] = [(Seqs, 1), (Context, 8)];
 /// Heads, KV heads and experts all divide by four.
 fn quarters() -> Config {
     Config {
-        stack: models::Stack::sized([32, 64, 2, 8, 8, 32], 2, 8),
+        stack: sensai_models::Stack::sized([32, 64, 2, 8, 8, 32], 2, 8),
         kv_heads: 4,
         rope_theta: 1e4,
         eps: 1e-6,
@@ -71,8 +71,8 @@ fn uneven_ranks() {
         .uneven(parts.0);
     let plans = [0, 1].map(|r| lower(&sharded, 0, &SIZES, &device.clone().as_rank(r)).unwrap());
     // Rank 0 holds three experts, rank 1 holds one.
-    let experts = |plan: &lower::Plan| {
-        let set = |l: &&lower::Loaded| sharded.weights[l.weight as usize].ty.rank() == 3;
+    let experts = |plan: &sensai_lower::Plan| {
+        let set = |l: &&sensai_lower::Loaded| sharded.weights[l.weight as usize].ty.rank() == 3;
         let l = plan.weights.iter().filter(set).find(|l| l.share.is_some());
         l.and_then(|l| l.share).map(|s| (s.first, s.count))
     };
@@ -84,7 +84,7 @@ fn uneven_ranks() {
     for (at, w) in weights.iter().enumerate() {
         ranks.load(at as u32, w.view()).unwrap();
     }
-    let feeds: Vec<lower::View> = inputs.iter().map(Tensor::view).collect();
+    let feeds: Vec<sensai_lower::View> = inputs.iter().map(Tensor::view).collect();
     let got = ranks.run(&feeds).unwrap();
     let off = max_abs_diff(got[0].floats().unwrap(), want) / scale;
     assert!(off < 1e-3, "plans off {off}");
@@ -107,7 +107,7 @@ fn uneven_step_heads() {
 fn one_expert() -> Config {
     Config {
         top_k: 1,
-        ..models::small::granite()
+        ..sensai_models::small::granite()
     }
 }
 
@@ -122,5 +122,5 @@ fn steps_with_one_expert() {
         }),
         ..SPEC
     };
-    parity::steps(&spec);
+    sensai_parity::steps(&spec);
 }

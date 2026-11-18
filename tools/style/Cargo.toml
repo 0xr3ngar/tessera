@@ -7,11 +7,11 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-findings = { workspace = true }
+sensai-findings = { workspace = true }
 fancy-regex = "0.14"
-frontend-settings = { workspace = true }
-tasks = { workspace = true }
+sensai-frontend-settings = { workspace = true }
+sensai-tasks = { workspace = true }
 ureq = "2"
 
 [dev-dependencies]
-testkit = { workspace = true }
+sensai-testkit = { workspace = true }

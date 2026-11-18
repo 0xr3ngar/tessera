@@ -1,9 +1,9 @@
 //! Masked attention over listed keys, or computed keys by row.
 
-use codegen::prelude::*;
-use graph::Op;
-use lower::sites::Attend;
-use lower::{Attn, Draft, Kernel, Launch, Shape, Step, T, Term, Tree};
+use sensai_codegen::prelude::*;
+use sensai_graph::Op;
+use sensai_lower::sites::Attend;
+use sensai_lower::{Attn, Draft, Kernel, Launch, Shape, Step, T, Term, Tree};
 
 /// One thread per output: the peak, then the weighted sum.
 #[kernel]
@@ -129,10 +129,13 @@ fn listed_launches(k: &Listed, step: &Step) -> Vec<Launch> {
     let mut launch = Launch::plain(step, &[s.len], Shape::Line(s.len));
     launch
         .args
-        .insert(launch.args.len() - 1, lower::Arg::value(&s.scale));
-    launch
-        .args
-        .extend(counts.into_iter().chain(flags).map(lower::Arg::count));
+        .insert(launch.args.len() - 1, sensai_lower::Arg::value(&s.scale));
+    launch.args.extend(
+        counts
+            .into_iter()
+            .chain(flags)
+            .map(sensai_lower::Arg::count),
+    );
     vec![launch]
 }
 
@@ -205,4 +208,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     }
 }
 
-lower::rule!("listed", propose);
+sensai_lower::rule!("listed", propose);

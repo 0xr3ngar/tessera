@@ -1,4 +1,4 @@
-use load::{Config, Span};
+use sensai_load::{Config, Span};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -136,7 +136,7 @@ fn events(tokens: usize, mode: Mode) -> String {
 #[test]
 fn concurrent_sweeps() {
     let server = Mock::start(Mode::Chunked);
-    let report = load::run(&server.config()).unwrap();
+    let report = sensai_load::run(&server.config()).unwrap();
     assert_eq!(report.runs.len(), 2);
     for (run, requests) in report.runs.iter().zip([2, 8]) {
         assert_eq!(run.requests, requests);
@@ -158,7 +158,7 @@ fn queued_requests() {
     config.requests = Some(3);
     config.warmup = 0;
     config.prompt = Some("Hello café\nworld".into());
-    let report = load::run(&config).unwrap();
+    let report = sensai_load::run(&config).unwrap();
     assert_eq!(report.prompt_words, 3);
     assert_eq!(report.prompt_chars, config.prompt.as_ref().unwrap().len());
     assert!(
@@ -175,7 +175,7 @@ fn queued_requests() {
 #[test]
 fn empty_stream() {
     let server = Mock::start(Mode::Empty);
-    let report = load::run(&server.config()).unwrap();
+    let report = sensai_load::run(&server.config()).unwrap();
     for run in report.runs {
         assert_eq!(run.tokens, 0);
         assert_eq!(run.ttft_ms.p50, run.latency_ms.p50);
@@ -190,7 +190,7 @@ fn failed_streams() {
         (Mode::Truncated, "stream ended without finish_reason"),
     ] {
         let server = Mock::start(mode);
-        let result = load::run(&server.config()).unwrap_err();
+        let result = sensai_load::run(&server.config()).unwrap_err();
         assert_eq!(result.to_string(), error);
     }
 }
@@ -211,8 +211,8 @@ fn config_inputs() {
     let config = Config::parse(Vec::new()).unwrap();
     assert_eq!(config.clients, vec![1]);
     assert_eq!(config.rounds, 4);
-    assert_eq!(load::prompt(32).split_whitespace().count(), 32);
-    assert_eq!(load::prompt(0), "");
+    assert_eq!(sensai_load::prompt(32).split_whitespace().count(), 32);
+    assert_eq!(sensai_load::prompt(0), "");
 }
 
 #[test]
@@ -234,6 +234,6 @@ fn cli_errors() {
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(
         String::from_utf8(output.stderr).unwrap().trim(),
-        load::USAGE
+        sensai_load::USAGE
     );
 }

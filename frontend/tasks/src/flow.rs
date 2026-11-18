@@ -1,9 +1,9 @@
 //! FLUX.2's transformer as a velocity field over latent rows.
 
 use crate::Error;
-use bundle::flux2::transformer;
-use engine::flux2::{AXES, LATENT, TIME};
-use engine::{Model, Recipe, Settings, Tensor};
+use sensai_bundle::flux2::transformer;
+use sensai_engine::flux2::{AXES, LATENT, TIME};
+use sensai_engine::{Model, Recipe, Settings, Tensor};
 use std::path::Path;
 
 pub struct Flow {

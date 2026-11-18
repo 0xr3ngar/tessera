@@ -19,8 +19,8 @@ pub mod wgsl;
 pub use dialect::{Dialect, Text, float, hash};
 pub use form::Load;
 pub use kept::Layout as Kept;
-pub use kernel_macro::{helper, kernel};
 pub use numerics::{Precision, Terms, terms};
+pub use sensai_kernel_macro::{helper, kernel};
 pub use tile::hip as hip_tiles;
 
 /// Threads that share sums by shuffles, on every backend.

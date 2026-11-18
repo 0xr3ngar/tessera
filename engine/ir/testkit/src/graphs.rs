@@ -1,8 +1,8 @@
 //! Small graphs that reach every rule, for tests and calibrate.
 
-use graph::DimName::*;
-use graph::{DType, Dim, DimExpr, DimName, Graph, PathSeg, Port, Role, TensorType};
-use trace::{
+use sensai_graph::DimName::*;
+use sensai_graph::{DType, Dim, DimExpr, DimName, Graph, PathSeg, Port, Role, TensorType};
+use sensai_trace::{
     Act, Embed, EntryKind, Linear, Linears, Mask, Model, Norm, Pairs, Vector, Weights, declare,
 };
 

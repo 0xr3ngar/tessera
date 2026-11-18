@@ -1,8 +1,8 @@
 //! Answers for `/v1/completions` and `/v1/chat/completions`.
 
+use sensai_tasks::Error;
+use sensai_tasks::api::{Finish, Generator, Params, Sink, Step};
 use std::sync::Mutex;
-use tasks::Error;
-use tasks::api::{Finish, Generator, Params, Sink, Step};
 
 /// Answers "hello" in two tokens. Keeps what it was asked.
 #[derive(Default)]

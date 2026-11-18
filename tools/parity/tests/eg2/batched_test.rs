@@ -1,18 +1,18 @@
 //! Padded texts with listed keys match each text alone.
 
-use interp::{Tensor, run};
-use lower::{Device, Pick, Settings, lower};
-use models::eg2::{batched, program};
-use parity::{interpreted, loaded};
-use run::testing::{host, runs};
-use testkit::{Noise, cosine_f32, weights_with};
-use trace::DimName::{Context, Seqs};
-use trace::Linear;
+use sensai_interp::{Tensor, run};
+use sensai_lower::{Device, Pick, Settings, lower};
+use sensai_models::eg2::{batched, program};
+use sensai_parity::{interpreted, loaded};
+use sensai_run::testing::{host, runs};
+use sensai_testkit::{Noise, cosine_f32, weights_with};
+use sensai_trace::DimName::{Context, Seqs};
+use sensai_trace::Linear;
 
 /// Five and eight tokens, padded to eight, on every runner.
 #[test]
 fn padded_texts() {
-    let c = models::small::eg2();
+    let c = sensai_models::small::eg2();
     let (g, alone) = (batched::<Linear>(&c), program::<Linear>(&c));
     let w = weights_with(&g, &mut Noise(5), |_| (0.0, 0.2));
     let texts = [vec![2, 9, 4, 7, 1], vec![2, 3, 5, 8, 6, 11, 10, 1]];

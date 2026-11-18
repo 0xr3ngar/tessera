@@ -1,5 +1,5 @@
 [package]
-name = "host"
+name = "sensai-host"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,5 +7,5 @@ publish.workspace = true
 description = "Runs kernel bodies on the host, each group in lockstep"
 
 [dependencies]
-codegen = { workspace = true }
-graph = { workspace = true }
+sensai-codegen = { workspace = true }
+sensai-graph = { workspace = true }

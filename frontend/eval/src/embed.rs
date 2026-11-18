@@ -1,11 +1,11 @@
 //! Embedding speed over a JSON list of texts.
 
 use crate::Failure;
+use sensai_tasks::Embedder;
 use serde::Serialize;
 use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
-use tasks::Embedder;
 
 #[derive(Serialize)]
 pub struct Speed {
@@ -18,7 +18,7 @@ pub struct Speed {
 
 /// Embeds each text with the release in `model`.
 pub fn embed(model: &Path, texts: &Path, vectors: Option<&Path>) -> Result<Speed, Failure> {
-    let settings = frontend_settings::read();
+    let settings = sensai_frontend_settings::read();
     let start = Instant::now();
     let mut embedder = Embedder::open(model, &settings)?;
     let load_s = start.elapsed().as_secs_f64();

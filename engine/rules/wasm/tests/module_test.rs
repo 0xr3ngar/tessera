@@ -1,15 +1,15 @@
 //! Modules from text: one offers a matmul, others fail.
 
 // The linked matmul rules the module's rule competes with.
-use kernels as _;
-use linear as _;
+use sensai_kernels as _;
+use sensai_linear as _;
 
-use graph::DimName::{Ffn, Hidden, Rows};
-use interp::Tensor;
-use lower::{Arg, Device, Shape, Source, lower};
-use run::testing::{host, runs};
-use testkit::{Noise, max_abs_diff};
-use trace::{DType, Dim, EntryKind, Graph, Linear, Model, Port, Role, TensorType, Weights};
+use sensai_graph::DimName::{Ffn, Hidden, Rows};
+use sensai_interp::Tensor;
+use sensai_lower::{Arg, Device, Shape, Source, lower};
+use sensai_run::testing::{host, runs};
+use sensai_testkit::{Noise, max_abs_diff};
+use sensai_trace::{DType, Dim, EntryKind, Graph, Linear, Model, Port, Role, TensorType, Weights};
 
 #[derive(Weights)]
 struct Layer {
@@ -24,7 +24,7 @@ fn linear() -> Graph {
         Dim::fixed(Hidden, 64),
         Dim::fixed(Ffn, 32),
     ]);
-    let w: Layer = trace::declare(&m);
+    let w: Layer = sensai_trace::declare(&m);
     let ty = TensorType::new([Rows, Hidden], DType::F32);
     let role = Role::Logits;
     let [x] = m.entry(EntryKind::Forward, [Port { role, ty }]);
@@ -67,7 +67,7 @@ fn module(manifest: &str, body: &str) -> Vec<u8> {
 
 #[test]
 fn module_rule_wins() {
-    let rules = wasm::load(&module(MANIFEST, "")).unwrap();
+    let rules = sensai_wasm::load(&module(MANIFEST, "")).unwrap();
     let names: Vec<&str> = rules.iter().map(|r| r.name).collect();
     assert_eq!(names, ["wasm_matmul"]);
     let device = Device::guess(&host()).adding(rules[0]);
@@ -91,7 +91,7 @@ fn module_rule_wins() {
     let mut draws = Noise(5);
     let w = Tensor::f32(vec![32, 64], (0..32 * 64).map(|_| draws.draw()).collect());
     let x = Tensor::f32(vec![4, 64], (0..4 * 64).map(|_| draws.draw()).collect());
-    let want = interp::run(
+    let want = sensai_interp::run(
         &linear(),
         std::slice::from_ref(&w),
         0,
@@ -100,7 +100,7 @@ fn module_rule_wins() {
     for settings in runs().iter().filter(|s| s.gpu().is_some()) {
         let device = Device::guess(settings).adding(rules[0]);
         let plan = lower(&linear(), 0, &[(Rows, 4)], &device).unwrap();
-        let mut runner = run::open(plan, settings).unwrap();
+        let mut runner = sensai_run::open(plan, settings).unwrap();
         runner.load(0, w.view()).unwrap();
         let got = runner.run(&[x.view()]).unwrap().remove(0);
         let want = want.as_ref().unwrap()[0].floats().unwrap();
@@ -113,16 +113,19 @@ fn module_rule_wins() {
 fn bad_modules_fail() {
     let newer = MANIFEST.replace(r#""abi": 1"#, r#""abi": 2"#);
     assert!(matches!(
-        wasm::load(&module(&newer, "")),
-        Err(wasm::Error::Abi(2))
+        sensai_wasm::load(&module(&newer, "")),
+        Err(sensai_wasm::Error::Abi(2))
     ));
     // An endless loop runs out of fuel.
     let spin = "(loop (br 0))";
     assert!(matches!(
-        wasm::load(&module(MANIFEST, spin)),
-        Err(wasm::Error::Wasm(_))
+        sensai_wasm::load(&module(MANIFEST, spin)),
+        Err(sensai_wasm::Error::Wasm(_))
     ));
     let imports = r#"(module (import "env" "f" (func)) (memory (export "memory") 1))"#;
     let imports = wat::parse_str(imports).unwrap();
-    assert!(matches!(wasm::load(&imports), Err(wasm::Error::Wasm(_))));
+    assert!(matches!(
+        sensai_wasm::load(&imports),
+        Err(sensai_wasm::Error::Wasm(_))
+    ));
 }

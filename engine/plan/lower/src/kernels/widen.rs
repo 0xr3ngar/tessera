@@ -3,8 +3,8 @@
 use crate::Kernel;
 use crate::abi::Source;
 use crate::form::Load as Stored;
-use codegen::prelude::*;
-use sim::Load;
+use sensai_codegen::prelude::*;
+use sensai_sim::Load;
 
 /// One thread per element, widened to f32.
 #[kernel]

@@ -1,6 +1,6 @@
 //! One PR comment for every check's report.
 
-use findings::{Finding, Level, Report};
+use sensai_findings::{Finding, Level, Report};
 use std::fmt::Write;
 
 /// CI finds the comment to edit by this first line.

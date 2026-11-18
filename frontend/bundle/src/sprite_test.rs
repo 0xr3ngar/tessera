@@ -1,10 +1,10 @@
 //! The sprite denoiser and CLIP's text tower against torch.
 
 use crate::sprite::{denoiser, text_tower};
-use checkpoint::File;
-use engine::{Graph, Model, Pick, Recipe, Settings, Tensor, Weight};
+use sensai_checkpoint::File;
+use sensai_engine::{Graph, Model, Pick, Recipe, Settings, Tensor, Weight};
+use sensai_testkit::cosine_f32;
 use std::path::Path;
-use testkit::cosine_f32;
 
 const TEXT: usize = 24;
 const WIDTH: usize = 512;
@@ -58,7 +58,7 @@ fn states(clip: &Path, r: &File) -> Vec<f32> {
 
 #[test]
 fn matches_torch() {
-    let Some(dir) = testkit::reference("sprite") else {
+    let Some(dir) = sensai_testkit::reference("sprite") else {
         return eprintln!("no sprite reference here; skipped");
     };
     let r = File::open(&dir.join("ref.safetensors")).unwrap();

@@ -2,10 +2,10 @@
 
 use crate::exec::{ArgVal, Grid};
 use crate::simd::{Block, Level, WIDE, block_at, dot_at, mix_at, panel_at, reduce};
-use codegen::form::{Load, Read};
-use codegen::numerics::Precision;
-use codegen::stage::{Row, apply};
-use graph::{E2M1, E4M3, F16};
+use sensai_codegen::form::{Load, Read};
+use sensai_codegen::numerics::Precision;
+use sensai_codegen::stage::{Row, apply};
+use sensai_graph::{E2M1, E4M3, F16};
 
 /// The most threads one compiled group holds.
 pub const THREADS: usize = 256;

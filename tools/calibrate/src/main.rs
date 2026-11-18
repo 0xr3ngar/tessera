@@ -1,10 +1,10 @@
 //! Probes this GPU, times the grid, plans or shapes.
 
-use calibrate::probe::{fit, links, read, suite};
-use calibrate::{Grid, headroom, judge};
-use calibrate::{bench, plans};
-use lower::{Cluster, Device, Pick, Settings, Step};
-use sim::{Chip, known};
+use sensai_calibrate::probe::{fit, links, read, suite};
+use sensai_calibrate::{Grid, headroom, judge};
+use sensai_calibrate::{bench, plans};
+use sensai_lower::{Cluster, Device, Pick, Settings, Step};
+use sensai_sim::{Chip, known};
 use std::error::Error;
 use std::process::ExitCode;
 use std::time::Instant;
@@ -144,7 +144,7 @@ fn marks(settings: &Settings, args: &[String]) -> Result<(), Box<dyn Error>> {
 }
 
 fn main() -> ExitCode {
-    let settings = frontend_settings::read();
+    let settings = sensai_frontend_settings::read();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match match args.first().map(String::as_str) {
         Some("bench") => marks(&settings, &args[1..]),

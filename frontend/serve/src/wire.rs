@@ -2,7 +2,7 @@
 
 use crate::Model;
 use crate::http::Response;
-use bundle::Message;
+use sensai_bundle::Message;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};

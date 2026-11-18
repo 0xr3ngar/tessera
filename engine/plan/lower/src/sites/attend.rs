@@ -3,7 +3,7 @@ use crate::kernel::Kernel;
 use crate::kernels::{Map, MapStage};
 use crate::rule::{Attn, Draft, Read};
 use crate::tree::{T, Term, Tree};
-use graph::{DimName, Mask, Op};
+use sensai_graph::{DimName, Mask, Op};
 
 /// Attention with `scale` on the scores.
 #[derive(Clone, Copy, Debug)]
@@ -42,7 +42,7 @@ impl Pattern for Attend {
             let Term::Op(Op::Append(index)) = tree.node(k).term else {
                 return None;
             };
-            let graph::DimExpr::Dim(axis) = &tree.g.kept[index as usize].shape.0[1] else {
+            let sensai_graph::DimExpr::Dim(axis) = &tree.g.kept[index as usize].shape.0[1] else {
                 return None;
             };
             let context = tree.g.dims.iter().find(|d| d.name == *axis)?.size.max() as usize;

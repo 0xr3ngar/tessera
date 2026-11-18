@@ -6,12 +6,12 @@ mod lib_test;
 mod lower;
 mod runtime;
 
-use codegen::ir::Body;
-use codegen::{Dialect, hash};
 use cranelift_codegen::ir::{AbiParam, Signature, Type, types};
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Linkage, Module, default_libcall_names};
+use sensai_codegen::ir::Body;
+use sensai_codegen::{Dialect, hash};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 

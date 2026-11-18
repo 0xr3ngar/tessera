@@ -1,9 +1,9 @@
 //! A 3x3 convolution: gathered neighbours and a matmul, fused.
 
-use codegen::prelude::*;
-use graph::{Op, Select, View};
-use lower::form::F32_FORM;
-use lower::{Draft, Kernel, T, Term, Tree};
+use sensai_codegen::prelude::*;
+use sensai_graph::{Op, Select, View};
+use sensai_lower::form::F32_FORM;
+use sensai_lower::{Draft, Kernel, T, Term, Tree};
 
 /// Pixels a 3x3 kernel reads.
 const TAPS: u32 = 9;
@@ -97,4 +97,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(k, [x, ids, w], len)])
 }
 
-lower::rule!("neighbours", propose);
+sensai_lower::rule!("neighbours", propose);

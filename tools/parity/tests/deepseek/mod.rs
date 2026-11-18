@@ -1,12 +1,12 @@
 //! DeepSeek-V3.
 
-use models::mla::{Config, Moe as Experts, program, stepper};
-use parity::{Spec, Stepper, suite};
-use trace::Composite::{Attention, Mlp, Moe};
-use trace::Graph;
+use sensai_models::mla::{Config, Moe as Experts, program, stepper};
+use sensai_parity::{Spec, Stepper, suite};
+use sensai_trace::Composite::{Attention, Mlp, Moe};
+use sensai_trace::Graph;
 
 fn small() -> Graph {
-    program::<Experts>(&models::small::deepseek())
+    program::<Experts>(&sensai_models::small::deepseek())
 }
 
 pub fn release() -> Graph {
@@ -14,7 +14,7 @@ pub fn release() -> Graph {
 }
 
 const STEPPER: Stepper = Stepper {
-    small: || stepper::<Experts>(&models::small::deepseek()),
+    small: || stepper::<Experts>(&sensai_models::small::deepseek()),
     release: || stepper::<Experts>(&Config::deepseek_v3(1, 1024)),
 };
 

@@ -1,9 +1,9 @@
 //! Writes a prompt's sprites, side by side, to a PNG.
 
+use sensai_tasks::api::Image;
+use sensai_tasks::paint::{Options, Painter};
+use sensai_tasks::png;
 use std::time::Instant;
-use tasks::api::Image;
-use tasks::paint::{Options, Painter};
-use tasks::png;
 
 /// Each sprite pixel becomes this many.
 const SCALE: usize = 8;
@@ -25,7 +25,7 @@ fn strip(images: &[Image]) -> Image {
     }
 }
 
-fn main() -> Result<(), tasks::Error> {
+fn main() -> Result<(), sensai_tasks::Error> {
     let args: Vec<String> = std::env::args().collect();
     let usage = "usage: paint <model dir> <out.png> <seed|greedy> <prompt>";
     let [_, dir, out, mode, prompt @ ..] = args.as_slice() else {
@@ -38,7 +38,7 @@ fn main() -> Result<(), tasks::Error> {
     };
     let n = if greedy { 1 } else { N };
     let started = Instant::now();
-    let mut painter = Painter::open(dir.as_ref(), &frontend_settings::read(), n)?;
+    let mut painter = Painter::open(dir.as_ref(), &sensai_frontend_settings::read(), n)?;
     eprintln!("{}: opened in {:?}", painter.device(), started.elapsed());
     let started = Instant::now();
     let options = Options {

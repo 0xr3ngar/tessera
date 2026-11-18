@@ -1,7 +1,7 @@
 //! Pictures for `/v1/images/generations`.
 
-use tasks::Error;
-use tasks::api::{Image, Paint, Sizes};
+use sensai_tasks::Error;
+use sensai_tasks::api::{Image, Paint, Sizes};
 
 /// Red is the seed, blue the index.
 pub(super) struct MockPaint;

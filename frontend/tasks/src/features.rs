@@ -1,10 +1,10 @@
 //! Prompts as a decoder's residual rows, as FLUX.2 reads text.
 
 use crate::Error;
-use bundle::Message;
-use bundle::taps::{Tapped, tapped};
-use bundle::tokenize::hf::Hf;
-use engine::{Model, Recipe, Settings, Tensor};
+use sensai_bundle::Message;
+use sensai_bundle::taps::{Tapped, tapped};
+use sensai_bundle::tokenize::hf::Hf;
+use sensai_engine::{Model, Recipe, Settings, Tensor};
 use std::path::Path;
 
 pub struct Features {

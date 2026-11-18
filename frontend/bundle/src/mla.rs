@@ -2,9 +2,9 @@
 
 use crate::names::Rule;
 use crate::pull;
-use checkpoint::{File, Offer, exlr8};
-use engine::mla::{Config, Index, Moe, RotatedMoe, program};
-use engine::{Graph, Pins, Stack, Weight};
+use sensai_checkpoint::{File, Offer, exlr8};
+use sensai_engine::mla::{Config, Index, Moe, RotatedMoe, program};
+use sensai_engine::{Graph, Pins, Stack, Weight};
 use serde::Deserialize;
 use std::error::Error;
 use std::path::Path;

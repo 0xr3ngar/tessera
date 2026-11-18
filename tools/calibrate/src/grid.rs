@@ -1,15 +1,15 @@
 //! Small graphs that reach every rule, at many sizes.
 
 use crate::{choices, measure};
-use engine::Error;
-use graph::DimName::{self, *};
-use lower::{Device, Settings, Step, Tensor, View, lower};
-use run::{Run, open};
-use testkit::Noise;
-use testkit::graphs::{
+use sensai_engine::Error;
+use sensai_graph::DimName::{self, *};
+use sensai_lower::{Device, Settings, Step, Tensor, View, lower};
+use sensai_run::{Run, open};
+use sensai_testkit::Noise;
+use sensai_testkit::graphs::{
     attention, indexed, indexed_rows, linear, neighbours, rotation, routed, rows, table, turned,
 };
-use trace::{Dim, Graph, TensorType};
+use sensai_trace::{Dim, Graph, TensorType};
 
 /// A timed plan holds at most this many elements.
 const ROOM: usize = 750_000_000;
@@ -47,8 +47,12 @@ pub(crate) fn fill(
     sizes: &Sizes,
     noise: &mut Noise,
 ) -> Result<Tensor, Error> {
-    let unsized_shape = || Error::from(lower::Error::from(lower::Size::Shape(ty.shape.clone())));
-    testkit::fill(g, ty, sizes, noise).ok_or_else(unsized_shape)
+    let unsized_shape = || {
+        Error::from(sensai_lower::Error::from(sensai_lower::Size::Shape(
+            ty.shape.clone(),
+        )))
+    };
+    sensai_testkit::fill(g, ty, sizes, noise).ok_or_else(unsized_shape)
 }
 
 impl Case {
@@ -91,7 +95,7 @@ impl Case {
 /// A runner for `plan` with noise for weights.
 pub(crate) fn opened(
     g: &Graph,
-    plan: lower::Plan,
+    plan: sensai_lower::Plan,
     noise: &mut Noise,
     settings: &Settings,
 ) -> Result<Box<dyn Run>, Error> {
@@ -184,7 +188,7 @@ impl Grid {
     }
 
     /// Each plan `run` times from `guess`, per competing rule.
-    pub fn plans(&self, guess: &dyn Fn() -> Device) -> Result<Vec<lower::Plan>, Error> {
+    pub fn plans(&self, guess: &dyn Fn() -> Device) -> Result<Vec<sensai_lower::Plan>, Error> {
         let mut plans = Vec::new();
         for case in self.cases() {
             for sizes in &case.sizes {

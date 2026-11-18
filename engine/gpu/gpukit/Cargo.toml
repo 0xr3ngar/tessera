@@ -1,5 +1,5 @@
 [package]
-name = "gpukit"
+name = "sensai-gpukit"
 version = "0.1.0"
 edition = "2024"
 description = "The runtimes tessera loads at run time, GPUs and RDMA: pipelines, buffers, verbs"
@@ -17,8 +17,8 @@ rocm = []
 thiserror = "2"
 derive_more = { version = "2.1", features = ["display"] }
 serde = { version = "1", features = ["derive"] }
-mem = { workspace = true }
-platform = { workspace = true }
+sensai-mem = { workspace = true }
+sensai-platform = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", default-features = false, features = ["std"] }

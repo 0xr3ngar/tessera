@@ -4,7 +4,7 @@ use crate::buffer::Buffer;
 use crate::layout::Layout;
 use crate::tensor::Tensor;
 use crate::{Error, mismatch};
-use graph::{Bf16, DType};
+use sensai_graph::{Bf16, DType};
 use std::borrow::Cow;
 
 /// A window `at` bytes into a buffer, with a layout.

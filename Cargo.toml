@@ -28,53 +28,53 @@ publish = false
 
 # Every crate here, so members name each other without paths.
 [workspace.dependencies]
-calibrate = { path = "tools/calibrate" }
-checkpoint = { path = "frontend/checkpoint" }
-codegen = { path = "engine/plan/codegen" }
-engine-comm = { path = "engine/plan/comm" }
-engine = { path = "engine/engine" }
-engine-settings = { path = "engine/settings" }
-findings = { path = "tools/findings" }
-frontend-comm = { path = "frontend/comm" }
-frontend-settings = { path = "frontend/settings" }
-gpukit = { path = "engine/gpu/gpukit" }
-bundle = { path = "frontend/bundle" }
-grammar = { path = "frontend/grammar" }
-graph = { path = "engine/ir/graph" }
-interp = { path = "engine/ir/interp" }
-host = { path = "engine/plan/host" }
-jit = { path = "engine/plan/jit" }
-kernel-macro = { path = "engine/plan/kernel-macro" }
-kernels = { path = "engine/rules/kernels" }
-kv = { path = "engine/ir/kv" }
-cpu = { path = "engine/rules/cpu" }
-linear = { path = "engine/rules/linear" }
-attention = { path = "engine/rules/attention" }
-rules = { path = "engine/rules/rules" }
-lower = { path = "engine/plan/lower" }
-mem = { path = "engine/ir/mem" }
-models = { path = "engine/models" }
-platform = { path = "engine/gpu/platform" }
-recipe = { path = "frontend/recipe" }
-parity = { path = "tools/parity" }
-run = { path = "engine/plan/run" }
-serve = { path = "frontend/serve" }
-shape = { path = "tools/shape" }
-sim = { path = "engine/plan/sim" }
-tasks = { path = "frontend/tasks" }
-testkit = { path = "engine/ir/testkit" }
-trace = { path = "engine/ir/trace" }
-trace-derive = { path = "engine/ir/trace-derive" }
-wasm = { path = "engine/rules/wasm" }
+sensai-calibrate = { path = "tools/calibrate" }
+sensai-checkpoint = { path = "frontend/checkpoint" }
+sensai-codegen = { path = "engine/plan/codegen" }
+sensai-engine-comm = { path = "engine/plan/comm" }
+sensai-engine = { path = "engine/engine" }
+sensai-engine-settings = { path = "engine/settings" }
+sensai-findings = { path = "tools/findings" }
+sensai-frontend-comm = { path = "frontend/comm" }
+sensai-frontend-settings = { path = "frontend/settings" }
+sensai-gpukit = { path = "engine/gpu/gpukit" }
+sensai-bundle = { path = "frontend/bundle" }
+sensai-grammar = { path = "frontend/grammar" }
+sensai-graph = { path = "engine/ir/graph" }
+sensai-interp = { path = "engine/ir/interp" }
+sensai-host = { path = "engine/plan/host" }
+sensai-jit = { path = "engine/plan/jit" }
+sensai-kernel-macro = { path = "engine/plan/kernel-macro" }
+sensai-kernels = { path = "engine/rules/kernels" }
+sensai-kv = { path = "engine/ir/kv" }
+sensai-cpu = { path = "engine/rules/cpu" }
+sensai-linear = { path = "engine/rules/linear" }
+sensai-attention = { path = "engine/rules/attention" }
+sensai-rules = { path = "engine/rules/rules" }
+sensai-lower = { path = "engine/plan/lower" }
+sensai-mem = { path = "engine/ir/mem" }
+sensai-models = { path = "engine/models" }
+sensai-platform = { path = "engine/gpu/platform" }
+sensai-recipe = { path = "frontend/recipe" }
+sensai-parity = { path = "tools/parity" }
+sensai-run = { path = "engine/plan/run" }
+sensai-serve = { path = "frontend/serve" }
+sensai-shape = { path = "tools/shape" }
+sensai-sim = { path = "engine/plan/sim" }
+sensai-tasks = { path = "frontend/tasks" }
+sensai-testkit = { path = "engine/ir/testkit" }
+sensai-trace = { path = "engine/ir/trace" }
+sensai-trace-derive = { path = "engine/ir/trace-derive" }
+sensai-wasm = { path = "engine/rules/wasm" }
 
 # The host executor interprets whole kernels, so tests need it optimized.
-[profile.dev.package.host]
+[profile.dev.package.sensai-host]
 opt-level = 3
 
 # The host executor decodes forms through codegen, once per element.
-[profile.dev.package.codegen]
+[profile.dev.package.sensai-codegen]
 opt-level = 3
 
 # Reference checks run whole models through the interpreter.
-[profile.dev.package.interp]
+[profile.dev.package.sensai-interp]
 opt-level = 3

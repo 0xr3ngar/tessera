@@ -1,8 +1,8 @@
 //! The sprite denoiser and its CLIP text tower, from safetensors.
 
 use crate::tokenize::hf::Hf;
-use checkpoint::File;
-use engine::{Graph, PathSeg, Tensor, Weight, bind, clip, sprite};
+use sensai_checkpoint::File;
+use sensai_engine::{Graph, PathSeg, Tensor, Weight, bind, clip, sprite};
 use std::error::Error;
 use std::path::Path;
 

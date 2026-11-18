@@ -5,9 +5,9 @@ mod cpu;
 mod flash;
 mod listed;
 
-use graph::Mask;
-use lower::kernels::{Map, MapStage};
-use lower::{Draft, T, Tree, sites};
+use sensai_graph::Mask;
+use sensai_lower::kernels::{Map, MapStage};
+use sensai_lower::{Draft, T, Tree, sites};
 
 /// Keys before and after a query's position that it sees.
 fn window(mask: Mask, keys: usize) -> (usize, usize) {
