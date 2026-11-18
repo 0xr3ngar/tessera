@@ -21,6 +21,17 @@ pub enum Pick {
     Gpu(Backend),
 }
 
+/// How many bytes one plan may hold.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Memory {
+    /// Most of what the device reports.
+    #[default]
+    Device,
+    Bytes(u64),
+    /// No check.
+    Off,
+}
+
 /// Settings for the planner, the runners and the tools.
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -37,6 +48,8 @@ pub struct Settings {
     pub emulate: Option<Backend>,
     /// RDMA port specs the loopback tests run over.
     pub verbs: Option<String>,
+    /// The plan size the runners refuse past.
+    pub memory: Memory,
 }
 
 impl Default for Settings {
@@ -49,6 +62,7 @@ impl Default for Settings {
             names: None,
             emulate: None,
             verbs: None,
+            memory: Memory::Device,
         }
     }
 }

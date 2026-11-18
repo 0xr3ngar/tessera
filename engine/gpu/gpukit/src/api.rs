@@ -40,6 +40,8 @@ pub(crate) mod entry {
     pub(crate) type Int = unsafe extern "C" fn(*mut c_int) -> c_int;
     pub(crate) type Name = unsafe extern "C" fn(*mut c_char, c_int, c_int) -> c_int;
     pub(crate) type Attribute = unsafe extern "C" fn(*mut c_int, c_int, c_int) -> c_int;
+    /// Writes a device's total memory in bytes.
+    pub(crate) type Total = unsafe extern "C" fn(*mut usize, c_int) -> c_int;
     pub(crate) type Load = unsafe extern "C" fn(*mut Handle, *const c_void) -> c_int;
     pub(crate) type Function = unsafe extern "C" fn(*mut Handle, Handle, *const c_char) -> c_int;
     /// Unloads, destroys or synchronizes one handle.

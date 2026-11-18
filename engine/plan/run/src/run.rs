@@ -3,6 +3,7 @@
 use crate::Error;
 use crate::held::Held;
 use codegen::Precision;
+use engine_settings::Memory;
 use gpukit::{Limits, Platform};
 use graph::DimName;
 use lower::form::{F32_FORM, Load};
@@ -21,9 +22,26 @@ pub struct Base {
     pub(crate) bound: HashMap<DimName, u32>,
     /// Each step's launches before binding, built once.
     launches: Vec<OnceLock<Vec<Launch>>>,
+    /// Bytes a plan may hold. `None` checks nothing.
+    pub(crate) budget: Option<u64>,
 }
 
 impl Base {
+    /// Empty, with the plan budget `memory` gives on `platform`.
+    pub(crate) fn new(memory: Memory, platform: &Platform) -> Self {
+        // A tenth of the device stays spare.
+        let budget = match memory {
+            Memory::Off => None,
+            Memory::Bytes(bytes) => Some(bytes),
+            Memory::Device if platform.memory == 0 => None,
+            Memory::Device => Some(platform.memory - platform.memory / 10),
+        };
+        Self {
+            budget,
+            ..Self::default()
+        }
+    }
+
     /// Takes `plan` as the one to run.
     pub(crate) fn adopt(&mut self, plan: &Plan) {
         self.plan = plan.clone();
@@ -37,6 +55,12 @@ impl Base {
         }
         if plan.zoned() {
             return Err(Error::Zones);
+        }
+        let planned: u64 = plan.buffers.iter().map(|b| *b as u64).sum();
+        if let Some(budget) = self.budget
+            && planned > budget
+        {
+            return Err(Error::OverBudget { planned, budget });
         }
         Ok(true)
     }

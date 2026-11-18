@@ -74,6 +74,7 @@ impl Spec {
             units: 0,
             bandwidth: self.bandwidth,
             integrated: true,
+            memory: 0,
         })
     }
 

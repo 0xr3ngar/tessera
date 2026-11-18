@@ -20,7 +20,7 @@ pub use schedule::{Batch, Fair, Policy, Seq, Sink};
 
 // The front end reaches the engine crates only through these.
 pub use engine_comm as comm;
-pub use engine_settings::Backend;
+pub use engine_settings::{Backend, Memory};
 pub use graph::{Bf16, DimExpr, E4M3, F16, Graph, PathSeg, Shape};
 pub use interp::{Tensor, bind};
 pub use lower::{Pick, Pins, Recipe, Settings, Weight, form};
