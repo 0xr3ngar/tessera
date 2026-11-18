@@ -1,0 +1,73 @@
+//! Prompts as a decoder's residual rows, as FLUX.2 reads text.
+
+use crate::Error;
+use bundle::Message;
+use bundle::taps::{Tapped, tapped};
+use engine::{Model, Recipe, Settings, Tensor};
+use std::path::Path;
+
+pub struct Features {
+    model: Model,
+    tapped: Tapped,
+    /// Rows per prompt, pads included.
+    rows: usize,
+}
+
+impl Features {
+    /// The model in `dir`, `seqs` prompts of `rows` per launch.
+    pub fn open(
+        dir: &Path,
+        settings: &Settings,
+        layers: &[u64],
+        [seqs, rows]: [usize; 2],
+    ) -> Result<Self, Error> {
+        let t = tapped(dir, [seqs as u64, rows as u64], layers)?;
+        let recipe = Recipe {
+            pins: t.pins.clone(),
+            ..Recipe::default()
+        };
+        let mut model = Model::open(t.graph.clone(), &recipe, settings)?;
+        model.load(&t.weights)?;
+        Ok(Self {
+            model,
+            tapped: t,
+            rows,
+        })
+    }
+
+    /// The prompt as a user turn, without thinking.
+    pub fn ids(&self, prompt: &str) -> Result<Vec<u32>, Error> {
+        let message = Message {
+            role: "user".into(),
+            content: prompt.into(),
+        };
+        let text = self.tapped.template.render(&[message], false)?;
+        let mut ids = self.tapped.tokenizer.encode_special(&text)?;
+        ids.truncate(self.rows);
+        Ok(ids)
+    }
+
+    /// Each prompt's `rows` rows, padded. Pads read only the prompt.
+    pub fn encode(&mut self, prompts: &[&str]) -> Result<Vec<Vec<f32>>, Error> {
+        let (n, rows) = (prompts.len(), self.rows);
+        let (mut tokens, mut lists) = (Vec::with_capacity(n * rows), Vec::new());
+        for p in prompts {
+            let mut ids = self.ids(p)?;
+            let len = ids.len().max(1);
+            ids.resize(rows, self.tapped.pad);
+            tokens.extend(ids);
+            for row in 0..rows {
+                let last = row.min(len - 1);
+                lists.extend((0..rows).map(|j| if j <= last { j as u32 } else { rows as u32 }));
+            }
+        }
+        let positions = (0..n).flat_map(|_| 0..rows as u32).collect();
+        let inputs = [
+            Tensor::u32(vec![n, rows], tokens),
+            Tensor::u32(vec![n, rows], positions),
+            Tensor::u32(vec![n, rows, rows], lists),
+        ];
+        let out = self.model.run(&inputs)?[0].floats()?.to_vec();
+        Ok(out.chunks(out.len() / n).map(<[f32]>::to_vec).collect())
+    }
+}

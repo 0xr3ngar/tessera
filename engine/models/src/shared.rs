@@ -224,6 +224,22 @@ pub(crate) fn tokens(m: &Model) -> [Tensor; 2] {
     ports(m, EntryKind::Forward, Context)
 }
 
+/// A forward entry's tokens, positions and key lists.
+pub(crate) fn listed(m: &Model) -> [Tensor; 3] {
+    let port = |role, shape: Vec<DimExpr>| Port {
+        role,
+        ty: TensorType::new(shape, DType::U32),
+    };
+    let rows = vec![Seqs.into(), Context.into()];
+    let lists = vec![Seqs.into(), Context.into(), Context.into()];
+    let ports = [
+        port(Role::Tokens, rows.clone()),
+        port(Role::Positions, rows),
+        port(Role::Keys, lists),
+    ];
+    m.entry(EntryKind::Forward, ports)
+}
+
 /// A new entry's tokens and positions, `[Seqs, rows]` each.
 pub(crate) fn ports(m: &Model, kind: EntryKind, rows: DimName) -> [Tensor; 2] {
     let ty = TensorType::new([Seqs, rows], DType::U32);

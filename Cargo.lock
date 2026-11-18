@@ -2140,6 +2140,7 @@ name = "tasks"
 version = "0.1.0"
 dependencies = [
  "bundle",
+ "checkpoint",
  "engine",
  "serde_json",
  "testkit",
