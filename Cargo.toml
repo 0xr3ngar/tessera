@@ -55,8 +55,10 @@ lower = { path = "engine/plan/lower" }
 mem = { path = "engine/ir/mem" }
 models = { path = "engine/models" }
 platform = { path = "engine/gpu/platform" }
+recipe = { path = "frontend/recipe" }
 parity = { path = "tools/parity" }
 run = { path = "engine/plan/run" }
+serve = { path = "frontend/serve" }
 shape = { path = "tools/shape" }
 sim = { path = "engine/plan/sim" }
 tasks = { path = "frontend/tasks" }

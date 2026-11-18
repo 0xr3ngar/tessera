@@ -13,6 +13,7 @@ mod images_test;
 mod lib_test;
 #[cfg(test)]
 mod mocks;
+pub mod start;
 mod wire;
 
 use bundle::Message;
