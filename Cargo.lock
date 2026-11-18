@@ -2284,6 +2284,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tessera-publish"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "tessera-style"
 version = "0.1.0"
 dependencies = [

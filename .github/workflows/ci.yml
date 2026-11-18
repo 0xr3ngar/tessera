@@ -129,6 +129,11 @@ jobs:
         with:
           shared-key: features
       - run: cargo clippy --workspace --all-targets --features "${{ matrix.features }}"
+      # The merged crates.io crates must build with each backend too.
+      - run: cargo run -q -p tessera-publish
+      - run: cargo clippy --manifest-path target/publish/Cargo.toml --workspace --features "${{ matrix.features }}"
+      - if: matrix.features == ''
+        run: cargo package --manifest-path target/publish/Cargo.toml --workspace --allow-dirty --no-verify
 
   grammar:
     # The llguidance guide, behind its off-by-default feature.

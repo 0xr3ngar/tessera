@@ -283,8 +283,13 @@ pub(crate) fn rules_with(made: &[&'static Rule]) -> Vec<&'static Rule> {
 
 /// Fails when `rules` holds only this crate's own rules.
 pub fn linked(rules: &[&Rule]) -> Result<(), Error> {
-    let ours = Some(env!("CARGO_CRATE_NAME"));
-    if rules.iter().any(|r| r.module.split("::").next() != ours) {
+    // Module path, so a merged crate still tells rules apart.
+    let ours = module_path!().trim_end_matches("::rule");
+    let own = |m: &str| {
+        m.strip_prefix(ours)
+            .is_some_and(|r| r.is_empty() || r.starts_with("::"))
+    };
+    if rules.iter().any(|r| !own(r.module)) {
         return Ok(());
     }
     Err(Unsupported::Unlinked.into())
