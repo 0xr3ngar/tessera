@@ -214,3 +214,50 @@ impl Offer for File {
         }
     }
 }
+
+/// One safetensors file, or a split one's shards.
+pub struct Shards(Vec<File>);
+
+impl Shards {
+    /// Every `.safetensors` file in `dir`, in name order.
+    pub fn open(dir: &Path) -> Result<Self, Error> {
+        let mut paths: Vec<_> = (std::fs::read_dir(dir)?.flatten())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "safetensors"))
+            .collect();
+        paths.sort();
+        if paths.is_empty() {
+            return Err(Error::Missing(format!("{}/*.safetensors", dir.display())));
+        }
+        Ok(Self(
+            paths
+                .iter()
+                .map(|p| File::open(p))
+                .collect::<Result<_, _>>()?,
+        ))
+    }
+
+    /// The file holding `name`.
+    fn holding(&self, name: &str) -> Result<&File, Error> {
+        let found = self.0.iter().find(|f| f.shape(name).is_some());
+        found.ok_or_else(|| Error::Missing(name.into()))
+    }
+}
+
+impl Offer for Shards {
+    fn slices(&self) -> Vec<Slice> {
+        self.0.iter().flat_map(Offer::slices).collect()
+    }
+
+    fn floats(&self, name: &str) -> Result<Vec<f32>, Error> {
+        self.holding(name)?.floats(name)
+    }
+
+    fn packed(&self, name: &str) -> Result<Vec<u8>, Error> {
+        Offer::packed(self.holding(name)?, name)
+    }
+
+    fn bf16(&self, name: &str) -> Result<Vec<u8>, Error> {
+        Offer::bf16(self.holding(name)?, name)
+    }
+}

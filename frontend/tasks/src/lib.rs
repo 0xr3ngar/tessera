@@ -11,6 +11,9 @@ pub mod flow;
 #[cfg(test)]
 mod flow_test;
 pub mod generate;
+pub mod klein;
+#[cfg(test)]
+mod klein_test;
 pub mod paint;
 pub mod pictures;
 #[cfg(test)]

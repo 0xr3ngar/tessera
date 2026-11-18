@@ -2,7 +2,7 @@
 
 use crate::tokenize::hf::Hf;
 use crate::{Template, config, pull};
-use checkpoint::File;
+use checkpoint::Shards;
 use engine::decoder::{Swiglu, taps};
 use engine::{Graph, Norm, Pins, Weight};
 use std::error::Error;
@@ -29,7 +29,11 @@ fn pad(dir: &Path, tokenizer: &Hf) -> Result<u32> {
 }
 
 /// The model in `dir`, cut after its deepest tap.
-pub fn tapped(dir: &Path, [seqs, context]: [u64; 2], layers: &[u64]) -> Result<Tapped> {
+pub fn tapped(
+    [dir, words]: [&Path; 2],
+    [seqs, context]: [u64; 2],
+    layers: &[u64],
+) -> Result<Tapped> {
     let (arch, mut config) = config(dir, seqs, context)?;
     let deepest = layers.iter().copied().max().ok_or("no layers to tap")?;
     if deepest > config.stack.layers {
@@ -41,15 +45,14 @@ pub fn tapped(dir: &Path, [seqs, context]: [u64; 2], layers: &[u64]) -> Result<T
         "llama" => taps::<(), Swiglu>(&config, layers),
         _ => return Err(format!("{arch} has no taps here").into()),
     };
-    let file = File::open(&dir.join("model.safetensors"))?;
-    let (weights, pins) = pull(&graph, &file, deepest, &[])?;
-    let tokenizer = Hf::open(&dir.join("tokenizer.json"))?;
-    let template = Template::load(dir)?.ok_or("no chat template")?;
+    let (weights, pins) = pull(&graph, &Shards::open(dir)?, deepest, &[])?;
+    let tokenizer = Hf::open(&words.join("tokenizer.json"))?;
+    let template = Template::load(words)?.ok_or("no chat template")?;
     Ok(Tapped {
         graph,
         weights,
         pins,
-        pad: pad(dir, &tokenizer)?,
+        pad: pad(words, &tokenizer)?,
         tokenizer,
         template,
     })

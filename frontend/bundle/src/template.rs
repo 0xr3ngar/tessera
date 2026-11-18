@@ -62,7 +62,12 @@ impl Template {
     pub fn load(dir: &Path) -> Result<Option<Self>, Box<dyn Error + Send + Sync>> {
         let text = std::fs::read_to_string(dir.join("tokenizer_config.json"))?;
         let config: TokenizerConfig = serde_json::from_str(&text)?;
-        Ok(match config.chat_template {
+        // Newer repositories keep the template in its own file.
+        let source = match config.chat_template {
+            Some(source) => Some(source),
+            None => std::fs::read_to_string(dir.join("chat_template.jinja")).ok(),
+        };
+        Ok(match source {
             Some(source) => Some(Self::new(source)?),
             None => None,
         })
