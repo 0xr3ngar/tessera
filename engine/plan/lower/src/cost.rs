@@ -4,6 +4,7 @@ use crate::form::Pins;
 use crate::kernel::Kernel;
 use crate::plan::{Plan, Step};
 use crate::recipe::Recipe;
+use crate::rule::{Rule, rules_with};
 use codegen::kept::Layout;
 use engine_settings::{Pick, Settings};
 use graph::Parts;
@@ -55,6 +56,9 @@ pub struct Device {
     /// Kernels never to choose.
     #[serde(skip)]
     barred: Vec<String>,
+    /// Rules made at run time, beside the linked ones.
+    #[serde(skip)]
+    made: Vec<&'static Rule>,
     /// The form each weight is stored in.
     #[serde(skip)]
     pub pins: Pins,
@@ -107,6 +111,7 @@ impl Default for Device {
             host: Timings::default(),
             favor: None,
             barred: Vec::new(),
+            made: Vec::new(),
             pins: Pins::default(),
             kept: dense(),
             generation: 0,
@@ -160,6 +165,7 @@ impl Device {
         self.pins = recipe.pins.clone();
         self.favor = recipe.favor.clone();
         self.barred = recipe.barred.clone();
+        self.made = recipe.rules.clone();
         self.kept = recipe.kept;
         self.changed()
     }
@@ -256,6 +262,17 @@ impl Device {
     pub fn favoring(mut self, rule: impl Into<String>) -> Self {
         self.favor = Some(rule.into());
         self.changed()
+    }
+
+    /// The same device, also asking `rule`.
+    pub fn adding(mut self, rule: &'static Rule) -> Self {
+        self.made.push(rule);
+        self.changed()
+    }
+
+    /// Linked and made rules, by name.
+    pub fn rules(&self) -> Vec<&'static Rule> {
+        rules_with(&self.made)
     }
 
     pub fn favors(&self, rule: &str) -> bool {
