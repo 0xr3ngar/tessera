@@ -81,12 +81,12 @@ impl Context {
             driver: version.map(|v| format!("{}.{}", v / 1000, (v % 1000) / 10))?,
             limits,
             units: attr(CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)? as usize,
-            bandwidth: sensai_platform::bandwidth(
+            bandwidth: platform::bandwidth(
                 attr(CU_DEVICE_ATTRIBUTE_MEMORY_CLOCK_RATE)?,
                 attr(CU_DEVICE_ATTRIBUTE_GLOBAL_MEMORY_BUS_WIDTH)?,
             ),
             integrated,
-            memory: sensai_platform::device_memory(total as u64, integrated),
+            memory: platform::device_memory(total as u64, integrated),
         });
         let own = Own {
             raw,
