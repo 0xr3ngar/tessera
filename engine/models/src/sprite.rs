@@ -1,6 +1,6 @@
 //! A masked-diffusion model of 16x16 palette sprites.
 
-use crate::shared::{Attend, Side};
+use crate::shared::{Attend, Side, join, spread};
 use trace::DimName::*;
 use trace::{
     Act, DType, Dim, DimExpr, EntryKind, Graph, Linear, Mask, Model, Norm, PathSeg, Port, Role,
@@ -257,12 +257,6 @@ fn inputs(m: &Model, c: &Config) -> Inputs {
     }
 }
 
-/// `[Seqs, n, ..]` from `a` then `b`, joined on axis 1.
-fn join(a: &Tensor, b: &Tensor) -> Tensor {
-    let swap = [0, 2, 1];
-    a.permute(&swap).concat(&b.permute(&swap)).permute(&swap)
-}
-
 /// `t` where the guide keeps text, else `null`.
 fn choose(t: &Tensor, null: &Tensor, guide: &Tensor, rest: &[DimExpr]) -> Tensor {
     let width = rest.iter().cloned().reduce(|a, b| a * b).expect("rank");
@@ -272,12 +266,6 @@ fn choose(t: &Tensor, null: &Tensor, guide: &Tensor, rest: &[DimExpr]) -> Tensor
     let mut shape = vec![Seqs.into(), 2u64.into()];
     shape.extend_from_slice(rest);
     both.reshape(shape).mix(1, guide)
-}
-
-/// `[Seqs, Hidden]` as `[Seqs, rows, Hidden]`.
-fn spread(v: &Tensor, rows: u64) -> Tensor {
-    v.reshape(vec![Seqs.into(), 1u64.into(), Hidden.into()])
-        .expand(1, rows)
 }
 
 /// Text tokens and the global condition.

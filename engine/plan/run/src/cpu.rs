@@ -4,6 +4,7 @@ use crate::Error;
 use crate::run::{Base, Run, line};
 use codegen::Precision;
 use codegen::ir::{Body, Param, Ty};
+use engine_settings::Memory;
 use gpukit::{Limits, Platform};
 use host::exec::{self, ArgVal, Grid};
 use host::lockstep::THREADS;
@@ -28,9 +29,14 @@ pub(crate) struct Runner {
 }
 
 impl Runner {
-    pub fn new(plan: Plan, lanes: usize, precision: Precision) -> Result<Self, Error> {
+    pub fn new(
+        plan: Plan,
+        lanes: usize,
+        precision: Precision,
+        memory: Memory,
+    ) -> Result<Self, Error> {
         let mut runner = Self {
-            base: Base::default(),
+            base: Base::new(memory, &Platform::host(Limits::host(lanes))),
             bodies: Vec::new(),
             compiled: Vec::new(),
             known: HashMap::new(),

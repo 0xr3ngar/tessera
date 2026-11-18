@@ -52,6 +52,7 @@ crate::dl::library! {
         pub hip_init: entry::Init = "hipInit",
         pub hip_runtime_get_version: entry::Int = "hipRuntimeGetVersion",
         pub hip_device_get_attribute: entry::Attribute = "hipDeviceGetAttribute",
+        pub hip_device_total_mem: entry::Total = "hipDeviceTotalMem",
         pub hip_get_device_count: entry::Int = "hipGetDeviceCount",
         pub hip_set_device: HipSetDevice = "hipSetDevice",
         pub hip_device_get_name: entry::Name = "hipDeviceGetName",

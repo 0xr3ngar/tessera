@@ -596,7 +596,7 @@ fn view(dims: &[Dim], v: &View, x: &TensorType) -> Result<TensorType, TypeError>
             let size = poly(dims, &x.shape.0[a])?;
             let fits = match (end.as_const(), size.as_const()) {
                 (Some(e), Some(s)) => e <= s,
-                _ => end == size,
+                _ => size.covers(&end),
             };
             need(fits, ErrorKind::Shape, || {
                 format!("slice {start}+{len} runs past axis {a} of {}", x.shape)

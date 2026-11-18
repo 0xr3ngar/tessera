@@ -72,6 +72,11 @@ pub enum Error {
         form: &'static str,
         why: &'static str,
     },
+    #[error(
+        "the plan needs {planned} bytes, over the {budget} available. \
+         TESSERA_MEMORY sets the budget in bytes, or `off`"
+    )]
+    OverBudget { planned: u64, budget: u64 },
     #[error("the input list does not match the plan")]
     InputCount,
     #[error("input {0} does not match the plan")]
@@ -128,19 +133,23 @@ pub fn open(plan: Plan, settings: &Settings) -> Result<Box<dyn Run>, Error> {
         #[cfg(target_os = "macos")]
         Some(Backend::Metal) => Ok(Box::new(device::Runner::<gpukit::metal::Context>::new(
             plan,
+            settings.memory,
         )?)),
         #[cfg(feature = "cuda")]
         Some(Backend::Cuda) => Ok(Box::new(device::Runner::<gpukit::cuda::Context>::new(
             plan,
+            settings.memory,
         )?)),
         #[cfg(feature = "rocm")]
         Some(Backend::Rocm) => Ok(Box::new(device::Runner::<gpukit::rocm::Context>::new(
             plan,
+            settings.memory,
         )?)),
         _ => Ok(Box::new(cpu::Runner::new(
             plan,
             settings.host_lanes,
             settings.emulate.map_or(Precision::EXACT, precision),
+            settings.memory,
         )?)),
     }
 }

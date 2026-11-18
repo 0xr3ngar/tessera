@@ -340,3 +340,21 @@ fn prefix_comes_first() {
         );
     }
 }
+
+#[test]
+fn budget_refuses_plan() {
+    let g = || stepper::<Norm, Swiglu>(&Config::toy(1, 16));
+    let open = |memory| {
+        let settings = Settings {
+            memory,
+            ..run::testing::host()
+        };
+        Engine::open(g(), 16, &Recipe::default(), &settings)
+    };
+    let refused = open(engine::Memory::Bytes(1024));
+    assert!(matches!(
+        refused,
+        Err(engine::Error::Run(run::Error::OverBudget { .. }))
+    ));
+    assert!(open(engine::Memory::Off).is_ok());
+}

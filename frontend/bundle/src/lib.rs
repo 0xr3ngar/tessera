@@ -1,6 +1,7 @@
 //! A Hugging Face model directory: graph, weights, tokenizer, template.
 
 pub mod encoder;
+pub mod flux2;
 mod gguf;
 #[cfg(test)]
 mod gguf_test;

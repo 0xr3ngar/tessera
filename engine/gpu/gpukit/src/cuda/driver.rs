@@ -79,6 +79,7 @@ crate::dl::library! {
         pub(crate) cu_device_get: CuDeviceGet = "cuDeviceGet",
         pub(crate) cu_device_get_name: entry::Name = "cuDeviceGetName",
         pub(crate) cu_device_get_attribute: entry::Attribute = "cuDeviceGetAttribute",
+        pub(crate) cu_device_total_mem: entry::Total = "cuDeviceTotalMem_v2",
         pub(crate) cu_ctx_create: CuCtxCreate = "cuCtxCreate_v2",
         pub(crate) cu_ctx_destroy: CuCtxDestroy = "cuCtxDestroy_v2",
         pub(crate) cu_ctx_set_current: CuCtxSetCurrent = "cuCtxSetCurrent",

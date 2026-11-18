@@ -292,6 +292,7 @@ impl Device for Context {
             units: 0,
             bandwidth: 0.0,
             integrated: true,
+            memory: device.recommendedMaxWorkingSetSize(),
         })
     }
 

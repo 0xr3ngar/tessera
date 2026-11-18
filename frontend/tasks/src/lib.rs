@@ -7,6 +7,9 @@ mod embed_test;
 pub mod features;
 #[cfg(test)]
 mod features_test;
+pub mod flow;
+#[cfg(test)]
+mod flow_test;
 pub mod generate;
 pub mod paint;
 pub mod pictures;
