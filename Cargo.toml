@@ -16,6 +16,7 @@ members = [
     "tools/lint",
     "tools/load",
     "tools/parity",
+    "tools/publish",
     "tools/ranks",
     "tools/shape",
     "tools/style",

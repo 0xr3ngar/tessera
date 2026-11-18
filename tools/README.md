@@ -12,6 +12,7 @@ Build tools that run as part of CI or pre-commit hooks.
 <tr><td><a href="lint">tessera-lint</a></td><td>The repository's code-shape rules, run by CI and the pre-commit hook</td></tr>
 <tr><td><a href="load">sensai-load</a></td><td>Drives concurrent requests against tessera-serve and reports throughput</td></tr>
 <tr><td><a href="parity">sensai-parity</a></td><td>Every model against its reference, the interpreter and the device</td></tr>
+<tr><td><a href="publish">tessera-publish</a></td><td>Merges the workspace crates into the crates that go to crates.io</td></tr>
 <tr><td><a href="ranks">sensai-ranks</a></td><td>Runs one rank of a sharded Qwen3 forward pass, joined to the others over TCP</td></tr>
 <tr><td><a href="shape">sensai-shape</a></td><td>Line shapes, with names, numbers and strings collapsed, and merge conflicts</td></tr>
 <tr><td><a href="simcheck">tessera-simcheck</a></td><td>Fails on near-copies of code, found with EmbeddingGemma 2 embeddings</td></tr>
