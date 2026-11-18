@@ -56,6 +56,7 @@ fn rules_match(settings: &Settings) -> Vec<&'static str> {
         graphs::attention(&d, [2, 2, 16]),
         graphs::rotation(&d),
         graphs::table(&d, 32, 16),
+        graphs::neighbours(&d, [6, 3, 16]),
         graphs::picks(&d, 16),
         graphs::indexed(&d, [2, 16, 2]),
         graphs::indexed_rows(&d, [2, 16, 2]),

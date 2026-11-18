@@ -1,7 +1,7 @@
 //! Small graphs that reach every rule, for tests and calibrate.
 
 use graph::DimName::*;
-use graph::{DType, Dim, DimExpr, DimName, Graph, Port, Role, TensorType};
+use graph::{DType, Dim, DimExpr, DimName, Graph, PathSeg, Port, Role, TensorType};
 use trace::{
     Act, Embed, EntryKind, Linear, Linears, Mask, Model, Norm, Pairs, Vector, Weights, declare,
 };
@@ -178,6 +178,22 @@ pub fn table(bounded: &[Dim], vocab: u64, width: u64) -> Graph {
     };
     let [tokens] = m.entry(EntryKind::Forward, [tokens]);
     m.finish([(Role::Logits, &m.embed(&tokens, &w.embed))])
+}
+
+/// Neighbour rows of a computed table, at weight ids.
+pub fn neighbours(bounded: &[Dim], [rows, taps, width]: [u64; 3]) -> Graph {
+    let m = model(bounded, &[(Vocab, rows), (TopK, taps), (Hidden, width)]);
+    let table = TensorType::new([Vocab, TopK], DType::F32);
+    let ids = m
+        .weight(&[PathSeg::Field("ids".into())], table)
+        .cast(DType::U32);
+    let x = Port {
+        role: Role::Logits,
+        ty: TensorType::new([bounded[0].name, Vocab, Hidden], DType::F32),
+    };
+    let [x] = m.entry(EntryKind::Forward, [x]);
+    let near = x.permute(&[1, 0, 2]).gather(&ids).permute(&[2, 1, 0, 3]);
+    m.finish([(Role::Logits, &near.mean(1))])
 }
 
 /// Scores pick each query's best keys for attention.

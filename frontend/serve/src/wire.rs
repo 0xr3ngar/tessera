@@ -337,5 +337,23 @@ macro_rules! single {
     };
 }
 
+/// What `/v1/images/generations` takes. `seed` is ours.
+#[derive(Deserialize)]
+pub(crate) struct Images {
+    pub(crate) prompt: String,
+    pub(crate) n: Option<usize>,
+    pub(crate) size: Option<String>,
+    pub(crate) response_format: Option<String>,
+    pub(crate) seed: Option<u32>,
+    #[serde(flatten)]
+    extra: Bag,
+}
+
+impl Bagged for Images {
+    fn bags(&self) -> (&Bag, Vec<String>) {
+        (&self.extra, Vec::new())
+    }
+}
+
 single!(Detokenize, tokens: Vec<u32>);
 single!(Embeddings, input: Strings);

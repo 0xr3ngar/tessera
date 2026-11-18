@@ -3,6 +3,7 @@
 mod chat;
 mod embed;
 mod generator;
+mod paint;
 mod tokens;
 
 use crate::http::{Body, Request};
@@ -10,6 +11,7 @@ use crate::{Model, Slot, route};
 use chat::MockChat;
 use embed::MockEmbed;
 pub use generator::MockGenerator;
+use paint::MockPaint;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 use tasks::api::Info;
@@ -27,6 +29,7 @@ pub fn loaded(generator: &Arc<MockGenerator>, strict: bool) -> Slot {
         chat: Some(Arc::new(MockChat)),
         generator: Some(generator.clone()),
         embed: Some(Arc::new(MockEmbed)),
+        paint: Some(Arc::new(MockPaint)),
         strict,
     });
     slot

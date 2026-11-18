@@ -2142,6 +2142,7 @@ dependencies = [
  "bundle",
  "checkpoint",
  "engine",
+ "frontend-settings",
  "serde_json",
  "testkit",
 ]

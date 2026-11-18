@@ -1,10 +1,12 @@
 //! Prompts to 16x16 sprites by masked diffusion.
 
 use crate::Error;
+use crate::api::{Image, Paint, Tokens};
+use crate::worker::Worker;
 use bundle::sprite::{denoiser, text_tower};
 use bundle::tokenize::hf::Hf;
 use engine::{Model, Recipe, Settings, Tensor};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const GRID: usize = 16;
 const PIXELS: usize = GRID * GRID;
@@ -57,6 +59,8 @@ pub struct Painter {
     denoiser: Model,
     /// RGB per palette id. Id 0 is transparent.
     pub palette: Vec<[u8; 3]>,
+    /// The most canvases one launch carries.
+    most: usize,
 }
 
 /// Text states `[TEXT, WIDTH]` and the pooled `[WIDTH]` row.
@@ -75,17 +79,12 @@ struct Canvas {
 }
 
 impl Painter {
-    /// CLIP from `clip_dir`, the converted denoiser at `weights`.
-    pub fn open(
-        clip_dir: &Path,
-        weights: &Path,
-        settings: &Settings,
-        n: u64,
-    ) -> Result<Self, Error> {
-        let c = text_tower(clip_dir, 1, TEXT as u64)?;
+    /// `dir/sprite.safetensors`, with CLIP in `dir/clip`.
+    pub fn open(dir: &Path, settings: &Settings, most: usize) -> Result<Self, Error> {
+        let c = text_tower(&dir.join("clip"), 1, TEXT as u64)?;
         let mut clip = Model::open(c.graph, &Recipe::default(), settings)?;
         clip.load(&c.weights)?;
-        let d = denoiser(weights, 2 * n)?;
+        let d = denoiser(&dir.join("sprite.safetensors"), 2 * most as u64)?;
         let mut denoiser = Model::open(d.graph, &Recipe::default(), settings)?;
         denoiser.load(&d.weights)?;
         Ok(Self {
@@ -93,6 +92,7 @@ impl Painter {
             tokenizer: c.tokenizer,
             denoiser,
             palette: d.palette,
+            most,
         })
     }
 
@@ -155,10 +155,17 @@ impl Painter {
         Ok(self.denoiser.run(&inputs)?[0].floats()?.to_vec())
     }
 
-    /// `n` sprites for `text`: palette ids, row-major.
+    /// `n` sprites, row-major palette ids. Launches take seeds in turn.
     pub fn paint(&mut self, text: &str, n: usize, o: &Options) -> Result<Vec<Vec<u32>>, Error> {
         let p = self.encode(text)?;
-        self.sample(&p, n, o)
+        let mut out = Vec::with_capacity(n);
+        let mut seed = o.seed;
+        while out.len() < n {
+            let count = (n - out.len()).min(self.most);
+            out.extend(self.sample(&p, count, &Options { seed, ..*o })?);
+            seed = seed.wrapping_add(1);
+        }
+        Ok(out)
     }
 
     /// The sampling loop for an encoded prompt.
@@ -182,9 +189,9 @@ impl Painter {
         Ok(canvases.into_iter().map(|c| c.tokens).collect())
     }
 
-    /// RGBA bytes for one sprite. Id 0 is transparent.
-    pub fn rgba(&self, tokens: &[u32]) -> Vec<u8> {
-        let mut out = Vec::with_capacity(tokens.len() * 4);
+    /// One sprite's picture. Id 0 is transparent.
+    pub fn image(&self, tokens: &[u32]) -> Image {
+        let mut rgba = Vec::with_capacity(tokens.len() * 4);
         for &t in tokens {
             let [r, g, b] = self
                 .palette
@@ -192,9 +199,55 @@ impl Painter {
                 .copied()
                 .unwrap_or([255, 0, 255]);
             let a = if t == 0 { 0 } else { 255 };
-            out.extend_from_slice(&[r, g, b, a]);
+            rgba.extend_from_slice(&[r, g, b, a]);
         }
-        out
+        Image {
+            width: GRID,
+            height: GRID,
+            rgba,
+        }
+    }
+}
+
+impl Worker<Painter> {
+    /// Opens the painter in `dir` on a new thread.
+    pub fn open(dir: PathBuf, settings: Settings, most: usize) -> Result<Self, Error> {
+        Worker::spawn(move || {
+            let painter = Painter::open(&dir, &settings, most)?;
+            eprintln!("{}: painter loaded", painter.device());
+            Ok(painter)
+        })
+    }
+}
+
+impl Paint for Worker<Painter> {
+    fn side(&self) -> usize {
+        GRID
+    }
+
+    fn paint(&self, prompt: &str, n: usize, seed: u32) -> Result<Vec<Image>, Error> {
+        let prompt = prompt.to_string();
+        self.run(move |p| {
+            let options = Options {
+                seed,
+                ..Options::default()
+            };
+            let sprites = p.paint(&prompt, n, &options)?;
+            Ok(sprites.iter().map(|t| p.image(t)).collect())
+        })?
+    }
+}
+
+impl Tokens for Worker<Painter> {
+    fn encode(&self, text: &str) -> Result<Vec<u32>, Error> {
+        let text = text.to_string();
+        self.run(move |p| p.tokenizer.encode_special(&text))?
+    }
+
+    fn decode(&self, ids: &[u32]) -> String {
+        let ids = ids.to_vec();
+        let decoded = self.run(move |p| p.tokenizer.decode(&ids));
+        decoded.unwrap_or_default()
     }
 }
 
