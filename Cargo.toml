@@ -46,6 +46,7 @@ host = { path = "engine/plan/host" }
 jit = { path = "engine/plan/jit" }
 kernel-macro = { path = "engine/plan/kernel-macro" }
 kernels = { path = "engine/rules/kernels" }
+kv = { path = "engine/ir/kv" }
 cpu = { path = "engine/rules/cpu" }
 linear = { path = "engine/rules/linear" }
 attention = { path = "engine/rules/attention" }
