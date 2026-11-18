@@ -219,6 +219,18 @@ impl Stack {
     }
 }
 
+/// `[Seqs, n, ..]` from `a` then `b`, joined on axis 1.
+pub(crate) fn join(a: &Tensor, b: &Tensor) -> Tensor {
+    let swap = [0, 2, 1];
+    a.permute(&swap).concat(&b.permute(&swap)).permute(&swap)
+}
+
+/// `[Seqs, Hidden]` as `[Seqs, rows, Hidden]`.
+pub(crate) fn spread(v: &Tensor, rows: impl Into<DimExpr>) -> Tensor {
+    v.reshape(vec![Seqs.into(), 1u64.into(), Hidden.into()])
+        .expand(1, rows)
+}
+
 /// A forward entry's tokens and positions, `[Seqs, Context]` each.
 pub(crate) fn tokens(m: &Model) -> [Tensor; 2] {
     ports(m, EntryKind::Forward, Context)
