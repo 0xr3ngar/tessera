@@ -2,11 +2,11 @@
 
 use crate::Error;
 use crate::api::{Embed, Embedded, Tokens};
+use crate::worker::Worker;
 use bundle::encoder::encoder;
 use bundle::tokenize::hf::Hf;
 use engine::{Model, Recipe, Settings, Tensor};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, mpsc};
 
 /// Tokens per text, `<bos>` and `<eos>` included.
 const MAX_TOKENS: usize = 1024;
@@ -156,44 +156,17 @@ impl Embedder {
     }
 }
 
-/// Work for the embedder's thread.
-type Work = Box<dyn FnOnce(&mut Embedder) + Send>;
+/// An embedder on its own thread.
+pub type Threaded = Worker<Embedder>;
 
-/// An embedder on its own thread. Its model cannot move.
-pub struct Threaded {
-    work: Mutex<mpsc::Sender<Work>>,
-}
-
-impl Threaded {
+impl Worker<Embedder> {
     /// Opens the release in `dir` on a new thread.
     pub fn open(dir: PathBuf, settings: Settings) -> Result<Self, Error> {
-        let (work, queue) = mpsc::channel::<Work>();
-        let (ready, opened) = mpsc::channel();
-        std::thread::spawn(move || match Embedder::open(&dir, &settings) {
-            Ok(mut embedder) => {
-                eprintln!("{}: embedder loaded", embedder.device());
-                let _ = ready.send(Ok(()));
-                queue.iter().for_each(|w| w(&mut embedder));
-            }
-            Err(e) => drop(ready.send(Err(e))),
-        });
-        opened.recv().map_err(|_| "the embedder thread stopped")??;
-        Ok(Self {
-            work: Mutex::new(work),
+        Worker::spawn(move || {
+            let embedder = Embedder::open(&dir, &settings)?;
+            eprintln!("{}: embedder loaded", embedder.device());
+            Ok(embedder)
         })
-    }
-
-    /// Runs `f` on the thread and waits for it.
-    fn run<T: Send + 'static>(
-        &self,
-        f: impl FnOnce(&mut Embedder) -> T + Send + 'static,
-    ) -> Result<T, Error> {
-        let (answer, answered) = mpsc::channel();
-        let work = self.work.lock().map_err(|_| "the embedder stopped")?;
-        work.send(Box::new(move |e| drop(answer.send(f(e)))))
-            .map_err(|_| "the embedder stopped")?;
-        drop(work);
-        Ok(answered.recv().map_err(|_| "the embedder stopped")?)
     }
 }
 

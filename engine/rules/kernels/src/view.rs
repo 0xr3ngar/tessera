@@ -6,15 +6,17 @@ use lower::form::F32_FORM;
 use lower::kernels::Join;
 use lower::{Draft, Extent, Home, Kernel, T, Term, Tree};
 
-/// One thread per output `[outer, mid, inner]`, read through strides.
+/// One thread per output `[outer, upper, mid, inner]`, strided reads.
 #[kernel]
 fn strided(
     x: Buf<F32>,
     mut out: BufMut<F32>,
     len: u32,
+    upper: u32,
     mid: u32,
     inner: u32,
     outer_step: u32,
+    upper_step: u32,
     mid_step: u32,
     inner_step: u32,
     start: u32,
@@ -24,21 +26,73 @@ fn strided(
     }
     let i = gid() % inner;
     let m = (gid() / inner) % mid;
-    let o = gid() / (inner * mid);
-    out[gid() as u64] = x[(start + o * outer_step + m * mid_step + i * inner_step) as u64];
+    let u = (gid() / (inner * mid)) % upper;
+    let o = gid() / (inner * mid * upper);
+    let at = start + o * outer_step + u * upper_step + m * mid_step + i * inner_step;
+    out[gid() as u64] = x[at as u64];
 }
 
-/// A view as three nested axes over its input.
+/// A view as four nested axes over its input.
 #[derive(Clone, Copy, Debug, Kernel)]
 #[launch(strided, threads = self.len)]
 pub(crate) struct Strided {
     pub len: usize,
+    pub upper: usize,
     pub mid: usize,
     pub inner: usize,
     pub outer_step: usize,
+    pub upper_step: usize,
     pub mid_step: usize,
     pub inner_step: usize,
     pub start: usize,
+}
+
+/// Output axes as `(size, input step)`, neighbours merged.
+fn runs(order: &[u32], shape: &[usize]) -> Vec<(usize, usize)> {
+    let step = |a: usize| shape[a + 1..].iter().product::<usize>();
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    let mut last = usize::MAX;
+    for &a in order {
+        let a = a as usize;
+        if shape[a] == 1 {
+            continue;
+        }
+        match out.last_mut() {
+            Some(run) if last.wrapping_add(1) == a => *run = (run.0 * shape[a], step(a)),
+            _ => out.push((shape[a], step(a))),
+        }
+        last = a;
+    }
+    out
+}
+
+/// Up to four runs as a kernel, outer runs first.
+fn nested(runs: &[(usize, usize)], len: usize, start: usize) -> Option<Strided> {
+    if runs.len() > 4 {
+        return None;
+    }
+    let mut all = vec![(1, 0); 4 - runs.len()];
+    all.extend_from_slice(runs);
+    let [
+        (_, outer_step),
+        (upper, upper_step),
+        (mid, mid_step),
+        (inner, inner_step),
+    ] = all[..]
+    else {
+        return None;
+    };
+    Some(Strided {
+        len,
+        upper,
+        mid,
+        inner,
+        outer_step,
+        upper_step,
+        mid_step,
+        inner_step,
+        start,
+    })
 }
 
 /// The view as strides over `shape`, its input's shape.
@@ -51,48 +105,20 @@ fn strides(tree: &Tree, view: &View, shape: &[usize], len: usize) -> Option<Stri
             // Starts are fixed sizes.
             let start = start.value(&tree.g.dims, &|_| None)? as usize;
             let mid = len / product(&shape[..a]) / inner;
-            Some(Strided {
-                len,
-                mid,
-                inner,
-                outer_step: shape[a] * inner,
-                mid_step: inner,
-                inner_step: 1,
-                start: start * inner,
-            })
+            let runs = [
+                (product(&shape[..a]), shape[a] * inner),
+                (mid, inner),
+                (inner, 1),
+            ];
+            nested(&runs, len, start * inner)
         }
         View::Expand { axis, .. } => {
             let inner = product(&shape[at(*axis) + 1..]);
-            Some(Strided {
-                len,
-                mid: len / product(&shape[..at(*axis)]) / inner,
-                inner,
-                outer_step: inner,
-                mid_step: 0,
-                inner_step: 1,
-                start: 0,
-            })
+            let mid = len / product(&shape[..at(*axis)]) / inner;
+            let runs = [(product(&shape[..at(*axis)]), inner), (mid, 0), (inner, 1)];
+            nested(&runs, len, 0)
         }
-        // Only the last two axes trade places.
-        View::Permute(order) => {
-            let rank = order.len();
-            if rank < 2 {
-                return None;
-            }
-            let last = (rank - 2..rank).rev().map(|a| a as u32);
-            let swaps = order[..rank - 2].iter().copied().eq(0..rank as u32 - 2)
-                && order[rank - 2..].iter().copied().eq(last);
-            let (rows, cols) = (shape[rank - 2], shape[rank - 1]);
-            swaps.then_some(Strided {
-                len,
-                mid: cols,
-                inner: rows,
-                outer_step: rows * cols,
-                mid_step: 1,
-                inner_step: cols,
-                start: 0,
-            })
-        }
+        View::Permute(order) => nested(&runs(order, shape), len, 0),
         View::Reshape(_) | View::Concat => None,
     }
 }

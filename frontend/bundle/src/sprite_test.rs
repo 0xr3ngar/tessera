@@ -2,7 +2,7 @@
 
 use crate::sprite::{denoiser, text_tower};
 use checkpoint::File;
-use engine::{Graph, Model, Recipe, Settings, Tensor, Weight};
+use engine::{Graph, Model, Pick, Recipe, Settings, Tensor, Weight};
 use std::path::Path;
 use testkit::cosine_f32;
 
@@ -17,8 +17,13 @@ fn ints(file: &File, name: &str) -> Vec<u32> {
     words.map(|b| i32::from_le_bytes(*b) as u32).collect()
 }
 
+/// Native CPU kernels: lowered, and quicker than the host emulator.
 fn run(g: Graph, w: &[Weight], inputs: &[Tensor]) -> Vec<f32> {
-    let mut m = Model::open(g, &Recipe::default(), &Settings::default()).unwrap();
+    let settings = Settings {
+        backend: Pick::Cpu,
+        ..Settings::default()
+    };
+    let mut m = Model::open(g, &Recipe::default(), &settings).unwrap();
     m.load(w).unwrap();
     m.run(inputs).unwrap()[0].floats().unwrap().to_vec()
 }
@@ -53,11 +58,11 @@ fn states(clip: &Path, r: &File) -> Vec<f32> {
 
 #[test]
 fn matches_torch() {
-    let (Some(dir), Some(clip)) = (testkit::reference("sprite"), testkit::reference("clip")) else {
-        return eprintln!("no sprite or clip reference here; skipped");
+    let Some(dir) = testkit::reference("sprite") else {
+        return eprintln!("no sprite reference here; skipped");
     };
     let r = File::open(&dir.join("ref.safetensors")).unwrap();
-    let states = states(&clip, &r);
+    let states = states(&dir.join("clip"), &r);
     let d = denoiser(&dir.join("sprite.safetensors"), 4).unwrap();
     let canvas = ints(&r, "den.canvas");
     let masked = |c: &[u32]| c.iter().filter(|&&t| t == MASK).count() as u32;

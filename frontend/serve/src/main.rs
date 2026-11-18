@@ -7,12 +7,22 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::Instant;
-use tasks::api::Info;
-use tasks::{Generate, Job, Queued, Threaded};
+use tasks::api::{Embed, Info, Paint, Tokens};
+use tasks::paint::Painter;
+use tasks::{Generate, Job, Queued, Threaded, Worker};
 
 const USAGE: &str = "usage: tessera-serve --model <dir> [--host <addr>] [--port <n>] \
 [--max-model-len <tokens>] [--slots <n>] [--served-model-name <name>] \
-[--task generate|embed] [--max-connections <n>] [--reject-unknown-fields]";
+[--task generate|embed|paint] [--max-connections <n>] [--reject-unknown-fields]";
+
+/// What the loaded model serves.
+#[derive(Clone, Copy, PartialEq)]
+enum Task {
+    Generate,
+    Embed,
+    /// Pictures. `--model` holds the weights and `clip/`.
+    Paint,
+}
 
 struct Args {
     model: PathBuf,
@@ -23,7 +33,7 @@ struct Args {
     /// Answers in flight at once.
     slots: usize,
     name: Option<String>,
-    embed: bool,
+    task: Task,
     /// Unknown request fields refuse the request.
     strict: bool,
     max_connections: usize,
@@ -37,7 +47,7 @@ fn args() -> Option<Args> {
         max_model_len: 4096,
         slots: 4,
         name: None,
-        embed: false,
+        task: Task::Generate,
         strict: false,
         max_connections: 64,
     };
@@ -56,8 +66,9 @@ fn args() -> Option<Args> {
             "--slots" => args.slots = value.parse().ok()?,
             "--max-connections" => args.max_connections = value.parse().ok()?,
             "--served-model-name" => args.name = Some(value),
-            "--task" if value == "generate" => args.embed = false,
-            "--task" if value == "embed" => args.embed = true,
+            "--task" if value == "generate" => args.task = Task::Generate,
+            "--task" if value == "embed" => args.task = Task::Embed,
+            "--task" if value == "paint" => args.task = Task::Paint,
             _ => return None,
         }
     }
@@ -103,6 +114,7 @@ fn engine_thread(args: &Args, settings: &Settings, info: Info, slot: &Slot) -> R
         chat: Some(generate),
         generator: Some(Arc::new(queued)),
         embed: None,
+        paint: None,
         strict: args.strict,
     };
     let _ = slot.set(model);
@@ -133,19 +145,33 @@ fn load(args: Args, slot: Slot) {
         context: args.max_model_len,
     };
     let strict = args.strict;
-    let failed = match args.embed {
-        false => engine_thread(&args, &settings, info, &slot),
-        true => Threaded::open(args.model, settings)
-            .map(|embedder| {
-                let embedder = Arc::new(embedder);
-                let _ = slot.set(Model {
-                    info,
-                    tokens: embedder.clone(),
-                    chat: None,
-                    generator: None,
-                    embed: Some(embedder),
-                    strict,
-                });
+    // A task the worker thread serves, by its traits.
+    let set = |info, tokens: Arc<dyn Tokens>, embed, paint| {
+        let chat = None;
+        let generator = None;
+        let model = Model {
+            info,
+            tokens,
+            chat,
+            generator,
+            embed,
+            paint,
+            strict,
+        };
+        let _ = slot.set(model);
+    };
+    let failed = match args.task {
+        Task::Generate => engine_thread(&args, &settings, info, &slot),
+        Task::Embed => Threaded::open(args.model, settings)
+            .map(|e| {
+                let e = Arc::new(e);
+                set(info, e.clone(), Some(e as Arc<dyn Embed>), None);
+            })
+            .map_err(|e| e.to_string()),
+        Task::Paint => Worker::<Painter>::open(args.model, settings, args.slots)
+            .map(|p| {
+                let p = Arc::new(p);
+                set(info, p.clone(), None, Some(p as Arc<dyn Paint>));
             })
             .map_err(|e| e.to_string()),
     };

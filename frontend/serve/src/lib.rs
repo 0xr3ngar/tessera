@@ -6,6 +6,9 @@ mod answer_test;
 pub mod http;
 #[cfg(test)]
 mod http_test;
+mod images;
+#[cfg(test)]
+mod images_test;
 #[cfg(test)]
 mod lib_test;
 #[cfg(test)]
@@ -16,7 +19,7 @@ use bundle::Message;
 use http::{Request, Response};
 use serde_json::{Value, json};
 use std::sync::{Arc, OnceLock};
-use tasks::api::{Chat, Embed, Generator, Info, Tokens};
+use tasks::api::{Chat, Embed, Generator, Info, Paint, Tokens};
 use wire::{Detokenize, Embeddings, Messages, Refusal, Tokenize, bad, refuse};
 
 /// The loaded model, as the routes see it.
@@ -26,6 +29,7 @@ pub struct Model {
     pub chat: Option<Arc<dyn Chat>>,
     pub generator: Option<Arc<dyn Generator>>,
     pub embed: Option<Arc<dyn Embed>>,
+    pub paint: Option<Arc<dyn Paint>>,
     /// Unknown request fields refuse the request. Else they warn.
     pub strict: bool,
 }
@@ -135,6 +139,7 @@ pub fn route(slot: &Slot, request: &Request) -> Response {
         ("POST", "/tokenize") => tokenize(slot, body),
         ("POST", "/detokenize") => detokenize(slot, body),
         ("POST", "/v1/embeddings") => embeddings(slot, body),
+        ("POST", "/v1/images/generations") => images::generations(slot, body),
         ("POST", "/v1/completions") => answer::completions(slot, body),
         ("POST", "/v1/chat/completions") => answer::chat_completions(slot, body),
         _ => refuse(404, "no such route", None).into(),
