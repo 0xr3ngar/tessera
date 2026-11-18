@@ -108,7 +108,7 @@ fn checked(p: &Printer) -> Result<(), String> {
 impl Helper {
     /// Returns the WGSL definition and its intrinsics.
     fn wgsl(&self) -> Result<(String, Vec<Intrinsic>), String> {
-        let mut p = Printer::new(&self.body.params, None, true);
+        let mut p = Printer::new(&self.body.params, true);
         let mut params = Vec::new();
         for param in p.params {
             match param {
@@ -137,7 +137,7 @@ impl Body {
     /// This kernel in WGSL. Errs on the first unspelled part.
     pub fn wgsl(&self) -> Result<Wgsl, String> {
         assert!(self.ret.is_none(), "`{}` has a value: call it", self.entry);
-        let mut p = Printer::new(&self.params, self.layout, true);
+        let mut p = Printer::new(&self.params, true);
         let (mut buffers, mut scalars, mut helpers) = (Vec::new(), Vec::new(), Vec::new());
         for param in p.params {
             match param {

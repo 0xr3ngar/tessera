@@ -261,28 +261,12 @@ macro_rules! table {
                 },
                 count: |_, _| true,
             }
-            /// `kept_row(slot, position)`: the row the layout gives.
+            /// `kept_row(slot, position)`. `kept::attach` replaces each call.
             KeptRow = fn kept_row(u32, u32) -> u32 {
                 device: none(),
-                text: |p, args| {
-                    let (slot, position) = (p.expr(&args[0]), p.expr(&args[1]));
-                    let layout = p.layout.expect("a kernel reading kept rows names its layout");
-                    layout.row(&slot, &position)
-                },
+                text: |_, _| panic!("kept_row without a layout attached"),
                 wgsl: bare(),
-                host: |g, args, mask| {
-                    let layout = g.layout.expect("a kernel reading kept rows names its layout");
-                    let values: Vec<u32> = (layout.params().iter())
-                        .map(|p| match g.args.get(*p) {
-                            Some(ArgVal::U32(v)) => *v,
-                            other => panic!("layout scalar `{p}` is {other:?}"),
-                        })
-                        .collect();
-                    let (s, p) = (g.eval(&args[0], mask), g.eval(&args[1], mask));
-                    (0..g.threads)
-                        .map(|t| Val::U(layout.at(s[t].u(), p[t].u(), &values)))
-                        .collect()
-                },
+                host: |_, _, _| panic!("kept_row without a layout attached"),
                 count: |c, _| c.tally(int(2.0), false),
             }
             /// `p.word(offset)`: the u32 at a byte offset.

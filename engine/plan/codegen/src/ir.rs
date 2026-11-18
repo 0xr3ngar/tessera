@@ -3,7 +3,6 @@
 use crate::LANES;
 use crate::dialect::{self, Text};
 use crate::form::Load;
-use crate::kept::Layout;
 use crate::print::{Kind, Printer};
 use crate::wgsl::store4;
 
@@ -319,8 +318,6 @@ impl Param {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Body {
     pub entry: String,
-    /// The kept-row layout `kept_row` reads, when a call does.
-    pub layout: Option<&'static dyn Layout>,
     pub params: Vec<Param>,
     pub stmts: Vec<Stmt>,
     /// The value a kernel called from another gives back.
@@ -343,7 +340,7 @@ impl Body {
     /// The text of this body, with buffers and scalars declared.
     pub fn text(&self) -> Text {
         assert!(self.ret.is_none(), "`{}` has a value: call it", self.entry);
-        let mut p = Printer::new(&self.params, self.layout, false);
+        let mut p = Printer::new(&self.params, false);
         let (mut buffers, mut scalars) = (Vec::new(), Vec::new());
         let mut helpers: Vec<Helper> = Vec::new();
         for param in p.params {
@@ -394,7 +391,7 @@ pub(crate) fn gather(helpers: &[Helper], found: &mut Vec<Helper>) {
 impl Helper {
     /// The definition: `f_fn ret name(params) { .. }`.
     pub fn text(&self) -> String {
-        let mut p = Printer::new(&self.body.params, None, false);
+        let mut p = Printer::new(&self.body.params, false);
         let mut params = Vec::new();
         for param in p.params {
             match param {

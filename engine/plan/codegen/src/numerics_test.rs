@@ -77,7 +77,6 @@ fn dot_body(k: Expr) -> Body {
             },
         ],
         ret: None,
-        layout: None,
         helpers: Vec::new(),
     }
 }
