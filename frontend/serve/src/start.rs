@@ -3,6 +3,7 @@
 use crate::{Model, Slot};
 use sensai_engine::{Batch, Engine, Fair, Pins, Recipe, Settings};
 use sensai_tasks::api::{Embed, Info, Paint, Tokens};
+use sensai_tasks::klein::Klein;
 use sensai_tasks::paint::Painter;
 use sensai_tasks::{Generate, Job, Queued, Threaded, Worker};
 use std::net::TcpListener;
@@ -12,8 +13,8 @@ use std::time::Instant;
 
 /// The flags `Options::flag` and `Options::switch` take.
 pub const FLAGS: &str = "[--host <addr>] [--port <n>] [--max-model-len <tokens>] [--slots <n>] \
-[--served-model-name <name>] [--task generate|embed|paint] [--max-connections <n>] \
-[--reject-unknown-fields]";
+[--served-model-name <name>] [--task generate|embed|paint|klein] [--image-size <px>] \
+[--max-connections <n>] [--reject-unknown-fields]";
 
 /// What the loaded model serves.
 #[derive(Clone, Copy, PartialEq)]
@@ -22,6 +23,14 @@ enum Task {
     Embed,
     /// Pictures. The model directory holds the weights and `clip/`.
     Paint,
+    /// FLUX.2 klein pictures. The model is the diffusers repository.
+    Klein,
+}
+
+/// One painter as both of the traits the routes read.
+fn painter<P: Paint + Tokens + 'static>(p: P, set: impl FnOnce(Arc<dyn Tokens>, Arc<dyn Paint>)) {
+    let p = Arc::new(p);
+    set(p.clone(), p);
 }
 
 pub struct Options {
@@ -37,6 +46,8 @@ pub struct Options {
     /// Unknown request fields refuse the request.
     pub strict: bool,
     pub max_connections: usize,
+    /// The largest picture klein paints, in pixels a side.
+    pub image_size: usize,
     /// Lowering choices. Empty pins take the model's own.
     pub lower: Option<Recipe>,
     /// Weight-name rules, ahead of `TESSERA_NAMES`.
@@ -55,6 +66,7 @@ impl Default for Options {
             task: Task::Generate,
             strict: false,
             max_connections: 64,
+            image_size: 512,
             lower: None,
             names: None,
         }
@@ -81,6 +93,8 @@ impl Options {
             "--task" if value == "generate" => self.task = Task::Generate,
             "--task" if value == "embed" => self.task = Task::Embed,
             "--task" if value == "paint" => self.task = Task::Paint,
+            "--task" if value == "klein" => self.task = Task::Klein,
+            "--image-size" => self.image_size = value.parse().ok()?,
             _ => return None,
         }
         Some(())
@@ -206,10 +220,10 @@ fn load(options: Options, slot: Slot) {
             })
             .map_err(|e| e.to_string()),
         Task::Paint => Worker::<Painter>::open(options.model, settings, options.slots)
-            .map(|p| {
-                let p = Arc::new(p);
-                set(info, p.clone(), None, Some(p as Arc<dyn Paint>));
-            })
+            .map(|p| painter(p, |t, p| set(info, t, None, Some(p))))
+            .map_err(|e| e.to_string()),
+        Task::Klein => Worker::<Klein>::open(options.model, settings, options.image_size)
+            .map(|p| painter(p, |t, p| set(info, t, None, Some(p))))
             .map_err(|e| e.to_string()),
     };
     if let Err(e) = failed {

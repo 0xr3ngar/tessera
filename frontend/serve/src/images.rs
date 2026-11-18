@@ -3,6 +3,7 @@
 use crate::http::Response;
 use crate::wire::{self, Images, Refusal, bad, refuse};
 use crate::{Slot, reply};
+use sensai_tasks::api::Sizes;
 use sensai_tasks::png;
 use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -31,13 +32,14 @@ fn base64(bytes: &[u8]) -> String {
     out
 }
 
-/// How many times `size` ("WxH", square) scales a `side` picture.
-fn scale(size: Option<&str>, side: usize) -> Result<usize, Refusal> {
+/// The side a square `size` ("WxH") asks for.
+fn side(size: Option<&str>, s: Sizes) -> Result<usize, Refusal> {
     let Some(size) = size else {
-        return Ok(256 / side);
+        return Ok(s.default);
     };
     let wrong = || {
-        let message = format!("`size` must be square, a multiple of {side} up to 1024");
+        let (step, largest) = (s.step, s.largest);
+        let message = format!("`size` must be square, a multiple of {step} up to {largest}");
         bad(message, "size")
     };
     let (w, h) = size.split_once('x').ok_or_else(wrong)?;
@@ -45,8 +47,8 @@ fn scale(size: Option<&str>, side: usize) -> Result<usize, Refusal> {
         w.parse().map_err(|_| wrong())?,
         h.parse().map_err(|_| wrong())?,
     );
-    match w == h && w > 0 && w <= 1024 && w.is_multiple_of(side) {
-        true => Ok(w / side),
+    match w == h && w > 0 && w <= s.largest && w.is_multiple_of(s.step) {
+        true => Ok(w),
         false => Err(wrong()),
     }
 }
@@ -74,13 +76,13 @@ pub(crate) fn generations(slot: &Slot, body: &[u8]) -> Response {
         {
             return Err(bad("only `b64_json` is supported", "response_format"));
         }
-        let k = scale(r.size.as_deref(), paint.side())?;
+        let size = side(r.size.as_deref(), paint.sizes())?;
         let seed = r.seed.unwrap_or_else(fresh);
         let images = paint
-            .paint(&r.prompt, n, seed)
+            .paint(&r.prompt, n, seed, size)
             .map_err(|e| refuse(500, e.to_string(), None))?;
         let data: Vec<Value> = (images.iter())
-            .map(|i| json!({"b64_json": base64(&png::encode(&i.scaled(k)))}))
+            .map(|i| json!({"b64_json": base64(&png::encode(i))}))
             .collect();
         Ok(json!({"created": wire::now(), "data": data}))
     })

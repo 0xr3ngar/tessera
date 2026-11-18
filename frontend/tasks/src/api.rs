@@ -96,10 +96,18 @@ impl Image {
     }
 }
 
+/// The square sizes a painter makes, in pixels a side.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sizes {
+    /// Sizes are multiples of this.
+    pub step: usize,
+    pub largest: usize,
+    pub default: usize,
+}
+
 /// Prompts to pictures. Calls can block.
 pub trait Paint: Send + Sync {
-    /// The side of a picture as painted, in pixels.
-    fn side(&self) -> usize;
-    /// `n` pictures of `prompt`. One seed gives the same pictures.
-    fn paint(&self, prompt: &str, n: usize, seed: u32) -> Result<Vec<Image>, Error>;
+    fn sizes(&self) -> Sizes;
+    /// `n` pictures, `size` a side. A seed repeats them.
+    fn paint(&self, prompt: &str, n: usize, seed: u32, size: usize) -> Result<Vec<Image>, Error>;
 }
