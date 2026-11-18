@@ -361,6 +361,7 @@ pub fn rules(json: &str) -> Result<Vec<Rule>, serde_json::Error> {
 pub fn repo(model: &str) -> Option<Vec<Rule>> {
     let json = match model {
         "eg2" => include_str!("../names/eg2.json"),
+        "flux2" => include_str!("../names/flux2.json"),
         _ => return None,
     };
     Some(rules(json).expect("the repository's rules parse"))

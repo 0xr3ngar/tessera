@@ -146,6 +146,11 @@ impl Poly {
         out
     }
 
+    /// Whether this is at least `other` at every size.
+    pub fn covers(&self, other: &Poly) -> bool {
+        (other.0.iter()).all(|(m, c)| self.0.get(m).is_some_and(|own| own >= c))
+    }
+
     pub fn as_const(&self) -> Option<u64> {
         match self.0.len() {
             0 => Some(0),
