@@ -3,11 +3,11 @@
 use crate::Error;
 use crate::Run;
 use crate::open;
-use engine_comm::reduce::{CUDA, ENTRY};
-use engine_comm::{Reduce, Transport, summed};
-use engine_settings::Settings;
-use lower::{Arg, Plan, Shape, Step, Weight};
-use mem::{Tensor, View};
+use sensai_engine_comm::reduce::{CUDA, ENTRY};
+use sensai_engine_comm::{Reduce, Transport, summed};
+use sensai_engine_settings::Settings;
+use sensai_lower::{Arg, Plan, Shape, Step, Weight};
+use sensai_mem::{Tensor, View};
 
 /// One rank: its runner and its way to the others.
 pub struct Rank<T: Transport> {
@@ -74,7 +74,7 @@ impl<T: Transport> Rank<T> {
             .runner
             .launch_fixed(CUDA, ENTRY, &args, Shape::Line(blocks * 256));
         if let Some(why) = self.reduce.as_ref().and_then(Reduce::failure) {
-            return Err(engine_comm::Error::Link(why).into());
+            return Err(sensai_engine_comm::Error::Link(why).into());
         }
         launched
     }
@@ -108,14 +108,16 @@ impl<T: Transport> Rank<T> {
             }
             let part = self.runner.read(step.reads[0])?;
             let parts = self.transport.exchange(part.bytes())?;
-            let floats = |p: &Vec<u8>| Tensor::from_bytes(vec![p.len() / 4], mem::DType::F32, p);
+            let floats =
+                |p: &Vec<u8>| Tensor::from_bytes(vec![p.len() / 4], sensai_mem::DType::F32, p);
             let parts: Vec<Tensor> = parts.iter().map(floats).collect();
             let sum = summed(parts.iter().map(|p| p.floats().expect("floats")));
             let sum = Tensor::f32(vec![step.write.len], sum);
             self.runner.write(step.write, sum.view())?;
         }
         let outputs = self.runner.plan().outputs.clone();
-        let read = |o: &lower::Output| Ok(self.runner.read(o.slot)?.reshaped(o.shape.clone()));
+        let read =
+            |o: &sensai_lower::Output| Ok(self.runner.read(o.slot)?.reshaped(o.shape.clone()));
         outputs.iter().map(read).collect()
     }
 }

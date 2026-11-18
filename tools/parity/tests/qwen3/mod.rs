@@ -2,12 +2,12 @@
 
 mod shard_test;
 
-use models::decoder::{Config, Swiglu, program, stepper};
-use parity::{LOGITS, Spec, Stepper, decoder, suite};
-use trace::Composite::{Attention, Mlp};
-use trace::{Graph, Norm};
+use sensai_models::decoder::{Config, Swiglu, program, stepper};
+use sensai_parity::{LOGITS, Spec, Stepper, decoder, suite};
+use sensai_trace::Composite::{Attention, Mlp};
+use sensai_trace::{Graph, Norm};
 
-decoder!(Norm, Swiglu, models::small::qwen3(), Config::qwen3);
+decoder!(Norm, Swiglu, sensai_models::small::qwen3(), Config::qwen3);
 
 const SPEC: Spec = Spec {
     name: "qwen3",

@@ -4,7 +4,7 @@ use crate::dot::{op_label, path};
 use crate::html::{El, Part, el, table, text};
 use crate::model::Model;
 use crate::stages::{Pass, RankView};
-use graph::{Op, Placement};
+use sensai_graph::{Op, Placement};
 
 pub const STYLE: &str = include_str!("page.css");
 

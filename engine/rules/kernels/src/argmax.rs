@@ -1,8 +1,8 @@
 //! Each row's largest entries, best first.
 
-use codegen::prelude::*;
-use lower::sites;
-use lower::{Draft, Kernel, Read, T, Tree};
+use sensai_codegen::prelude::*;
+use sensai_lower::sites;
+use sensai_lower::{Draft, Kernel, Read, T, Tree};
 
 /// The most threads that share one row's scan.
 const PARTS: usize = 256;
@@ -117,4 +117,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     ])
 }
 
-lower::rule!("argmax", propose);
+sensai_lower::rule!("argmax", propose);

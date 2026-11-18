@@ -1,14 +1,14 @@
 //! Small kernels that expose one hardware limit each.
 
-use codegen::prelude::*;
-use lower::form::U32_FORM;
-use lower::{
+use sensai_codegen::prelude::*;
+use sensai_lower::form::U32_FORM;
+use sensai_lower::{
     Arg, Cluster, DType, Kernel, KernelRef, Launch, Link, Plan, Settings, Shape, Slot, Source,
     Step, Tensor, Zone, ZoneKind,
 };
-use run::Error;
-use run::{Run, open};
-use sim::{Fit, Tag};
+use sensai_run::Error;
+use sensai_run::{Run, open};
+use sensai_sim::{Fit, Tag};
 use std::time::Instant;
 
 /// The work a probe's threads repeat `trips` times.

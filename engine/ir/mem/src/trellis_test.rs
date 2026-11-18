@@ -1,7 +1,7 @@
 use crate::block_test::same_part;
 use crate::form::Form;
 use crate::trellis::{INPUT_SIDE, TRELLIS_K2, TRELLIS_K2_ROT, packed, rotated};
-use graph::F16;
+use sensai_graph::F16;
 
 /// Each side's cuts, and a set's, decode as the whole.
 #[test]

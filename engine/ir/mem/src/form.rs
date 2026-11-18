@@ -1,6 +1,6 @@
 //! Storage forms: how buffers hold elements, and how bytes decode.
 
-use graph::{Bf16 as Half, DType};
+use sensai_graph::{Bf16 as Half, DType};
 
 pub use scattered_collect::ScatteredSlice;
 pub use scattered_collect::declarative::{gather, scatter};

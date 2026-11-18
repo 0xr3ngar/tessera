@@ -1,5 +1,5 @@
 [package]
-name = "engine"
+name = "sensai-engine"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -8,23 +8,23 @@ description = "Graphs on runners: a decode loop over a stepper, or one launch of
 
 [features]
 default = []
-cuda = ["run/cuda"]
-rocm = ["run/rocm"]
+cuda = ["sensai-run/cuda"]
+rocm = ["sensai-run/rocm"]
 
 [dependencies]
-engine-comm = { workspace = true }
-engine-settings = { workspace = true }
-graph = { workspace = true }
-interp = { workspace = true }
-rules = { workspace = true }
-wasm = { workspace = true }
-lower = { workspace = true }
-mem = { workspace = true }
-models = { workspace = true }
-run = { workspace = true }
+sensai-engine-comm = { workspace = true }
+sensai-engine-settings = { workspace = true }
+sensai-graph = { workspace = true }
+sensai-interp = { workspace = true }
+sensai-rules = { workspace = true }
+sensai-wasm = { workspace = true }
+sensai-lower = { workspace = true }
+sensai-mem = { workspace = true }
+sensai-models = { workspace = true }
+sensai-run = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
-trace = { workspace = true }
+sensai-trace = { workspace = true }
 
 [dev-dependencies]
-testkit = { workspace = true }
+sensai-testkit = { workspace = true }

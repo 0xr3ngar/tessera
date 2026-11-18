@@ -1,7 +1,7 @@
 //! A small Graphviz builder, and the graph drawn with it.
 
 use crate::model::Model;
-use graph::{Graph, Op, Placement, Stage, TensorType, View};
+use sensai_graph::{Graph, Op, Placement, Stage, TensorType, View};
 use std::fmt::Write;
 
 type Attrs = Vec<(&'static str, String)>;
@@ -82,8 +82,8 @@ fn stage(s: &Stage) -> String {
 /// A weight's path, joined with dots.
 pub fn path(g: &Graph, w: u32) -> String {
     let segs = g.weights[w as usize].path.iter().map(|s| match s {
-        graph::PathSeg::Field(f) => f.clone(),
-        graph::PathSeg::Index(i) => i.to_string(),
+        sensai_graph::PathSeg::Field(f) => f.clone(),
+        sensai_graph::PathSeg::Index(i) => i.to_string(),
     });
     segs.collect::<Vec<_>>().join(".")
 }

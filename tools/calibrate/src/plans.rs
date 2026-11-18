@@ -1,19 +1,19 @@
 //! Times whole model plans against the cost model.
 
 use crate::{headroom, measure};
-use engine::Error;
-use engine::{Engine, Request};
-use graph::DimName::{self, Context, Rows, Segments, Seqs};
-use graph::Graph;
-use lower::form::BF16_FORM;
-use lower::{Device, Pins, Plan, Recipe, Settings, Tensor, View, Weight, lower, select};
-use models::decoder::Swiglu;
-use models::{decoder, eg2};
-use run::{Run, open};
+use sensai_engine::Error;
+use sensai_engine::{Engine, Request};
+use sensai_graph::DimName::{self, Context, Rows, Segments, Seqs};
+use sensai_graph::Graph;
+use sensai_lower::form::BF16_FORM;
+use sensai_lower::{Device, Pins, Plan, Recipe, Settings, Tensor, View, Weight, lower, select};
+use sensai_models::decoder::Swiglu;
+use sensai_models::{decoder, eg2};
+use sensai_run::{Run, open};
+use sensai_testkit::{Noise, fill, weights};
+use sensai_trace::{Linear, Norm};
 use std::collections::BTreeMap;
 use std::time::Instant;
-use testkit::{Noise, fill, weights};
-use trace::{Linear, Norm};
 
 /// Rows in each forward launch, short to long.
 const LENGTHS: [u64; 3] = [16, 64, 256];
@@ -95,7 +95,8 @@ impl<'a> Bench<'a> {
         for (at, w) in weights(&s.graph, noise).iter().enumerate() {
             runner.load(at as u32, w.view())?;
         }
-        let device = Device::stored(runner.platform(), settings).map_err(lower::Error::from)?;
+        let device =
+            Device::stored(runner.platform(), settings).map_err(sensai_lower::Error::from)?;
         let device = device.pinned(s.pins.clone());
         Ok(Self {
             s,
@@ -110,8 +111,11 @@ impl<'a> Bench<'a> {
         let g = &self.s.graph;
         let ports = g.entries[0].inputs.iter();
         let fed = ports.map(|p| {
-            let unsized_shape =
-                || Error::from(lower::Error::from(lower::Size::Shape(p.ty.shape.clone())));
+            let unsized_shape = || {
+                Error::from(sensai_lower::Error::from(sensai_lower::Size::Shape(
+                    p.ty.shape.clone(),
+                )))
+            };
             fill(g, &p.ty, at, noise).ok_or_else(unsized_shape)
         });
         fed.collect()
@@ -158,7 +162,7 @@ impl<'a> Bench<'a> {
         let (learned, all) = (self.learned, self.device.samples());
         println!("  timed {learned} launches; {all} samples known");
         if learned > 0 {
-            self.device.save(&file).map_err(lower::Error::from)?;
+            self.device.save(&file).map_err(sensai_lower::Error::from)?;
             println!("  stored in {}", file.display());
         }
         Ok(())

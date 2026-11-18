@@ -77,7 +77,7 @@ pub fn attach(mut body: Body, layout: &'static dyn Layout) -> Body {
         let last = body.params.iter().rposition(buffer);
         let table = Param::Buffer {
             name: TABLE.into(),
-            form: crate::form::of(graph::DType::U32),
+            form: crate::form::of(sensai_graph::DType::U32),
             writes: false,
         };
         body.params.insert(last.map_or(0, |at| at + 1), table);

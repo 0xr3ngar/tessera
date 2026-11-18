@@ -1,6 +1,6 @@
 //! `tessera-serve --model <dir>`: OpenAI-shaped routes over one model.
 
-use serve::start::{FLAGS, Options};
+use sensai_serve::start::{FLAGS, Options};
 use std::process::ExitCode;
 
 fn args() -> Option<Options> {
@@ -24,7 +24,7 @@ fn main() -> ExitCode {
         eprintln!("usage: tessera-serve --model <dir> {FLAGS}");
         return ExitCode::from(2);
     };
-    match serve::start::run(options) {
+    match sensai_serve::start::run(options) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("tessera-serve: {e}");

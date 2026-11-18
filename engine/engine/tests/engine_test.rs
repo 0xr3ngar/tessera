@@ -1,16 +1,18 @@
 //! The engine's decode loop against the interpreter.
 
-use engine::{Allowed, Batch, Engine, Event, Fair, Fault, Guide, Prefix, Reason, Request, Row};
-use graph::{Graph, Op};
-use interp::{Store, Tensor, run_kept};
-use lower::{Recipe, Settings, Weight, kept, rules};
-use models::decoder::{Config, Moe, Swiglu, stepper};
-use models::{mla, small};
-use run::testing::runs;
+use sensai_engine::{
+    Allowed, Batch, Engine, Event, Fair, Fault, Guide, Prefix, Reason, Request, Row,
+};
+use sensai_graph::{Graph, Op};
+use sensai_interp::{Store, Tensor, run_kept};
+use sensai_lower::{Recipe, Settings, Weight, kept, rules};
+use sensai_models::decoder::{Config, Moe, Swiglu, stepper};
+use sensai_models::{mla, small};
+use sensai_run::testing::runs;
+use sensai_testkit::{Noise, weights};
+use sensai_trace::DimName::Picks;
+use sensai_trace::Norm;
 use std::sync::{Arc, Mutex};
-use testkit::{Noise, weights};
-use trace::DimName::Picks;
-use trace::Norm;
 
 /// Tokens, positions and slots of `rows`.
 fn feeds(rows: &[Row]) -> Vec<Tensor> {
@@ -252,8 +254,8 @@ fn trim_keeps_picks() {
         (vec![row(0, 4, 1), row(1, 3, 2)], vec![0, 1]),
     ];
     for g in graphs {
-        let trimmed = graph::trim(&g, 0).unwrap();
-        let picked = |n: &graph::Node| n.op == Op::Matmul && n.ty.shape.0[0] == Picks.into();
+        let trimmed = sensai_graph::trim(&g, 0).unwrap();
+        let picked = |n: &sensai_graph::Node| n.op == Op::Matmul && n.ty.shape.0[0] == Picks.into();
         assert!(trimmed.nodes.iter().any(picked));
         let weights = weights(&g, &mut Noise(3));
         let (mut whole, mut cut) = (Store::default(), Store::default());
@@ -290,7 +292,7 @@ impl Guide for Fixed {
 fn heads_agree() {
     let mut c = Config::toy(1, 16);
     c.stack.masked = true;
-    let trimmed = graph::trim(&stepper::<Norm, Swiglu>(&c), 0).unwrap();
+    let trimmed = sensai_graph::trim(&stepper::<Norm, Swiglu>(&c), 0).unwrap();
     assert_eq!(trimmed.entries[0].inputs[3].ty.shape.0[0], Picks.into());
     let set = [2u32, 11, 17, 30];
     for s in runs() {
@@ -347,14 +349,16 @@ fn budget_refuses_plan() {
     let open = |memory| {
         let settings = Settings {
             memory,
-            ..run::testing::host()
+            ..sensai_run::testing::host()
         };
         Engine::open(g(), 16, &Recipe::default(), &settings)
     };
-    let refused = open(engine::Memory::Bytes(1024));
+    let refused = open(sensai_engine::Memory::Bytes(1024));
     assert!(matches!(
         refused,
-        Err(engine::Error::Run(run::Error::OverBudget { .. }))
+        Err(sensai_engine::Error::Run(
+            sensai_run::Error::OverBudget { .. }
+        ))
     ));
-    assert!(open(engine::Memory::Off).is_ok());
+    assert!(open(sensai_engine::Memory::Off).is_ok());
 }

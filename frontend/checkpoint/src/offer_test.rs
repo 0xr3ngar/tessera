@@ -1,5 +1,5 @@
 use crate::Stored;
-use engine::storage::named;
+use sensai_engine::storage::named;
 
 #[test]
 fn names_round_trip() {

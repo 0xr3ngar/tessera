@@ -2,9 +2,9 @@
 
 mod embed;
 
-use checkpoint::exlr8::Release;
-use checkpoint::{File, Gguf, Offer};
-use engine::{Engine, Pins, Recipe, Row};
+use sensai_checkpoint::exlr8::Release;
+use sensai_checkpoint::{File, Gguf, Offer};
+use sensai_engine::{Engine, Pins, Recipe, Row};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -123,7 +123,12 @@ struct Report {
 }
 
 /// `prompt` in `m` slots, then `new` rows each, timed twice.
-fn run(engine: &mut Engine, prompt: &[u32], m: usize, new: usize) -> Result<Run, engine::Error> {
+fn run(
+    engine: &mut Engine,
+    prompt: &[u32],
+    m: usize,
+    new: usize,
+) -> Result<Run, sensai_engine::Error> {
     let row = |slot: usize, token: u32, position: usize| Row {
         slot: slot as u32,
         token,
@@ -178,18 +183,18 @@ fn reference(dir: &Path) -> Result<(Vec<u32>, Vec<u32>), Failure> {
 
 fn evaluate(args: &Args) -> Result<Report, Failure> {
     let slots = args.m.iter().copied().max().unwrap_or(1) as u64;
-    let settings = frontend_settings::read();
+    let settings = sensai_frontend_settings::read();
     let rules = match &settings.names {
-        Some(path) => bundle::names::rules(&std::fs::read_to_string(path)?)?,
+        Some(path) => sensai_bundle::names::rules(&std::fs::read_to_string(path)?)?,
         None => Vec::new(),
     };
-    let loaded = bundle::load_named(&args.model, slots, args.context as u64, &rules)?;
+    let loaded = sensai_bundle::load_named(&args.model, slots, args.context as u64, &rules)?;
     let recipe = match &args.recipe {
         Some(path) => Recipe::load(path)?,
         None => Recipe {
             pins: loaded
                 .pins
-                .unwrap_or_else(|| Pins::all(engine::form::BF16_FORM)),
+                .unwrap_or_else(|| Pins::all(sensai_engine::form::BF16_FORM)),
             ..Recipe::default()
         },
     };

@@ -1,6 +1,6 @@
 use crate::Vocab;
-use bundle::tokenize::hf::Hf;
-use engine::{Allowed, Guide};
+use sensai_bundle::tokenize::hf::Hf;
+use sensai_engine::{Allowed, Guide};
 use serde_json::json;
 
 const EOS: u32 = 256;

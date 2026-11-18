@@ -1,8 +1,8 @@
 //! RMS norm, a thread per row in small groups.
 
-use codegen::prelude::*;
-use lower::{Draft, Kernel, Launch, Step, T, Tree, ZoneKind, sites};
-use lower::{GUESS, small, source};
+use sensai_codegen::prelude::*;
+use sensai_lower::{Draft, Kernel, Launch, Step, T, Tree, ZoneKind, sites};
+use sensai_lower::{GUESS, small, source};
 
 /// The squares in one sum, then each element scaled.
 #[kernel]
@@ -29,7 +29,7 @@ fn cpu_rms_norm(
 /// Rows scaled by their root mean square and gains.
 #[derive(Clone, Copy, Debug, Kernel)]
 #[launch(
-    crate = lower,
+    crate = sensai_lower,
     name = "cpu_rms_norm",
     sizes = [self.rows, self.width],
     work = self.rows * self.width,
@@ -47,7 +47,7 @@ pub struct RmsNorm {
 
 fn norm_launches(k: &RmsNorm, step: &Step) -> Vec<Launch> {
     let mut launch = Launch::plain(step, &[k.rows, k.width], small(k.rows));
-    launch.args.push(lower::Arg::value(&k.eps));
+    launch.args.push(sensai_lower::Arg::value(&k.eps));
     vec![launch]
 }
 
@@ -63,4 +63,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(kernel, site.padded(), site.len)])
 }
 
-lower::rule!("cpu_rms_norm", propose);
+sensai_lower::rule!("cpu_rms_norm", propose);

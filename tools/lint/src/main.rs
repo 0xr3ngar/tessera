@@ -100,7 +100,7 @@ fn main() -> ExitCode {
     }
     let (mut found, mut names, mut tests) = (Vec::new(), Vec::new(), Vec::new());
     for src in &sources {
-        match shape::conflict(&src.text) {
+        match sensai_shape::conflict(&src.text) {
             Some(line) => found.push(src.violation(line, "conflict", CONFLICT.into())),
             None => check_file(src, &mut found, &mut names, &mut tests),
         }
@@ -151,14 +151,14 @@ fn main() -> ExitCode {
 
 /// A note advises and does not fail the run.
 fn is_note(v: &Violation) -> bool {
-    audit::level(v.rule, &LIMITS.warn_rules) == findings::Level::Note
+    audit::level(v.rule, &LIMITS.warn_rules) == sensai_findings::Level::Note
 }
 
 /// Violations as findings, for tessera-check.
-fn report(found: &[Violation]) -> findings::Report {
-    let mut r = findings::Report::new("lint", "Code shape");
+fn report(found: &[Violation]) -> sensai_findings::Report {
+    let mut r = sensai_findings::Report::new("lint", "Code shape");
     for v in found {
-        r.findings.push(findings::Finding {
+        r.findings.push(sensai_findings::Finding {
             rule: v.rule.into(),
             level: audit::level(v.rule, &LIMITS.warn_rules),
             path: v.path.clone(),

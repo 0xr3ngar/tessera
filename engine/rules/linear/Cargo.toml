@@ -1,5 +1,5 @@
 [package]
-name = "linear"
+name = "sensai-linear"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -8,19 +8,19 @@ description = "Generated matmul kernels, registered as lowering rules"
 
 [features]
 default = []
-cuda = ["run/cuda"]
-rocm = ["run/rocm"]
+cuda = ["sensai-run/cuda"]
+rocm = ["sensai-run/rocm"]
 
 [dependencies]
-codegen = { workspace = true }
-graph = { workspace = true }
-kernels = { workspace = true }
-lower = { workspace = true }
+sensai-codegen = { workspace = true }
+sensai-graph = { workspace = true }
+sensai-kernels = { workspace = true }
+sensai-lower = { workspace = true }
 
 [dev-dependencies]
-sim = { workspace = true }
-testkit = { workspace = true }
-interp = { workspace = true }
-gpukit = { workspace = true }
-run = { workspace = true }
-trace = { workspace = true }
+sensai-sim = { workspace = true }
+sensai-testkit = { workspace = true }
+sensai-interp = { workspace = true }
+sensai-gpukit = { workspace = true }
+sensai-run = { workspace = true }
+sensai-trace = { workspace = true }

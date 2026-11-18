@@ -1,7 +1,7 @@
 //! What a checkpoint offers: named slices, read when claimed.
 
 use crate::Error;
-use engine::storage::Form;
+use sensai_engine::storage::Form;
 
 /// How a slice's elements lie in the file.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -34,7 +34,7 @@ impl Stored {
             "bf16" => Ok(Stored::Bf16),
             "f16" => Ok(Stored::F16),
             "other" => Ok(Stored::Other),
-            _ => match engine::storage::named(name) {
+            _ => match sensai_engine::storage::named(name) {
                 Some(form) => Ok(Stored::Form(form)),
                 None => Err(Error::Format(format!("unknown stored type {name:?}"))),
             },
@@ -66,7 +66,7 @@ pub trait Offer {
     fn packed(&self, name: &str) -> Result<Vec<u8>, Error>;
     /// A bf16 slice's bytes, as stored.
     fn bf16(&self, name: &str) -> Result<Vec<u8>, Error> {
-        let narrow = |x: &f32| engine::Bf16::from(*x).0.to_le_bytes();
+        let narrow = |x: &f32| sensai_engine::Bf16::from(*x).0.to_le_bytes();
         Ok(self.floats(name)?.iter().flat_map(narrow).collect())
     }
     /// Rows `first..first + count` of a packed slice.

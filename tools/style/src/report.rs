@@ -2,7 +2,7 @@
 
 use crate::rules::Rule;
 use crate::tags::Hit;
-use findings::{Finding, Level, Report, Snippet};
+use sensai_findings::{Finding, Level, Report, Snippet};
 
 /// A hit, its file and its line of text.
 pub struct Found {
@@ -19,7 +19,7 @@ pub fn report(found: &[Found], rules: &[Rule]) -> Report {
             .unwrap_or(rule.description.clone());
         r.rules.insert(
             rule.id.clone(),
-            findings::Rule {
+            sensai_findings::Rule {
                 name: rule.name.clone(),
                 fix,
             },

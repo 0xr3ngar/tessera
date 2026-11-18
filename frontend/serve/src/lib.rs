@@ -16,11 +16,11 @@ mod mocks;
 pub mod start;
 mod wire;
 
-use bundle::Message;
 use http::{Request, Response};
+use sensai_bundle::Message;
+use sensai_tasks::api::{Chat, Embed, Generator, Info, Paint, Tokens};
 use serde_json::{Value, json};
 use std::sync::{Arc, OnceLock};
-use tasks::api::{Chat, Embed, Generator, Info, Paint, Tokens};
 use wire::{Detokenize, Embeddings, Messages, Refusal, Tokenize, bad, refuse};
 
 /// The loaded model, as the routes see it.

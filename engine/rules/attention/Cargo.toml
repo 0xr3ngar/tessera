@@ -1,5 +1,5 @@
 [package]
-name = "attention"
+name = "sensai-attention"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,13 +7,13 @@ publish.workspace = true
 description = "Attention kernels for the CPU and the GPU, registered as lowering rules"
 
 [dependencies]
-codegen = { workspace = true }
-graph = { workspace = true }
-lower = { workspace = true }
+sensai-codegen = { workspace = true }
+sensai-graph = { workspace = true }
+sensai-lower = { workspace = true }
 
 [dev-dependencies]
-interp = { workspace = true }
-kernels = { workspace = true }
-run = { workspace = true }
-testkit = { workspace = true }
-trace = { workspace = true }
+sensai-interp = { workspace = true }
+sensai-kernels = { workspace = true }
+sensai-run = { workspace = true }
+sensai-testkit = { workspace = true }
+sensai-trace = { workspace = true }

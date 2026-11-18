@@ -3,8 +3,8 @@
 use crate::abi::{Arg, Launch};
 use crate::form::{F32_FORM, Load};
 use crate::kernel::KernelRef;
-use codegen::kept::Layout;
-use graph::{NodeId, Order};
+use sensai_codegen::kept::Layout;
+use sensai_graph::{NodeId, Order};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// `len` elements of one buffer, `offset` elements in.
@@ -91,7 +91,7 @@ pub struct Share {
 
 impl Share {
     /// This rank's part of `bytes`, packed as `form`.
-    pub fn of(&self, form: &dyn mem::form::Form, bytes: &[u8]) -> Option<Vec<u8>> {
+    pub fn of(&self, form: &dyn sensai_mem::form::Form, bytes: &[u8]) -> Option<Vec<u8>> {
         let outer = form.elements(bytes.len()) / (self.whole * self.inner).max(1);
         form.share(
             bytes,

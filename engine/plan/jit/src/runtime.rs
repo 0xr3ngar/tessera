@@ -1,8 +1,8 @@
 //! What compiled bodies call: buffers, math, shuffles and tiles.
 
-use codegen::Precision;
-use codegen::form::{BF16_FORM, Bf16, F32, F32_FORM, Form, LOADS, Load, U8, U32};
-use host::lockstep::{self, THREADS, Tiles};
+use sensai_codegen::Precision;
+use sensai_codegen::form::{BF16_FORM, Bf16, F32, F32_FORM, Form, LOADS, Load, U8, U32};
+use sensai_host::lockstep::{self, THREADS, Tiles};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 /// A buffer as the compiled code sees it.
@@ -206,7 +206,7 @@ pub unsafe extern "C" fn stage_f32(
     if unsafe { within(out, out_len, (at + n) * 4) }.is_none() {
         return;
     }
-    let reads = codegen::stage::Row::from_code(code).is_some_and(|r| r.reads());
+    let reads = sensai_codegen::stage::Row::from_code(code).is_some_and(|r| r.reads());
     let operand = match reads {
         true => match unsafe { within(b, b_len, (b_at + n) * 4) } {
             Some(b) => Some((b, b_at)),
@@ -259,8 +259,8 @@ pub unsafe extern "C" fn attend_f32(
     };
     // SAFETY: checked above. The output has its own buffer.
     let out = unsafe { std::slice::from_raw_parts_mut(out, out_len) };
-    let rows = host::attend::Rows { out, q, k, v, ids };
-    let query = host::attend::Query {
+    let rows = sensai_host::attend::Rows { out, q, k, v, ids };
+    let query = sensai_host::attend::Query {
         out_at,
         q_at,
         k_at,
@@ -273,7 +273,7 @@ pub unsafe extern "C" fn attend_f32(
         list_at,
         picks,
     };
-    host::attend::attend_f32(rows, &query);
+    sensai_host::attend::attend_f32(rows, &query);
 }
 
 #[allow(

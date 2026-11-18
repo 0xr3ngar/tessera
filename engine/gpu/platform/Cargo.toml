@@ -1,5 +1,5 @@
 [package]
-name = "platform"
+name = "sensai-platform"
 version = "0.1.0"
 edition = "2024"
 description = "Plain hardware description: platforms, limits and the per-architecture table"

@@ -444,13 +444,13 @@ f_fn float f_e4m3(u32 w, u32 l) {{
                     let v: Vec<Vec<Val>> = [1, 2, 3, 4, 6].iter().map(|i| g.eval(&args[*i], mask)).collect();
                     for t in (0..g.threads).filter(|t| mask[*t]) {
                         let (at, n, b_at) = (v[0][t].l(), u64::from(v[1][t].u()), v[4][t].l());
-                        let row = codegen::stage::Row::from_code(v[2][t].u()).expect("a stage code");
+                        let row = sensai_codegen::stage::Row::from_code(v[2][t].u()).expect("a stage code");
                         let mut line: Vec<f32> = (0..n).map(|i| g.load(&out, at + i).f()).collect();
                         let operand: Vec<f32> = match row.reads() {
                             true => (0..n).map(|i| g.load(&b, b_at + i).f()).collect(),
                             false => Vec::new(),
                         };
-                        codegen::stage::apply(row, &mut line, &operand, v[3][t].f());
+                        sensai_codegen::stage::apply(row, &mut line, &operand, v[3][t].f());
                         for (i, x) in line.into_iter().enumerate() {
                             g.store(&out, at + i as u64, Val::F(x));
                         }

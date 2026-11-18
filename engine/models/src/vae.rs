@@ -1,7 +1,7 @@
 //! FLUX.2's VAE decoder: transformer latents to RGB.
 
-use trace::DimName::*;
-use trace::{
+use sensai_trace::DimName::*;
+use sensai_trace::{
     Act, DType, Dim, DimExpr, EntryKind, Graph, Linear, Mask, Model, PathSeg, Port, Role, Tensor,
     TensorType, Vector, Weights,
 };

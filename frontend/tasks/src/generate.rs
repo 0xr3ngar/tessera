@@ -2,13 +2,13 @@
 
 use crate::api::{Chat, Finish, Generator, Params, Sink, Step, Tokens};
 use crate::{Error, Spool, Stops};
-use bundle::tokenize::hf::Hf;
-use bundle::{Message, Template};
-use engine::{Event, Reason, Request};
+use sensai_bundle::tokenize::hf::Hf;
+use sensai_bundle::{Message, Template};
+use sensai_engine::{Event, Reason, Request};
 use std::sync::{Arc, Mutex, mpsc};
 
 /// A request for the engine thread, and its sink.
-pub type Job = (Request, engine::Sink);
+pub type Job = (Request, sensai_engine::Sink);
 
 pub struct Generate {
     pub tokenizer: Hf,

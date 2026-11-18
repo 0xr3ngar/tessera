@@ -4,8 +4,8 @@ use crate::diff::Hunk;
 use crate::pattern;
 use crate::prose::{comment, is_prose_file};
 use fancy_regex::Regex;
+use sensai_tasks::{Error, Tagger};
 use std::path::Path;
-use tasks::{Error, Tagger};
 
 /// A rule's hit: its line, rule id and matched words.
 pub struct Hit {

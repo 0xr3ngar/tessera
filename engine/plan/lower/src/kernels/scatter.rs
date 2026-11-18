@@ -3,8 +3,8 @@
 use crate::Kernel;
 use crate::abi::{Arg, Launch, Shape, Source};
 use crate::plan::Step;
-use codegen::kept::{self, Layout};
-use codegen::prelude::*;
+use sensai_codegen::kept::{self, Layout};
+use sensai_codegen::prelude::*;
 
 /// Row `r` lands in its slot's kept row.
 #[kernel]

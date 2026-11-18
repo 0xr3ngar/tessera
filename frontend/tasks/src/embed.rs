@@ -3,9 +3,9 @@
 use crate::Error;
 use crate::api::{Embed, Embedded, Tokens};
 use crate::worker::Worker;
-use bundle::encoder::encoder;
-use bundle::tokenize::hf::Hf;
-use engine::{Model, Recipe, Settings, Tensor};
+use sensai_bundle::encoder::encoder;
+use sensai_bundle::tokenize::hf::Hf;
+use sensai_engine::{Model, Recipe, Settings, Tensor};
 use std::path::{Path, PathBuf};
 
 /// Tokens per text, `<bos>` and `<eos>` included.

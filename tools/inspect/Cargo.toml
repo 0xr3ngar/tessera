@@ -1,5 +1,5 @@
 [package]
-name = "inspect"
+name = "sensai-inspect"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -11,12 +11,12 @@ name = "tessera-inspect"
 path = "src/main.rs"
 
 [dependencies]
-graph = { workspace = true }
-lower = { workspace = true }
-models = { workspace = true }
-platform = { workspace = true }
-rules = { workspace = true }
-sim = { workspace = true }
-trace = { workspace = true }
+sensai-graph = { workspace = true }
+sensai-lower = { workspace = true }
+sensai-models = { workspace = true }
+sensai-platform = { workspace = true }
+sensai-rules = { workspace = true }
+sensai-sim = { workspace = true }
+sensai-trace = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

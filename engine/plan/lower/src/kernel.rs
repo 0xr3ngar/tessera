@@ -2,9 +2,9 @@
 
 use crate::abi::{Launch, Source};
 use crate::plan::Step;
-use graph::Order;
-use platform::Platform;
-use sim::{Load, ZoneKind};
+use sensai_graph::Order;
+use sensai_platform::Platform;
+use sensai_sim::{Load, ZoneKind};
 use std::fmt;
 use std::sync::Arc;
 
@@ -78,7 +78,7 @@ impl Needs {
     /// A SIMD group per row, in groups of 256 threads.
     pub fn lanes() -> Self {
         Needs {
-            lanes: codegen::LANES,
+            lanes: sensai_codegen::LANES,
             group_threads: 256,
             ..Needs::default()
         }

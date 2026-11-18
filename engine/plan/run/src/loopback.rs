@@ -3,10 +3,10 @@
 use crate::Error;
 use crate::Run;
 use crate::open;
-use engine_comm::summed;
-use engine_settings::Settings;
-use lower::{Plan, Weight};
-use mem::{Tensor, View};
+use sensai_engine_comm::summed;
+use sensai_engine_settings::Settings;
+use sensai_lower::{Plan, Weight};
+use sensai_mem::{Tensor, View};
 
 /// One runner per rank. Sums run in rank order.
 pub struct Loopback {

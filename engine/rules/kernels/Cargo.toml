@@ -1,5 +1,5 @@
 [package]
-name = "kernels"
+name = "sensai-kernels"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,15 +7,15 @@ publish.workspace = true
 description = "Kernels and the lowering rules that propose them"
 
 [dependencies]
-codegen = { workspace = true }
-graph = { workspace = true }
-lower = { workspace = true }
-sim = { workspace = true }
+sensai-codegen = { workspace = true }
+sensai-graph = { workspace = true }
+sensai-lower = { workspace = true }
+sensai-sim = { workspace = true }
 
 [dev-dependencies]
-attention = { workspace = true }
-interp = { workspace = true }
-linear = { workspace = true }
-run = { workspace = true }
-trace = { workspace = true }
-testkit = { workspace = true }
+sensai-attention = { workspace = true }
+sensai-interp = { workspace = true }
+sensai-linear = { workspace = true }
+sensai-run = { workspace = true }
+sensai-trace = { workspace = true }
+sensai-testkit = { workspace = true }

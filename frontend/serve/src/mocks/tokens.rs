@@ -1,7 +1,7 @@
 //! Tokens for `/tokenize`, `/detokenize` and prompts.
 
-use tasks::Error;
-use tasks::api::Tokens;
+use sensai_tasks::Error;
+use sensai_tasks::api::Tokens;
 
 /// One id per character: its code point.
 pub(super) struct MockTokens;

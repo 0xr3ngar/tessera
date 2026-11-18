@@ -1,9 +1,9 @@
 //! Rows of a table at given indices.
 
-use codegen::prelude::*;
-use lower::form::Load as Stored;
-use lower::sites;
-use lower::{Draft, Kernel, T, Tree};
+use sensai_codegen::prelude::*;
+use sensai_lower::form::Load as Stored;
+use sensai_lower::sites;
+use sensai_lower::{Draft, Kernel, T, Tree};
 
 /// One thread per output element, widened from the table.
 #[kernel]
@@ -60,4 +60,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(gather, [table, ids], rows * width)])
 }
 
-lower::rule!("gather", propose);
+sensai_lower::rule!("gather", propose);

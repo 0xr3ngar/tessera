@@ -1,10 +1,10 @@
 //! A forward graph with its weights, launched as a whole.
 
 use crate::Error;
-use graph::{DimExpr, DimName, Graph, Size};
-use interp::Tensor;
-use lower::{Cache, Device, Recipe, Settings, Weight};
-use run::{Run, open};
+use sensai_graph::{DimExpr, DimName, Graph, Size};
+use sensai_interp::Tensor;
+use sensai_lower::{Cache, Device, Recipe, Settings, Weight};
+use sensai_run::{Run, open};
 
 /// Plans on a runner, lowered once per launch sizes.
 struct Planned {
@@ -71,12 +71,12 @@ impl Model {
         let least: Vec<(DimName, u64)> = bounded.iter().map(|d| (*d, 1)).collect();
         let mut plans = Cache::default();
         let executor = match plans.lower(&graph, 0, &least, &device) {
-            Err(lower::Error::Unsupported(_)) => Executor::Interpreted(Vec::new()),
+            Err(sensai_lower::Error::Unsupported(_)) => Executor::Interpreted(Vec::new()),
             planned => {
                 let mut runner = open(planned?, settings)?;
                 runner.launching(recipe.launch);
                 let device = Device::stored(runner.platform(), settings)
-                    .map_err(lower::Error::from)?
+                    .map_err(sensai_lower::Error::from)?
                     .with(recipe);
                 Executor::Planned(Box::new(Planned {
                     runner,
@@ -124,7 +124,7 @@ impl Model {
         let sizes = sizes_of(g, &self.bounded, inputs)?;
         match &mut self.executor {
             Executor::Interpreted(weights) => {
-                interp::run(g, weights, 0, inputs).map_err(Error::from)
+                sensai_interp::run(g, weights, 0, inputs).map_err(Error::from)
             }
             Executor::Planned(p) => {
                 let plan = p.plans.lower(g, 0, &sizes, &p.device)?;

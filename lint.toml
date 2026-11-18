@@ -76,7 +76,7 @@ layers = [
 
 
 # Crates in `dir` may name only `crates` and each other in normal dependencies.
-facade = { dir = "frontend/", crates = ["engine"] }
+facade = { dir = "frontend/", crates = ["sensai-engine"] }
 
 # A note for a crate whose dependencies all sit this many layers
 # below it. The `engine/plan/` crates fill five layers, so 2 is too few.

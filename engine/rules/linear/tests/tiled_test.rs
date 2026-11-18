@@ -1,22 +1,22 @@
 //! The tiled matmul against the CPU interpreter, on the GPU.
 
 // The other matmul rules come from here.
-use kernels as _;
+use sensai_kernels as _;
 
-use codegen::trellis;
-use graph::DimName::Rows;
-use interp::{Tensor, run};
+use sensai_codegen::trellis;
+use sensai_graph::DimName::Rows;
+use sensai_interp::{Tensor, run};
 
 mod common;
 use common::{linear, noise, terms};
-use graph::F16;
-use linear::{Product, SCHEDULES, Schedule, Tiled};
-use lower::form::{BF16_FORM, LOADS, named};
-use lower::sites::After;
-use lower::{Device, Dialect, Kernel, Pins, Settings, Source, Weight, lower};
-use run::open;
-use run::testing::{emulations, host, runs};
-use testkit::{Noise, cosine_f32, max_abs_diff};
+use sensai_graph::F16;
+use sensai_linear::{Product, SCHEDULES, Schedule, Tiled};
+use sensai_lower::form::{BF16_FORM, LOADS, named};
+use sensai_lower::sites::After;
+use sensai_lower::{Device, Dialect, Kernel, Pins, Settings, Source, Weight, lower};
+use sensai_run::open;
+use sensai_run::testing::{emulations, host, runs};
+use sensai_testkit::{Noise, cosine_f32, max_abs_diff};
 
 /// A device that can only choose schedule `at`.
 fn only(at: usize, settings: &Settings) -> Device {
@@ -180,7 +180,7 @@ fn m3_ranks() {
         }
         .load(0)
         .unwrap();
-        sim::Chip::estimate(&sim::m3_pro(), &load).seconds
+        sensai_sim::Chip::estimate(&sensai_sim::m3_pro(), &load).seconds
     };
     let (w16, rest): (Vec<_>, Vec<_>) = SCHEDULES.iter().partition(|s| s.name.ends_with("w16"));
     let slowest = w16.iter().map(seconds).fold(0.0, f64::max);

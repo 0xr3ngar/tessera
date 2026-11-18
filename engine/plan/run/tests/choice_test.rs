@@ -1,14 +1,14 @@
 //! How selection picks among rules: cost, favor and limits.
 
-use graph::DimName::{self, Hidden, Rows, Seqs};
-use graph::{Act, DType, Dim, Graph, TensorType};
-use lower::kernels::Map;
-use lower::sites;
-use lower::{
+use sensai_graph::DimName::{self, Hidden, Rows, Seqs};
+use sensai_graph::{Act, DType, Dim, Graph, TensorType};
+use sensai_lower::kernels::Map;
+use sensai_lower::sites;
+use sensai_lower::{
     Device, Draft, Kernel, Limits, Needs, Plan, Platform, Propose, Rule, T, Tree, lower, select,
 };
-use run::testing::host;
-use trace::{EntryKind, Model, Port, Role};
+use sensai_run::testing::host;
+use sensai_trace::{EntryKind, Model, Port, Role};
 
 /// A map stand-in with its own cost.
 #[derive(Clone, Copy, Debug, Kernel)]
@@ -93,9 +93,9 @@ impl Propose for Price {
     }
 }
 
-lower::rule!("cheap", cheap);
-lower::rule!("dear", dear);
-lower::rule!("lanes", lanes);
+sensai_lower::rule!("cheap", cheap);
+sensai_lower::rule!("dear", dear);
+sensai_lower::rule!("lanes", lanes);
 
 const SIZES: [(DimName, u64); 2] = [(Seqs, 2), (Rows, 3)];
 
@@ -172,7 +172,7 @@ fn made_rules_compete() {
     let made = |guess| Rule::made("priced", module_path!(), Price(guess));
     assert_eq!(names(&plan(&pair().adding(made(1e-12)))), ["priced"]);
     assert_eq!(names(&plan(&pair().adding(made(1e-6)))), ["cheap"]);
-    let recipe = lower::Recipe {
+    let recipe = sensai_lower::Recipe {
         rules: vec![made(1e-6)],
         favor: Some("priced".into()),
         ..Default::default()

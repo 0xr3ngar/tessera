@@ -79,12 +79,12 @@ impl Context {
                     driver: format!("{}.{}", v / 10_000_000, (v / 100_000) % 100),
                     limits: self.limits(),
                     units: attr(hip::ATTR_MULTIPROCESSOR_COUNT) as usize,
-                    bandwidth: platform::bandwidth(
+                    bandwidth: sensai_platform::bandwidth(
                         attr(hip::ATTR_MEMORY_CLOCK_RATE),
                         attr(hip::ATTR_MEMORY_BUS_WIDTH),
                     ),
                     integrated,
-                    memory: platform::device_memory(total as u64, integrated),
+                    memory: sensai_platform::device_memory(total as u64, integrated),
                 })
             })
             .clone()

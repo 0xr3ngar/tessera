@@ -7,10 +7,10 @@
 mod tag_test;
 
 use crate::Error;
-use bundle::spacy::{MAX_CONTEXT, Pipeline};
-use bundle::tokenize::spacy::Word;
-use engine::tagger::{PAD, input};
-use engine::{Model, Recipe, Settings, Tensor};
+use sensai_bundle::spacy::{MAX_CONTEXT, Pipeline};
+use sensai_bundle::tokenize::spacy::Word;
+use sensai_engine::tagger::{PAD, input};
+use sensai_engine::{Model, Recipe, Settings, Tensor};
 use std::path::Path;
 
 pub struct Tagger {

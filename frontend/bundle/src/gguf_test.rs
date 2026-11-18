@@ -1,9 +1,9 @@
 use crate::gguf::pins;
 use crate::names_test::tensor_name;
-use checkpoint::{GgufTensor, GgufType, Meta, write_gguf};
-use engine::decoder::{Config, Swiglu, stepper};
-use engine::form::{F32_FORM, Load, named};
-use engine::{Engine, Graph, Norm, Pick, Recipe, Row, Settings, Tensor, Weight};
+use sensai_checkpoint::{GgufTensor, GgufType, Meta, write_gguf};
+use sensai_engine::decoder::{Config, Swiglu, stepper};
+use sensai_engine::form::{F32_FORM, Load, named};
+use sensai_engine::{Engine, Graph, Norm, Pick, Recipe, Row, Settings, Tensor, Weight};
 
 struct Fixture {
     meta: Vec<(String, Meta)>,
@@ -50,7 +50,8 @@ impl Fixture {
             .iter()
             .enumerate()
             .map(|(index, w)| {
-                let axis = |e: &engine::DimExpr| e.poly(&g.dims).unwrap().as_const().unwrap();
+                let axis =
+                    |e: &sensai_engine::DimExpr| e.poly(&g.dims).unwrap().as_const().unwrap();
                 let dims: Vec<u64> = w.ty.shape.0.iter().rev().map(axis).collect();
                 let n = dims.iter().product::<u64>() as usize;
                 let name = tensor_name(&w.path, true).unwrap();
@@ -83,7 +84,7 @@ impl Fixture {
     }
 
     fn load(&self) -> Result<crate::Bundle, Box<dyn std::error::Error + Send + Sync>> {
-        let path = testkit::stage("bundle.gguf", &write_gguf(&self.meta, &self.tensors));
+        let path = sensai_testkit::stage("bundle.gguf", &write_gguf(&self.meta, &self.tensors));
         let loaded = crate::load(&path, 2, 8);
         std::fs::remove_file(path).unwrap();
         loaded
@@ -223,5 +224,8 @@ fn short_bytes() {
         ..Settings::default()
     };
     let mut engine = Engine::open(loaded.graph, 8, &recipe, &settings).unwrap();
-    assert!(matches!(engine.load(&weights), Err(engine::Error::Run(_))));
+    assert!(matches!(
+        engine.load(&weights),
+        Err(sensai_engine::Error::Run(_))
+    ));
 }

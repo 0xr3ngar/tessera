@@ -1,8 +1,8 @@
 //! The Walsh-Hadamard transform of 128-wide blocks, a SIMD group each.
 
-use codegen::prelude::*;
-use graph::Stage;
-use lower::{Kernel, Needs, stage_rule};
+use sensai_codegen::prelude::*;
+use sensai_graph::Stage;
+use sensai_lower::{Kernel, Needs, stage_rule};
 
 /// Each lane holds four values of the block.
 const PER_LANE: u32 = 4;

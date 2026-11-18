@@ -1,11 +1,13 @@
 //! Attention on tiles, the keys streamed in blocks.
 
-use codegen::ir::Body;
-use codegen::kept;
-use codegen::prelude::*;
-use graph::{Mask, Order};
-use lower::sites;
-use lower::{Arg, Attn, Draft, Kernel, Launch, Load, Needs, Read, Shape, Source, Step, T, Tree};
+use sensai_codegen::ir::Body;
+use sensai_codegen::kept;
+use sensai_codegen::prelude::*;
+use sensai_graph::{Mask, Order};
+use sensai_lower::sites;
+use sensai_lower::{
+    Arg, Attn, Draft, Kernel, Launch, Load, Needs, Read, Shape, Source, Step, T, Tree,
+};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -656,4 +658,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![scaled, Draft::new(Flash(site.sizes), reads, out)])
 }
 
-lower::rule!("flash", propose);
+sensai_lower::rule!("flash", propose);

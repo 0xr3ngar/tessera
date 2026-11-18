@@ -2,7 +2,7 @@
 
 use crate::tensor::Tensor;
 use crate::weights::{Embed, Linears};
-use graph::{
+use sensai_graph::{
     Attend, Composite, Dim, DimName, Entry, EntryKind, Graph, Mask, Node, NodeId, Numerics, Op,
     Output, PathSeg, Port, Region, Role, Select, Size, TensorType, Weight, infer, verify,
 };

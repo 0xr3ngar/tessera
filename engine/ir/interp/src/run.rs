@@ -2,11 +2,11 @@
 
 use crate::cpu;
 use crate::tensor::Error;
-use graph::{
+use sensai_graph::{
     DType, DimExpr, DimName, Graph, Mask, Node, NodeId, Numerics, Op, Parts, PathSeg, Placement,
     Select, Shape, Size, Stage, View,
 };
-use mem::Tensor;
+use sensai_mem::Tensor;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;

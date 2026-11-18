@@ -1,8 +1,8 @@
 use crate::mla::{config, rules};
 use crate::names::resolve;
-use checkpoint::{Slice, Stored};
-use engine::PathSeg;
-use engine::mla::{RotatedMoe, program};
+use sensai_checkpoint::{Slice, Stored};
+use sensai_engine::PathSeg;
+use sensai_engine::mla::{RotatedMoe, program};
 
 /// Two layers, one routed with two experts, both indexing.
 const CONFIG: &str = r#"{
@@ -44,7 +44,7 @@ fn rotated_names_resolve() {
             None if bare.iter().any(|b| stem.ends_with(b)) => stem.clone(),
             None => format!("{stem}.weight"),
         };
-        let axis = |e: &engine::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
+        let axis = |e: &sensai_engine::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
         let shape = w.ty.shape.0.iter().map(axis).collect();
         slices.push(Slice {
             name,
