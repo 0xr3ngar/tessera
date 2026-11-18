@@ -15,6 +15,7 @@ sim = { workspace = true }
 [dev-dependencies]
 attention = { workspace = true }
 interp = { workspace = true }
+linear = { workspace = true }
 run = { workspace = true }
 trace = { workspace = true }
 testkit = { workspace = true }

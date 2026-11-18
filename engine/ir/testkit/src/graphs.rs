@@ -35,6 +35,13 @@ struct Table {
     embed: Embed,
 }
 
+/// A 3x3 kernel over gathered neighbours.
+#[derive(Weights)]
+struct Conv {
+    #[shape(TopK * Hidden, Hidden)]
+    w: Linear,
+}
+
 #[derive(Weights)]
 struct Experts {
     #[shape(Hidden, Experts)]
@@ -191,9 +198,14 @@ pub fn neighbours(bounded: &[Dim], [rows, taps, width]: [u64; 3]) -> Graph {
         role: Role::Logits,
         ty: TensorType::new([bounded[0].name, Vocab, Hidden], DType::F32),
     };
-    let [x] = m.entry(EntryKind::Forward, [x]);
+    let [x, y] = m.entry(EntryKind::Forward, [x.clone(), x]);
     let near = x.permute(&[1, 0, 2]).gather(&ids).permute(&[2, 1, 0, 3]);
-    m.finish([(Role::Logits, &near.mean(1))])
+    // A second gather, shaped as a convolution's input.
+    let w: Conv = declare(&m);
+    let flat = vec![bounded[0].name.into(), Vocab.into(), TopK * Hidden];
+    let gathered = y.permute(&[1, 0, 2]).gather(&ids).permute(&[2, 0, 1, 3]);
+    let conv = gathered.reshape(flat).matmul(&w.w);
+    m.finish([(Role::Logits, &near.mean(1)), (Role::Logits, &conv)])
 }
 
 /// Scores pick each query's best keys for attention.
