@@ -7,7 +7,7 @@ const SMOKE_CU: &str = include_str!("smoke.cu");
 macro_rules! smoke {
     ($bk:ident) => {
         mod $bk {
-            use gpukit::$bk::{BufferPool, Context, ContextConfig, KernelArgs, launch_1d};
+            use sensai_gpukit::$bk::{BufferPool, Context, ContextConfig, KernelArgs, launch_1d};
 
             #[test]
             fn launches_kernel() {

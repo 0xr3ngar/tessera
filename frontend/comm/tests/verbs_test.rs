@@ -1,13 +1,13 @@
 //! Ranks on threads over RDMA loopback, when `TESSERA_VERBS` names ports.
 
-use engine::comm::{Fabric, Port, Transport, Verbs};
-use frontend_comm::{ports, sockets};
+use sensai_engine::comm::{Fabric, Port, Transport, Verbs};
+use sensai_frontend_comm::{ports, sockets};
 use std::net::TcpListener;
 use std::sync::Mutex;
 
 /// The ports `TESSERA_VERBS` names, or none to skip.
 fn lanes() -> Option<Vec<Port>> {
-    Some(ports(&frontend_settings::read().verbs?).unwrap())
+    Some(ports(&sensai_frontend_settings::read().verbs?).unwrap())
 }
 
 /// `ranks` ranks on threads over TCP, three rounds each.

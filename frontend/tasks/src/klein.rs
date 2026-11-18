@@ -5,7 +5,7 @@ use crate::api::Image;
 use crate::features::Features;
 use crate::flow::Flow;
 use crate::pictures::Pictures;
-use engine::Settings;
+use sensai_engine::Settings;
 use std::path::PathBuf;
 
 /// Text rows klein pads every prompt to.

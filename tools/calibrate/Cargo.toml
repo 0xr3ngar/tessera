@@ -1,5 +1,5 @@
 [package]
-name = "calibrate"
+name = "sensai-calibrate"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -8,25 +8,25 @@ description = "Times kernels on this machine and stores what they cost"
 
 [features]
 default = []
-cuda = ["run/cuda"]
-rocm = ["run/rocm"]
+cuda = ["sensai-run/cuda"]
+rocm = ["sensai-run/rocm"]
 
 [[bin]]
 name = "tessera-calibrate"
 path = "src/main.rs"
 
 [dependencies]
-testkit = { workspace = true }
-codegen = { workspace = true }
-frontend-settings = { workspace = true }
-graph = { workspace = true }
-engine = { workspace = true }
-models = { workspace = true }
-trace = { workspace = true }
-lower = { workspace = true }
-sim = { workspace = true }
-rules = { workspace = true }
-run = { workspace = true }
+sensai-testkit = { workspace = true }
+sensai-codegen = { workspace = true }
+sensai-frontend-settings = { workspace = true }
+sensai-graph = { workspace = true }
+sensai-engine = { workspace = true }
+sensai-models = { workspace = true }
+sensai-trace = { workspace = true }
+sensai-lower = { workspace = true }
+sensai-sim = { workspace = true }
+sensai-rules = { workspace = true }
+sensai-run = { workspace = true }
 
 [dev-dependencies]
 naga = { version = "30", features = ["wgsl-in"] }

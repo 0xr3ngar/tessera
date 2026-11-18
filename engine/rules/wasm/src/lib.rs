@@ -6,7 +6,7 @@ mod text;
 
 use abi::{ABI, Ask, Kind, Manifest, Offer, Site};
 use guest::Guest;
-use lower::{Draft, Propose, Read, Rule, T, Tree, sites};
+use sensai_lower::{Draft, Propose, Read, Rule, T, Tree, sites};
 use std::sync::Arc;
 use text::{Fixed, Text};
 

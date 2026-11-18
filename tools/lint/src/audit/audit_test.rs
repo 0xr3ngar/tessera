@@ -1,5 +1,5 @@
 use super::level;
-use findings::Level;
+use sensai_findings::Level;
 
 #[test]
 fn listed_rules_advise() {

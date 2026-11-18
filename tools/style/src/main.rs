@@ -12,9 +12,9 @@ mod tags;
 
 use diff::Hunk;
 use report::Found;
+use sensai_tasks::Tagger;
 use std::path::Path;
 use std::process::{Command, ExitCode};
-use tasks::Tagger;
 
 const USAGE: &str = "usage: tessera-style fetch <pipeline_dir>
        tessera-style diff <pipeline_dir> <base> <head> [json_file]
@@ -37,7 +37,7 @@ impl Checker {
     fn new(pipeline: &Path) -> Result<Self, String> {
         Ok(Self {
             rules: rules::load(Path::new(RULES))?,
-            tagger: Tagger::open(pipeline, &frontend_settings::read())
+            tagger: Tagger::open(pipeline, &sensai_frontend_settings::read())
                 .map_err(|e| format!("{}: {e}", pipeline.display()))?,
             patterns: tags::load(Path::new(TAGS))?,
         })
@@ -134,5 +134,5 @@ fn run(args: &[&str]) -> Result<bool, String> {
 }
 
 fn main() -> ExitCode {
-    findings::main_of("tessera-style", run)
+    sensai_findings::main_of("tessera-style", run)
 }

@@ -1,12 +1,12 @@
 //! A matrix between two rotations equals the rotated matrix.
 
-use checkpoint::exlr8::rotated;
-use interp::{Tensor, run};
-use models::Rotated;
-use models::eg2::{Config, program};
+use sensai_checkpoint::exlr8::rotated;
+use sensai_interp::{Tensor, run};
+use sensai_models::Rotated;
+use sensai_models::eg2::{Config, program};
+use sensai_testkit::{Noise, cosine_f32, weights_with};
+use sensai_trace::{Graph, Linear, PathSeg};
 use std::collections::BTreeMap;
-use testkit::{Noise, cosine_f32, weights_with};
-use trace::{Graph, Linear, PathSeg};
 
 /// A weight path as `attention.0.q.w`.
 pub(super) fn text(path: &[PathSeg]) -> String {
@@ -17,14 +17,14 @@ pub(super) fn text(path: &[PathSeg]) -> String {
     path.iter().map(seg).collect::<Vec<_>>().join(".")
 }
 
-fn shape(g: &Graph, w: &graph::Weight) -> Vec<usize> {
-    let axis = |e: &graph::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
+fn shape(g: &Graph, w: &sensai_graph::Weight) -> Vec<usize> {
+    let axis = |e: &sensai_graph::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
     w.ty.shape.0.iter().map(axis).collect()
 }
 
 /// Random weights for every path, scales near one.
 fn random(g: &Graph, noise: &mut Noise) -> BTreeMap<String, Tensor> {
-    let scales = |w: &graph::Weight| {
+    let scales = |w: &sensai_graph::Weight| {
         let path = text(&w.path);
         match path.ends_with(".suh") || path.ends_with(".svh") {
             true => (1.0, 0.1),

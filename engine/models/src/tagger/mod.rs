@@ -3,9 +3,9 @@
 
 //! spaCy's tok2vec and tagger: hash embeddings, maxout window layers, tags.
 
-use graph::{DType, Dim, DimExpr, EntryKind, Graph, PathSeg, Port, Role, TensorType};
-use trace::DimName::{Context, Seqs};
-use trace::{Act, Embed, Linear, Model, Tensor, Vector, Weights};
+use sensai_graph::{DType, Dim, DimExpr, EntryKind, Graph, PathSeg, Port, Role, TensorType};
+use sensai_trace::DimName::{Context, Seqs};
+use sensai_trace::{Act, Embed, Linear, Model, Tensor, Vector, Weights};
 
 /// Rows hashed per feature, and pieces per maxout unit.
 pub const KEYS: u64 = 4;

@@ -2,8 +2,8 @@
 
 use crate::Error;
 use crate::offer::{Offer, Slice, Stored};
-use engine::block;
-use engine::storage::{self, Form};
+use sensai_engine::block;
+use sensai_engine::storage::{self, Form};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
@@ -62,7 +62,7 @@ impl GgufType {
         let of = |form: &dyn Form| (form.block(), form.bytes(form.block()));
         let (block, bytes) = match self {
             Self::F32 => of(&storage::F32),
-            Self::F16 => (1, size_of::<engine::F16>()),
+            Self::F16 => (1, size_of::<sensai_engine::F16>()),
             Self::Q4_0 => of(&block::Q4_0),
             Self::Q8_0 => of(&block::Q8_0),
         };
@@ -375,7 +375,7 @@ impl Gguf {
                 .as_chunks::<2>()
                 .0
                 .iter()
-                .map(|b| f32::from(engine::F16(u16::from_le_bytes(*b))))
+                .map(|b| f32::from(sensai_engine::F16(u16::from_le_bytes(*b))))
                 .collect(),
         })
     }

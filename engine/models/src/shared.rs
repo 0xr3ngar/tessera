@@ -1,7 +1,7 @@
 //! Pieces every token model's program uses.
 
-use trace::DimName::*;
-use trace::{
+use sensai_trace::DimName::*;
+use sensai_trace::{
     Act, DType, Dim, DimExpr, DimName, EntryKind, Graph, Linear, Model, Pairs, PathSeg, Port, Role,
     Tensor, TensorType, Vector, Weights,
 };

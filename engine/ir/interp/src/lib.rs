@@ -5,8 +5,8 @@ mod round;
 mod run;
 mod tensor;
 
-pub use mem::Tensor;
 pub use run::{Store, bind, run, run_kept, run_parts, run_ranks};
+pub use sensai_mem::Tensor;
 pub use tensor::Error;
 
 #[cfg(test)]

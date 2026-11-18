@@ -1,5 +1,5 @@
 [package]
-name = "serve"
+name = "sensai-serve"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -15,14 +15,14 @@ path = "src/main.rs"
 
 [features]
 default = []
-cuda = ["engine/cuda", "tasks/cuda"]
-rocm = ["engine/rocm", "tasks/rocm"]
+cuda = ["sensai-engine/cuda", "sensai-tasks/cuda"]
+rocm = ["sensai-engine/rocm", "sensai-tasks/rocm"]
 
 [dependencies]
-engine = { workspace = true }
-bundle = { workspace = true }
+sensai-engine = { workspace = true }
+sensai-bundle = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-frontend-settings = { workspace = true }
+sensai-frontend-settings = { workspace = true }
 httparse = "1"
-tasks = { workspace = true }
+sensai-tasks = { workspace = true }

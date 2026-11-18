@@ -17,7 +17,7 @@ mod workspace;
 
 use std::path::Path;
 
-use findings::Level;
+use sensai_findings::Level;
 
 use crate::files::Source;
 use crate::{LIMITS, Violation};

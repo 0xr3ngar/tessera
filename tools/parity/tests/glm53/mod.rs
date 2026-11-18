@@ -2,13 +2,13 @@
 
 mod regions_test;
 
-use models::mla::{Config, RotatedMoe, program, stepper};
-use parity::{Spec, Stepper, suite};
-use trace::Composite::{Attention, Mlp, Moe};
-use trace::Graph;
+use sensai_models::mla::{Config, RotatedMoe, program, stepper};
+use sensai_parity::{Spec, Stepper, suite};
+use sensai_trace::Composite::{Attention, Mlp, Moe};
+use sensai_trace::Graph;
 
 fn small() -> Graph {
-    program::<RotatedMoe>(&models::small::glm53())
+    program::<RotatedMoe>(&sensai_models::small::glm53())
 }
 
 pub fn release() -> Graph {
@@ -16,7 +16,7 @@ pub fn release() -> Graph {
 }
 
 const STEPPER: Stepper = Stepper {
-    small: || stepper::<RotatedMoe>(&models::small::glm53()),
+    small: || stepper::<RotatedMoe>(&sensai_models::small::glm53()),
     release: || stepper::<RotatedMoe>(&Config::glm53(1, 1024)),
 };
 

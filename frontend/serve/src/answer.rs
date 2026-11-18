@@ -3,10 +3,10 @@
 use crate::http::{Body, Response};
 use crate::wire::{self, Chat, Common, Completion, Prompt, Refusal, bad, refuse};
 use crate::{Model, Slot, with_model};
+use sensai_tasks::api::{Finish, Params, Step};
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
-use tasks::api::{Finish, Params, Step};
 
 /// Which OpenAI shape an answer takes.
 #[derive(Clone, Copy, PartialEq)]

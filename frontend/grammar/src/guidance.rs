@@ -1,9 +1,9 @@
 //! Grammars through llguidance.
 
 use crate::Error;
-use bundle::tokenize::hf::Hf;
 use llguidance::api::TopLevelGrammar;
 use llguidance::{ParserFactory, token_bytes_from_tokenizer_json};
+use sensai_bundle::tokenize::hf::Hf;
 use std::sync::Arc;
 use toktrie::{TokEnv, TokRxInfo, TokTrie, TokenId, TokenizerEnv};
 
@@ -148,18 +148,18 @@ impl Matcher {
     }
 }
 
-impl engine::Guide for Matcher {
-    fn allowed(&mut self) -> Result<engine::Allowed, engine::Fault> {
+impl sensai_engine::Guide for Matcher {
+    fn allowed(&mut self) -> Result<sensai_engine::Allowed, sensai_engine::Fault> {
         let mut bits = vec![0; self.words];
         Matcher::mask(self, &mut bits)?;
-        Ok(engine::Allowed::from_bits(bits))
+        Ok(sensai_engine::Allowed::from_bits(bits))
     }
 
     fn forced(&mut self) -> Vec<u32> {
         Matcher::forced(self)
     }
 
-    fn accept(&mut self, id: u32) -> Result<(), engine::Fault> {
+    fn accept(&mut self, id: u32) -> Result<(), sensai_engine::Fault> {
         Matcher::accept(self, id)
     }
 

@@ -1,4 +1,4 @@
-use load::{Config, USAGE};
+use sensai_load::{Config, USAGE};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -6,7 +6,7 @@ fn main() -> ExitCode {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
-    match load::run(&config) {
+    match sensai_load::run(&config) {
         Ok(report) => {
             println!(
                 "{}",

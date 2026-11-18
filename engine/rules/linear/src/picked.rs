@@ -1,12 +1,12 @@
 //! A matmul whose rows each pick a matrix.
 
 use crate::product::{Product, Variant};
-use codegen::ir::{Body, Expr, Intrinsic, Ty};
-use codegen::prelude::*;
-use lower::form::Load as Stored;
-use lower::kernels::finish;
-use lower::sites::Picked as Pick;
-use lower::{Arg, Draft, Kernel, Launch, Load, Shape, Step, T, Tree};
+use sensai_codegen::ir::{Body, Expr, Intrinsic, Ty};
+use sensai_codegen::prelude::*;
+use sensai_lower::form::Load as Stored;
+use sensai_lower::kernels::finish;
+use sensai_lower::sites::Picked as Pick;
+use sensai_lower::{Arg, Draft, Kernel, Launch, Load, Shape, Step, T, Tree};
 
 /// Each row's product with the matrix `ids` names for it.
 #[derive(Clone, Debug, Kernel)]
@@ -119,4 +119,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(Picked { product }, reads, len)])
 }
 
-lower::rule!("picked", propose);
+sensai_lower::rule!("picked", propose);

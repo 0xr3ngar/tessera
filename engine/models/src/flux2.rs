@@ -1,8 +1,8 @@
 //! FLUX.2's flow transformer: double-stream blocks, then single-stream.
 
 use crate::shared::{join, spread};
-use trace::DimName::*;
-use trace::{
+use sensai_trace::DimName::*;
+use sensai_trace::{
     Act, DType, Dim, DimExpr, EntryKind, Graph, Linear, Mask, Model, Norm, Pairs, PathSeg, Port,
     Role, Tensor, TensorType, Weights,
 };
@@ -148,7 +148,7 @@ pub fn declare(m: &Model, c: &Config) -> (Flux2, Vec<Double>, Vec<Single>) {
         };
         (0..n).map(one).collect()
     }
-    let w: Flux2 = trace::declare(m);
+    let w: Flux2 = sensai_trace::declare(m);
     (w, each(m, "double", c.double), each(m, "single", c.single))
 }
 

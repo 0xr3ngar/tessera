@@ -3,7 +3,6 @@
 use crate::expr::{Val, elem_size};
 use crate::runtime::{Arg, Buf, Ctx};
 use crate::signature;
-use codegen::ir::{Body, Expr, Intrinsic, Param, Stmt, Ty};
 use cranelift_codegen::ir::{
     FuncRef, Function, InstBuilder, MemFlagsData, StackSlot, StackSlotData, StackSlotKind, Type,
     Value, condcodes::IntCC, types,
@@ -12,7 +11,8 @@ use cranelift_codegen::isa::TargetFrontendConfig;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::JITModule;
 use cranelift_module::{Linkage, Module};
-use host::lockstep::THREADS;
+use sensai_codegen::ir::{Body, Expr, Intrinsic, Param, Stmt, Ty};
+use sensai_host::lockstep::THREADS;
 use std::collections::HashMap;
 
 pub(crate) type Res<T = ()> = Result<T, String>;
@@ -30,7 +30,7 @@ pub(crate) enum Kind {
     /// One value, the same for every thread.
     One(Ty, Value),
     Buffer {
-        form: &'static dyn codegen::Load,
+        form: &'static dyn sensai_codegen::Load,
         ptr: Value,
         len: Value,
         skip: Value,
@@ -287,7 +287,7 @@ impl Lowerer<'_, '_> {
     fn store(
         &mut self,
         target: &Expr,
-        op: Option<codegen::ir::BinOp>,
+        op: Option<sensai_codegen::ir::BinOp>,
         value: &Expr,
         t: Value,
     ) -> Res {

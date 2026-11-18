@@ -1,7 +1,7 @@
 //! `tessera (--recipe <src> | --model <dir>) <verb>`.
 
-use recipe::Recipe;
-use serve::start::{FLAGS, Options};
+use sensai_recipe::Recipe;
+use sensai_serve::start::{FLAGS, Options};
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -15,8 +15,8 @@ enum Stop {
     Failed(String),
 }
 
-impl From<recipe::Error> for Stop {
-    fn from(e: recipe::Error) -> Self {
+impl From<sensai_recipe::Error> for Stop {
+    fn from(e: sensai_recipe::Error) -> Self {
         Stop::Failed(e.to_string())
     }
 }
@@ -51,7 +51,7 @@ fn options(
         if let Some(path) = r.module() {
             let failed = |e: String| Stop::Failed(format!("{}: {e}", path.display()));
             let bytes = std::fs::read(&path).map_err(|e| failed(e.to_string()))?;
-            let rules = engine::wasm::load(&bytes).map_err(|e| failed(e.to_string()))?;
+            let rules = sensai_engine::wasm::load(&bytes).map_err(|e| failed(e.to_string()))?;
             options.lower.get_or_insert_default().rules.extend(rules);
         }
         for (flag, value) in r.flags() {
@@ -79,7 +79,7 @@ fn run(given: &[String]) -> Result<(), Stop> {
         }
         _ => return Err(Stop::Usage),
     };
-    let settings = frontend_settings::read();
+    let settings = sensai_frontend_settings::read();
     let cache = settings.recipes.as_deref();
     let recipe = match &from {
         Origin::Recipe(src) => Some(Recipe::open(src, cache)?),
@@ -96,7 +96,7 @@ fn run(given: &[String]) -> Result<(), Stop> {
             if let Origin::Model(dir) = from {
                 options.model = dir.into();
             }
-            serve::start::run(options).map_err(Stop::Failed)
+            sensai_serve::start::run(options).map_err(Stop::Failed)
         }
         _ => Err(Stop::Usage),
     }

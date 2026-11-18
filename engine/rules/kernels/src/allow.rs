@@ -1,8 +1,8 @@
 //! Entries whose mask bit is clear, set to -inf.
 
-use codegen::prelude::*;
-use graph::Stage;
-use lower::{Kernel, stage_rule};
+use sensai_codegen::prelude::*;
+use sensai_graph::Stage;
+use sensai_lower::{Kernel, stage_rule};
 
 /// One thread per entry. Each row has `words` mask words.
 #[kernel]

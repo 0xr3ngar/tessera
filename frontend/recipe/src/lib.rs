@@ -50,7 +50,7 @@ pub struct Recipe {
     /// Weight-name rules, relative to the recipe.
     pub names: Option<PathBuf>,
     /// Lowering choices. `None` keeps the model's own.
-    pub lower: Option<engine::Recipe>,
+    pub lower: Option<sensai_engine::Recipe>,
     /// A wasm module of lowering rules, relative to the recipe.
     pub module: Option<PathBuf>,
     /// Serve flags by name, with `_` for `-`.

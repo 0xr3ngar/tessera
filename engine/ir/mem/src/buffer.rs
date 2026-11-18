@@ -3,7 +3,7 @@
 use crate::layout::Layout;
 use crate::view::{View, ViewMut};
 use crate::{Error, mismatch};
-use graph::DType;
+use sensai_graph::DType;
 use std::any::Any;
 
 /// Memory of one zone, however the backend holds it.

@@ -1,18 +1,18 @@
 //! Recorded references, and the outputs each model must match.
 
 use super::{Spec, inputs, interpreted, loaded, runs};
-use bundle::names::repo;
-use checkpoint::{File, Offer};
-use interp::Tensor;
-use lower::form::{BF16_FORM, Load};
-use lower::{Device, Pins, Weight, lower};
-use run::Run;
+use sensai_bundle::names::repo;
+use sensai_checkpoint::{File, Offer};
+use sensai_interp::Tensor;
+use sensai_lower::form::{BF16_FORM, Load};
+use sensai_lower::{Device, Pins, Weight, lower};
+use sensai_run::Run;
+use sensai_testkit::{argmax, cosine_f32, max_abs_diff};
+use sensai_trace::DimName::{self, Context, Seqs};
+use sensai_trace::Graph;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
-use testkit::{argmax, cosine_f32, max_abs_diff};
-use trace::DimName::{self, Context, Seqs};
-use trace::Graph;
 
 /// A recorded reference, and how closely to match it.
 pub struct Golden {
@@ -152,10 +152,10 @@ pub fn pulled(model: &str, g: &Graph, offer: &dyn Offer) -> Vec<Tensor> {
     let rules = repo(model).unwrap_or_default();
     let mut out = Vec::with_capacity(g.weights.len());
     let shape = |at: usize| -> Vec<usize> {
-        let axis = |e: &graph::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
+        let axis = |e: &sensai_graph::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
         g.weights[at].ty.shape.0.iter().map(axis).collect()
     };
-    bundle::each(g, offer, &[&rules], |w, _| {
+    sensai_bundle::each(g, offer, &[&rules], |w, _| {
         let shape = shape(out.len());
         out.push(match w {
             Weight::Floats(t) => t,
@@ -212,7 +212,7 @@ impl Golden {
         if let Some(read) = self.record {
             return Some(read(g));
         }
-        let dir = testkit::reference(model)?;
+        let dir = sensai_testkit::reference(model)?;
         let file = dir.join("model.safetensors");
         // The turn comes first, so the weights load in it.
         let turn = turn();

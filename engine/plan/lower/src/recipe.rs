@@ -2,7 +2,7 @@
 
 use crate::form::Pins;
 use crate::rule::Rule;
-use codegen::kept::{self, Layout};
+use sensai_codegen::kept::{self, Layout};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::Path;
 

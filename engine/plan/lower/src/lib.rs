@@ -23,27 +23,27 @@ pub use abi::{Arg, Launch, Shape, Source, ToArg};
 pub use assign::assign;
 pub use body::{GUESS, small, source};
 pub use cache::Cache;
-pub use codegen::kept;
-pub use codegen::{Dialect, Terms, hip_tiles, terms};
 pub use cost::Device;
 pub use cut::cut;
-pub use engine_settings::{Pick, Settings};
 pub use error::{Size, Unsupported};
 pub use extent::Extent;
 pub use form::{Pins, Weight};
 pub use kernel::{Kernel, KernelRef, Needs, UNPROVEN};
-pub use kernel_macro::Kernel;
-pub use mem::{Buffer, DType, Tensor, View};
 pub use plan::{Loaded, Output, Plan, Share, Slot, Step};
-pub use platform::{Limits, Platform};
 pub use recipe::{Launching, Recipe};
 pub use rule::{Attn, Draft, Propose, RULES, Read, Rule, linked, rules};
 pub use schedule::{peak, schedule};
 pub use select::{Home, Op, Selected, Val, Value, select};
-pub use sim::{Cluster, Fit, Link, Load, Zone, ZoneKind};
+pub use sensai_codegen::kept;
+pub use sensai_codegen::{Dialect, Terms, hip_tiles, terms};
+pub use sensai_engine_settings::{Pick, Settings};
+pub use sensai_kernel_macro::Kernel;
+pub use sensai_mem::{Buffer, DType, Tensor, View};
+pub use sensai_platform::{Limits, Platform};
+pub use sensai_sim::{Cluster, Fit, Link, Load, Zone, ZoneKind};
 pub use tree::{Node, T, Term, Tree};
 
-use graph::{DimName, Graph};
+use sensai_graph::{DimName, Graph};
 
 /// Selects kernels, orders them, then assigns buffers.
 pub fn lower(
@@ -77,7 +77,7 @@ pub enum Error {
     Size(#[from] Size),
     /// A view did not fit its buffer or its use.
     #[error("memory: {0}")]
-    Memory(#[from] mem::Error),
+    Memory(#[from] sensai_mem::Error),
     /// A runtime dimension was never bound.
     #[error("a runtime dimension has no value")]
     Unbound,

@@ -1,7 +1,7 @@
 use crate::names::{Unresolved, resolve, rules};
-use checkpoint::{Slice, Stored};
-use engine::decoder::{Config, Swiglu, stepper};
-use engine::{Graph, Norm, PathSeg};
+use sensai_checkpoint::{Slice, Stored};
+use sensai_engine::decoder::{Config, Swiglu, stepper};
+use sensai_engine::{Graph, Norm, PathSeg};
 
 fn graph() -> Graph {
     stepper::<Norm, Swiglu>(&Config::toy(1, 8))
@@ -48,7 +48,7 @@ fn offered(g: &Graph, gguf: bool) -> Vec<Slice> {
     let mut out = Vec::new();
     for w in &g.weights {
         let name = tensor_name(&w.path, gguf).unwrap();
-        let axis = |e: &engine::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
+        let axis = |e: &sensai_engine::DimExpr| e.value(&g.dims, &|_| None).unwrap() as usize;
         out.push(Slice {
             name,
             shape: w.ty.shape.0.iter().map(axis).collect(),

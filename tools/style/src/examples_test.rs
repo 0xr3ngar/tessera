@@ -26,7 +26,7 @@ fn cases(rule: &Rule) -> Vec<(String, bool)> {
 /// Bad examples hit their rule. Good examples do not.
 #[test]
 fn examples_match() {
-    let Some(dir) = testkit::reference("spacy") else {
+    let Some(dir) = sensai_testkit::reference("spacy") else {
         eprintln!("no spacy reference here: skipped");
         return;
     };

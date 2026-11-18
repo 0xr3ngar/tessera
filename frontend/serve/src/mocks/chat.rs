@@ -1,8 +1,8 @@
 //! The chat layout for `/v1/chat/completions`.
 
-use bundle::Message;
-use tasks::Error;
-use tasks::api::Chat;
+use sensai_bundle::Message;
+use sensai_tasks::Error;
+use sensai_tasks::api::Chat;
 
 /// Each message as `role:content`, joined.
 pub(super) struct MockChat;

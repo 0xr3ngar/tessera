@@ -1,8 +1,10 @@
 //! CLIP's text tower: learned positions, causal pre-norm blocks.
 
 use crate::shared::{Attend, Dense, Stack, tokens};
-use trace::DimName::*;
-use trace::{Act, Dim, Embed, Graph, Linear, Mask, Model, Norm, Role, Tensor, Vector, Weights};
+use sensai_trace::DimName::*;
+use sensai_trace::{
+    Act, Dim, Embed, Graph, Linear, Mask, Model, Norm, Role, Tensor, Vector, Weights,
+};
 
 pub struct Config {
     /// Its context bound is also the position table's length.
@@ -116,7 +118,7 @@ pub fn forward(m: &Model, c: &Config, w: &Clip, [tokens, positions]: [&Tensor; 2
 /// One forward entry: tokens and positions in, states out.
 pub fn program(c: &Config) -> Graph {
     let m = Model::new(c.dims());
-    let w: Clip = trace::declare(&m);
+    let w: Clip = sensai_trace::declare(&m);
     let [tokens, positions] = tokens(&m);
     let states = forward(&m, c, &w, [&tokens, &positions]);
     m.finish([(Role::Logits, &states)])

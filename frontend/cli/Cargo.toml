@@ -1,5 +1,5 @@
 [package]
-name = "cli"
+name = "sensai-cli"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -12,11 +12,11 @@ path = "src/main.rs"
 
 [features]
 default = []
-cuda = ["serve/cuda"]
-rocm = ["serve/rocm"]
+cuda = ["sensai-serve/cuda"]
+rocm = ["sensai-serve/rocm"]
 
 [dependencies]
-engine = { workspace = true }
-frontend-settings = { workspace = true }
-recipe = { workspace = true }
-serve = { workspace = true }
+sensai-engine = { workspace = true }
+sensai-frontend-settings = { workspace = true }
+sensai-recipe = { workspace = true }
+sensai-serve = { workspace = true }

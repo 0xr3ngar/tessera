@@ -1,7 +1,7 @@
 //! Accumulators that round to narrower floats after every add.
 
 use crate::tensor::Error;
-use graph::{Bf16, DType, F16};
+use sensai_graph::{Bf16, DType, F16};
 
 /// An accumulator that rounds after every add.
 #[derive(Clone, Copy)]

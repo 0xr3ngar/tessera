@@ -1,14 +1,14 @@
 //! Loads one model on a thread and serves HTTP.
 
 use crate::{Model, Slot};
-use engine::{Batch, Engine, Fair, Pins, Recipe, Settings};
+use sensai_engine::{Batch, Engine, Fair, Pins, Recipe, Settings};
+use sensai_tasks::api::{Embed, Info, Paint, Tokens};
+use sensai_tasks::paint::Painter;
+use sensai_tasks::{Generate, Job, Queued, Threaded, Worker};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::Instant;
-use tasks::api::{Embed, Info, Paint, Tokens};
-use tasks::paint::Painter;
-use tasks::{Generate, Job, Queued, Threaded, Worker};
 
 /// The flags `Options::flag` and `Options::switch` take.
 pub const FLAGS: &str = "[--host <addr>] [--port <n>] [--max-model-len <tokens>] [--slots <n>] \
@@ -109,7 +109,7 @@ pub fn run(options: Options) -> Result<(), String> {
 fn lowering(options: &Options, pins: Option<Pins>) -> Recipe {
     let mut recipe = options.lower.clone().unwrap_or_default();
     if recipe.pins == Pins::default() {
-        recipe.pins = pins.unwrap_or_else(|| Pins::all(engine::form::BF16_FORM));
+        recipe.pins = pins.unwrap_or_else(|| Pins::all(sensai_engine::form::BF16_FORM));
     }
     recipe
 }
@@ -120,11 +120,12 @@ fn engine_thread(o: &Options, settings: &Settings, info: Info, slot: &Slot) -> R
     let rules = match &settings.names {
         Some(path) => std::fs::read_to_string(path)
             .map_err(|e| e.to_string())
-            .and_then(|text| bundle::names::rules(&text).map_err(|e| e.to_string()))?,
+            .and_then(|text| sensai_bundle::names::rules(&text).map_err(|e| e.to_string()))?,
         None => Vec::new(),
     };
     let (slots, context) = (o.slots as u64, o.max_model_len as u64);
-    let loaded = bundle::load_named(&o.model, slots, context, &rules).map_err(|e| e.to_string())?;
+    let loaded =
+        sensai_bundle::load_named(&o.model, slots, context, &rules).map_err(|e| e.to_string())?;
     let recipe = lowering(o, loaded.pins);
     let opened = Engine::open(loaded.graph, o.max_model_len, &recipe, settings);
     let mut engine = opened.map_err(|e| e.to_string())?;
@@ -171,7 +172,7 @@ fn engine_thread(o: &Options, settings: &Settings, info: Info, slot: &Slot) -> R
 
 /// Loads the model into `slot`. A failure ends the process.
 fn load(options: Options, slot: Slot) {
-    let mut settings = frontend_settings::read();
+    let mut settings = sensai_frontend_settings::read();
     settings.names = options.names.clone().or(settings.names);
     let info = Info {
         name: options

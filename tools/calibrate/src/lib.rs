@@ -6,15 +6,15 @@ pub mod plans;
 pub mod probe;
 
 // Linking the crates registers their rules.
-use rules as _;
+use sensai_rules as _;
 
 pub use grid::Grid;
 
-use engine::Error;
-use graph::{DimName, Graph};
-use lower::{Device, Settings, Step, View, lower, select};
-use run::Run;
-use sim::Chip;
+use sensai_engine::Error;
+use sensai_graph::{DimName, Graph};
+use sensai_lower::{Device, Settings, Step, View, lower, select};
+use sensai_run::Run;
+use sensai_sim::Chip;
 use std::collections::BTreeMap;
 
 /// Whole passes over a plan, each step timed once.

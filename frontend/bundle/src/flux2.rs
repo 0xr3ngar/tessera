@@ -2,9 +2,9 @@
 
 use crate::names::repo;
 use crate::pull;
-use checkpoint::File;
-use engine::flux2::{Config, program};
-use engine::{Graph, Pins, Weight};
+use sensai_checkpoint::File;
+use sensai_engine::flux2::{Config, program};
+use sensai_engine::{Graph, Pins, Weight};
 use serde::Deserialize;
 use std::error::Error;
 use std::path::Path;
@@ -34,7 +34,7 @@ pub struct Transformer {
 pub fn transformer(dir: &Path, [seqs, text, rows]: [u64; 3]) -> Result<Transformer> {
     let dir = dir.join("transformer");
     let s: Sizes = serde_json::from_str(&std::fs::read_to_string(dir.join("config.json"))?)?;
-    if s.in_channels != engine::flux2::LATENT {
+    if s.in_channels != sensai_engine::flux2::LATENT {
         return Err(format!("{} latent channels", s.in_channels).into());
     }
     let hidden = s.num_attention_heads * s.attention_head_dim;

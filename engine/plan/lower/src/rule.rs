@@ -6,8 +6,8 @@ use crate::kernel::{Kernel, KernelRef};
 use crate::plan::Step;
 use crate::tree::{T, Tree};
 use crate::{Error, Unsupported};
-use codegen::kept::Layout;
-use graph::Mask;
+use sensai_codegen::kept::Layout;
+use sensai_graph::Mask;
 use std::fmt;
 
 pub use scattered_collect::declarative::{gather, scatter};

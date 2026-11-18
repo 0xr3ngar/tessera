@@ -3,10 +3,10 @@
 <!-- crate table -->
 <table>
 <tr><th>Crate</th><th>Description</th></tr>
-<tr><td><a href="attention">attention</a></td><td>Attention kernels for the CPU and the GPU, registered as lowering rules</td></tr>
-<tr><td><a href="cpu">cpu</a></td><td>CPU kernels for matmuls: short bodies over a dot primitive</td></tr>
-<tr><td><a href="kernels">kernels</a></td><td>Kernels and the lowering rules that propose them</td></tr>
-<tr><td><a href="linear">linear</a></td><td>Generated matmul kernels, registered as lowering rules</td></tr>
-<tr><td><a href="rules">rules</a></td><td>Links every lowering rule crate</td></tr>
-<tr><td><a href="wasm">wasm</a></td><td>Lowering rules a sandboxed wasm module proposes, over JSON</td></tr>
+<tr><td><a href="attention">sensai-attention</a></td><td>Attention kernels for the CPU and the GPU, registered as lowering rules</td></tr>
+<tr><td><a href="cpu">sensai-cpu</a></td><td>CPU kernels for matmuls: short bodies over a dot primitive</td></tr>
+<tr><td><a href="kernels">sensai-kernels</a></td><td>Kernels and the lowering rules that propose them</td></tr>
+<tr><td><a href="linear">sensai-linear</a></td><td>Generated matmul kernels, registered as lowering rules</td></tr>
+<tr><td><a href="rules">sensai-rules</a></td><td>Links every lowering rule crate</td></tr>
+<tr><td><a href="wasm">sensai-wasm</a></td><td>Lowering rules a sandboxed wasm module proposes, over JSON</td></tr>
 </table>

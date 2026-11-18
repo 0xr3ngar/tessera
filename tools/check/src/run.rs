@@ -1,6 +1,6 @@
 //! Runs each check as a program, and reads its JSON.
 
-use findings::Report;
+use sensai_findings::Report;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 

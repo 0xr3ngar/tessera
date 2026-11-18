@@ -3,7 +3,7 @@
 use crate::cost::Device;
 use crate::plan::Plan;
 use crate::{Error, lower_upto};
-use graph::{DimName, Graph};
+use sensai_graph::{DimName, Graph};
 use std::collections::HashMap;
 
 /// A plan holds while its graph and device stay unchanged.

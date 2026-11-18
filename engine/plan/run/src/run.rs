@@ -2,13 +2,13 @@
 
 use crate::Error;
 use crate::held::Held;
-use codegen::Precision;
-use engine_settings::Memory;
-use gpukit::{Limits, Platform};
-use graph::DimName;
-use lower::form::{F32_FORM, Load};
-use lower::{Arg, Launch, Launching, Loaded, Plan, Shape, Share, Slot, Weight};
-use mem::{Tensor, View, copy};
+use sensai_codegen::Precision;
+use sensai_engine_settings::Memory;
+use sensai_gpukit::{Limits, Platform};
+use sensai_graph::DimName;
+use sensai_lower::form::{F32_FORM, Load};
+use sensai_lower::{Arg, Launch, Launching, Loaded, Plan, Shape, Share, Slot, Weight};
+use sensai_mem::{Tensor, View, copy};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::OnceLock;
@@ -71,7 +71,7 @@ impl Base {
         let bound = |l: &Launch| {
             l.clone()
                 .bound(&size)
-                .ok_or(Error::from(lower::Error::Unbound))
+                .ok_or(Error::from(sensai_lower::Error::Unbound))
         };
         let unbound = self.launches[step].get_or_init(|| self.plan.steps[step].launches());
         unbound.iter().map(bound).collect()
@@ -274,7 +274,7 @@ pub trait Run {
         self.feed(inputs)?;
         self.submit(0..self.plan().steps.len())?;
         let outputs = self.plan().outputs.iter();
-        let shaped = |o: &lower::Output| Ok(self.read(o.slot)?.reshaped(o.shape.clone()));
+        let shaped = |o: &sensai_lower::Output| Ok(self.read(o.slot)?.reshaped(o.shape.clone()));
         outputs.map(shaped).collect()
     }
 

@@ -1,11 +1,11 @@
 //! Graphs on runners: decode loops and single launches.
 
 // Linking the crates registers their rules.
-use rules as _;
+use sensai_rules as _;
 
-use graph::DimName::{Candidates, Context, Picks, Rows, Segments, Seqs, VocabWords};
-use lower::{Cache, Device};
-use run::{Run, open};
+use sensai_graph::DimName::{Candidates, Context, Picks, Rows, Segments, Seqs, VocabWords};
+use sensai_lower::{Cache, Device};
+use sensai_run::{Run, open};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::mpsc;
@@ -19,17 +19,17 @@ pub use model::Model;
 pub use schedule::{Batch, Fair, Policy, Seq, Sink};
 
 // The front end reaches the engine crates only through these.
-pub use engine_comm as comm;
-pub use engine_settings::{Backend, Memory};
-pub use graph::{Bf16, DimExpr, E4M3, F16, Graph, PathSeg, Shape};
-pub use interp::{Tensor, bind};
-pub use lower::{Pick, Pins, Recipe, Settings, Weight, form};
-pub use mem::form as storage;
-pub use mem::{block, trellis};
-pub use models::{Stack, clip, decoder, eg2, flux2, mla, sprite, tagger, vae};
-pub use run::gpu;
-pub use trace::{Linear, Norm};
-pub use wasm;
+pub use sensai_engine_comm as comm;
+pub use sensai_engine_settings::{Backend, Memory};
+pub use sensai_graph::{Bf16, DimExpr, E4M3, F16, Graph, PathSeg, Shape};
+pub use sensai_interp::{Tensor, bind};
+pub use sensai_lower::{Pick, Pins, Recipe, Settings, Weight, form};
+pub use sensai_mem::form as storage;
+pub use sensai_mem::{block, trellis};
+pub use sensai_models::{Stack, clip, decoder, eg2, flux2, mla, sprite, tagger, vae};
+pub use sensai_run::gpu;
+pub use sensai_trace::{Linear, Norm};
+pub use sensai_wasm as wasm;
 
 /// Tokens to continue, and when to stop.
 #[derive(Default, Serialize, Deserialize)]
@@ -63,11 +63,11 @@ pub enum Event {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Lower(#[from] lower::Error),
+    Lower(#[from] sensai_lower::Error),
     #[error(transparent)]
-    Run(#[from] run::Error),
+    Run(#[from] sensai_run::Error),
     #[error("interpreter: {0}")]
-    Interp(#[from] interp::Error),
+    Interp(#[from] sensai_interp::Error),
     #[error("the rows do not fit the engine")]
     Rows,
     #[error("a row's slot or position is out of range")]
@@ -75,7 +75,7 @@ pub enum Error {
     #[error("an input has no axis for a bounded dimension")]
     InputAxis,
     #[error(transparent)]
-    Graph(#[from] graph::VerifyError),
+    Graph(#[from] sensai_graph::VerifyError),
     #[error("the masks do not fit the graph's mask port")]
     Mask,
     #[error("guide: {0}")]
@@ -125,7 +125,7 @@ fn launch_of(
     rows: &[Row],
     picks: &[u32],
     slots: usize,
-) -> (Vec<(graph::DimName, u64)>, Vec<Tensor>) {
+) -> (Vec<(sensai_graph::DimName, u64)>, Vec<Tensor>) {
     let furthest = rows.iter().map(|r| r.position).max().unwrap_or(0);
     let mut seen: Vec<u32> = rows.iter().map(|r| r.slot).collect();
     seen.sort_unstable();
@@ -165,10 +165,10 @@ impl Engine {
         recipe: &Recipe,
         settings: &Settings,
     ) -> Result<Self, Error> {
-        let mut graph = graph::trim(&graph, 0)?;
+        let mut graph = sensai_graph::trim(&graph, 0)?;
         let sparse = graph.entries.len() > 1;
         if sparse {
-            graph = graph::trim(&graph, 1)?;
+            graph = sensai_graph::trim(&graph, 1)?;
         }
         let device = Device::guess(settings).with(recipe);
         let mut plans = Cache::default();
@@ -193,7 +193,7 @@ impl Engine {
         }
         runner.launching(recipe.launch);
         let device = Device::stored(runner.platform(), settings)
-            .map_err(lower::Error::from)?
+            .map_err(sensai_lower::Error::from)?
             .with(recipe);
         let words = graph.dims.iter().find(|d| d.name == VocabWords);
         let words = words.map(|d| d.size.max() as usize);

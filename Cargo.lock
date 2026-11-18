@@ -56,20 +56,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
-name = "attention"
-version = "0.1.0"
-dependencies = [
- "codegen",
- "graph",
- "interp",
- "kernels",
- "lower",
- "run",
- "testkit",
- "trace",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -148,25 +134,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bundle"
-version = "0.1.0"
-dependencies = [
- "checkpoint",
- "engine",
- "fancy-regex",
- "jiff",
- "minijinja",
- "minijinja-contrib",
- "rmp-serde",
- "rmpv",
- "serde",
- "serde_json",
- "testkit",
- "thiserror",
- "tokenizers",
-]
-
-[[package]]
 name = "bytemuck"
 version = "1.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -181,24 +148,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.10",
-]
-
-[[package]]
-name = "calibrate"
-version = "0.1.0"
-dependencies = [
- "codegen",
- "engine",
- "frontend-settings",
- "graph",
- "lower",
- "models",
- "naga",
- "rules",
- "run",
- "sim",
- "testkit",
- "trace",
 ]
 
 [[package]]
@@ -233,39 +182,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
-name = "checkpoint"
-version = "0.1.0"
-dependencies = [
- "engine",
- "serde",
- "serde_json",
- "testkit",
- "thiserror",
- "ureq",
-]
-
-[[package]]
-name = "cli"
-version = "0.1.0"
-dependencies = [
- "engine",
- "frontend-settings",
- "recipe",
- "serve",
-]
-
-[[package]]
-name = "codegen"
-version = "0.1.0"
-dependencies = [
- "graph",
- "kernel-macro",
- "mem",
- "scattered-collect",
- "sim",
-]
-
-[[package]]
 name = "codespan-reporting"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -296,14 +212,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
 dependencies = [
  "unicode-segmentation",
-]
-
-[[package]]
-name = "cpu"
-version = "0.1.0"
-dependencies = [
- "codegen",
- "lower",
 ]
 
 [[package]]
@@ -663,42 +571,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
-name = "engine"
-version = "0.1.0"
-dependencies = [
- "engine-comm",
- "engine-settings",
- "graph",
- "interp",
- "lower",
- "mem",
- "models",
- "rules",
- "run",
- "serde",
- "testkit",
- "thiserror",
- "trace",
- "wasm",
-]
-
-[[package]]
-name = "engine-comm"
-version = "0.1.0"
-dependencies = [
- "gpukit",
- "testkit",
- "thiserror",
-]
-
-[[package]]
-name = "engine-settings"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "envy"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -720,19 +592,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d817e038c30374a4bcb22f94d0a8a0e216958d4c3dcde369b1439fec4bdda6e6"
 
 [[package]]
-name = "eval"
-version = "0.1.0"
-dependencies = [
- "bundle",
- "checkpoint",
- "engine",
- "frontend-settings",
- "serde",
- "serde_json",
- "tasks",
-]
-
-[[package]]
 name = "fancy-regex"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -748,14 +607,6 @@ name = "find-msvc-tools"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
-
-[[package]]
-name = "findings"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
 
 [[package]]
 name = "flate2"
@@ -796,32 +647,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "frontend-comm"
-version = "0.1.0"
-dependencies = [
- "engine",
- "frontend-settings",
- "graph",
- "interp",
- "lower",
- "mem",
- "models",
- "rules",
- "run",
- "testkit",
- "trace",
-]
-
-[[package]]
-name = "frontend-settings"
-version = "0.1.0"
-dependencies = [
- "engine",
- "envy",
- "serde",
-]
-
-[[package]]
 name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -856,41 +681,6 @@ dependencies = [
  "hashbrown 0.16.1",
  "indexmap",
  "stable_deref_trait",
-]
-
-[[package]]
-name = "gpukit"
-version = "0.1.0"
-dependencies = [
- "derive_more",
- "mem",
- "objc2",
- "objc2-foundation",
- "objc2-metal",
- "platform",
- "serde",
- "thiserror",
-]
-
-[[package]]
-name = "grammar"
-version = "0.1.0"
-dependencies = [
- "bundle",
- "engine",
- "llguidance",
- "serde_json",
- "toktrie",
-]
-
-[[package]]
-name = "graph"
-version = "0.1.0"
-dependencies = [
- "derive_more",
- "serde",
- "serde_json",
- "thiserror",
 ]
 
 [[package]]
@@ -934,14 +724,6 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
-
-[[package]]
-name = "host"
-version = "0.1.0"
-dependencies = [
- "codegen",
- "graph",
-]
 
 [[package]]
 name = "httparse"
@@ -1089,31 +871,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "inspect"
-version = "0.1.0"
-dependencies = [
- "graph",
- "lower",
- "models",
- "platform",
- "rules",
- "serde",
- "serde_json",
- "sim",
- "trace",
-]
-
-[[package]]
-name = "interp"
-version = "0.1.0"
-dependencies = [
- "graph",
- "mem",
- "thiserror",
- "trace",
-]
-
-[[package]]
 name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1181,19 +938,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jit"
-version = "0.1.0"
-dependencies = [
- "codegen",
- "cranelift-codegen",
- "cranelift-frontend",
- "cranelift-jit",
- "cranelift-module",
- "cranelift-native",
- "host",
-]
-
-[[package]]
 name = "js-sys"
 version = "0.3.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1201,38 +945,6 @@ checksum = "8dc09d2154098bbf4ef54eab6b117a3c24cbbffe94046b16ee6d6d4510584d3a"
 dependencies = [
  "cfg-if",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "kernel-macro"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "kernels"
-version = "0.1.0"
-dependencies = [
- "attention",
- "codegen",
- "graph",
- "interp",
- "linear",
- "lower",
- "run",
- "sim",
- "testkit",
- "trace",
-]
-
-[[package]]
-name = "kv"
-version = "0.1.0"
-dependencies = [
- "thiserror",
 ]
 
 [[package]]
@@ -1252,22 +964,6 @@ name = "libm"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
-
-[[package]]
-name = "linear"
-version = "0.1.0"
-dependencies = [
- "codegen",
- "gpukit",
- "graph",
- "interp",
- "kernels",
- "lower",
- "run",
- "sim",
- "testkit",
- "trace",
-]
 
 [[package]]
 name = "link-section"
@@ -1317,37 +1013,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "load"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "ureq",
-]
-
-[[package]]
 name = "log"
 version = "0.4.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
-
-[[package]]
-name = "lower"
-version = "0.1.0"
-dependencies = [
- "codegen",
- "derive_more",
- "engine-settings",
- "graph",
- "kernel-macro",
- "mem",
- "platform",
- "scattered-collect",
- "serde",
- "serde_json",
- "sim",
- "thiserror",
-]
 
 [[package]]
 name = "mach2"
@@ -1379,15 +1048,6 @@ name = "macro_rules_attribute-proc_macro"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc04a4c58212d57930a24bf47d3fa87485264a3a054e9c10e042eb373573ad3c"
-
-[[package]]
-name = "mem"
-version = "0.1.0"
-dependencies = [
- "graph",
- "scattered-collect",
- "thiserror",
-]
 
 [[package]]
 name = "memchr"
@@ -1436,14 +1096,6 @@ checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
  "simd-adler32",
-]
-
-[[package]]
-name = "models"
-version = "0.1.0"
-dependencies = [
- "graph",
- "trace",
 ]
 
 [[package]]
@@ -1569,23 +1221,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
-name = "parity"
-version = "0.1.0"
-dependencies = [
- "bundle",
- "checkpoint",
- "graph",
- "interp",
- "lower",
- "models",
- "rules",
- "run",
- "serde_json",
- "testkit",
- "trace",
-]
-
-[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1602,15 +1237,6 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
-
-[[package]]
-name = "platform"
-version = "0.1.0"
-dependencies = [
- "include_dir",
- "serde",
- "serde_json",
-]
 
 [[package]]
 name = "portable-atomic"
@@ -1699,26 +1325,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ranks"
-version = "0.1.0"
-dependencies = [
- "bundle",
- "checkpoint",
- "engine-comm",
- "frontend-comm",
- "frontend-settings",
- "graph",
- "interp",
- "lower",
- "models",
- "rules",
- "run",
- "sim",
- "testkit",
- "trace",
-]
-
-[[package]]
 name = "rayon"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1747,17 +1353,6 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
-]
-
-[[package]]
-name = "recipe"
-version = "0.1.0"
-dependencies = [
- "engine",
- "serde",
- "thiserror",
- "toml",
- "ureq",
 ]
 
 [[package]]
@@ -1867,38 +1462,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rules"
-version = "0.1.0"
-dependencies = [
- "attention",
- "cpu",
- "kernels",
- "linear",
-]
-
-[[package]]
-name = "run"
-version = "0.1.0"
-dependencies = [
- "codegen",
- "engine-comm",
- "engine-settings",
- "gpukit",
- "graph",
- "host",
- "interp",
- "jit",
- "lower",
- "mem",
- "rayon",
- "serde_json",
- "sim",
- "testkit",
- "thiserror",
- "trace",
-]
-
-[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1996,6 +1559,524 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
+name = "sensai-attention"
+version = "0.1.0"
+dependencies = [
+ "sensai-codegen",
+ "sensai-graph",
+ "sensai-interp",
+ "sensai-kernels",
+ "sensai-lower",
+ "sensai-run",
+ "sensai-testkit",
+ "sensai-trace",
+]
+
+[[package]]
+name = "sensai-bundle"
+version = "0.1.0"
+dependencies = [
+ "fancy-regex",
+ "jiff",
+ "minijinja",
+ "minijinja-contrib",
+ "rmp-serde",
+ "rmpv",
+ "sensai-checkpoint",
+ "sensai-engine",
+ "sensai-testkit",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokenizers",
+]
+
+[[package]]
+name = "sensai-calibrate"
+version = "0.1.0"
+dependencies = [
+ "naga",
+ "sensai-codegen",
+ "sensai-engine",
+ "sensai-frontend-settings",
+ "sensai-graph",
+ "sensai-lower",
+ "sensai-models",
+ "sensai-rules",
+ "sensai-run",
+ "sensai-sim",
+ "sensai-testkit",
+ "sensai-trace",
+]
+
+[[package]]
+name = "sensai-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "sensai-engine",
+ "sensai-testkit",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "ureq",
+]
+
+[[package]]
+name = "sensai-cli"
+version = "0.1.0"
+dependencies = [
+ "sensai-engine",
+ "sensai-frontend-settings",
+ "sensai-recipe",
+ "sensai-serve",
+]
+
+[[package]]
+name = "sensai-codegen"
+version = "0.1.0"
+dependencies = [
+ "scattered-collect",
+ "sensai-graph",
+ "sensai-kernel-macro",
+ "sensai-mem",
+ "sensai-sim",
+]
+
+[[package]]
+name = "sensai-cpu"
+version = "0.1.0"
+dependencies = [
+ "sensai-codegen",
+ "sensai-lower",
+]
+
+[[package]]
+name = "sensai-engine"
+version = "0.1.0"
+dependencies = [
+ "sensai-engine-comm",
+ "sensai-engine-settings",
+ "sensai-graph",
+ "sensai-interp",
+ "sensai-lower",
+ "sensai-mem",
+ "sensai-models",
+ "sensai-rules",
+ "sensai-run",
+ "sensai-testkit",
+ "sensai-trace",
+ "sensai-wasm",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "sensai-engine-comm"
+version = "0.1.0"
+dependencies = [
+ "sensai-gpukit",
+ "sensai-testkit",
+ "thiserror",
+]
+
+[[package]]
+name = "sensai-engine-settings"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "sensai-eval"
+version = "0.1.0"
+dependencies = [
+ "sensai-bundle",
+ "sensai-checkpoint",
+ "sensai-engine",
+ "sensai-frontend-settings",
+ "sensai-tasks",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sensai-findings"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sensai-frontend-comm"
+version = "0.1.0"
+dependencies = [
+ "sensai-engine",
+ "sensai-frontend-settings",
+ "sensai-graph",
+ "sensai-interp",
+ "sensai-lower",
+ "sensai-mem",
+ "sensai-models",
+ "sensai-rules",
+ "sensai-run",
+ "sensai-testkit",
+ "sensai-trace",
+]
+
+[[package]]
+name = "sensai-frontend-settings"
+version = "0.1.0"
+dependencies = [
+ "envy",
+ "sensai-engine",
+ "serde",
+]
+
+[[package]]
+name = "sensai-gpukit"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "objc2",
+ "objc2-foundation",
+ "objc2-metal",
+ "sensai-mem",
+ "sensai-platform",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "sensai-grammar"
+version = "0.1.0"
+dependencies = [
+ "llguidance",
+ "sensai-bundle",
+ "sensai-engine",
+ "serde_json",
+ "toktrie",
+]
+
+[[package]]
+name = "sensai-graph"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "sensai-host"
+version = "0.1.0"
+dependencies = [
+ "sensai-codegen",
+ "sensai-graph",
+]
+
+[[package]]
+name = "sensai-inspect"
+version = "0.1.0"
+dependencies = [
+ "sensai-graph",
+ "sensai-lower",
+ "sensai-models",
+ "sensai-platform",
+ "sensai-rules",
+ "sensai-sim",
+ "sensai-trace",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sensai-interp"
+version = "0.1.0"
+dependencies = [
+ "sensai-graph",
+ "sensai-mem",
+ "sensai-trace",
+ "thiserror",
+]
+
+[[package]]
+name = "sensai-jit"
+version = "0.1.0"
+dependencies = [
+ "cranelift-codegen",
+ "cranelift-frontend",
+ "cranelift-jit",
+ "cranelift-module",
+ "cranelift-native",
+ "sensai-codegen",
+ "sensai-host",
+]
+
+[[package]]
+name = "sensai-kernel-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "sensai-kernels"
+version = "0.1.0"
+dependencies = [
+ "sensai-attention",
+ "sensai-codegen",
+ "sensai-graph",
+ "sensai-interp",
+ "sensai-linear",
+ "sensai-lower",
+ "sensai-run",
+ "sensai-sim",
+ "sensai-testkit",
+ "sensai-trace",
+]
+
+[[package]]
+name = "sensai-kv"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "sensai-linear"
+version = "0.1.0"
+dependencies = [
+ "sensai-codegen",
+ "sensai-gpukit",
+ "sensai-graph",
+ "sensai-interp",
+ "sensai-kernels",
+ "sensai-lower",
+ "sensai-run",
+ "sensai-sim",
+ "sensai-testkit",
+ "sensai-trace",
+]
+
+[[package]]
+name = "sensai-load"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
+name = "sensai-lower"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "scattered-collect",
+ "sensai-codegen",
+ "sensai-engine-settings",
+ "sensai-graph",
+ "sensai-kernel-macro",
+ "sensai-mem",
+ "sensai-platform",
+ "sensai-sim",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "sensai-mem"
+version = "0.1.0"
+dependencies = [
+ "scattered-collect",
+ "sensai-graph",
+ "thiserror",
+]
+
+[[package]]
+name = "sensai-models"
+version = "0.1.0"
+dependencies = [
+ "sensai-graph",
+ "sensai-trace",
+]
+
+[[package]]
+name = "sensai-parity"
+version = "0.1.0"
+dependencies = [
+ "sensai-bundle",
+ "sensai-checkpoint",
+ "sensai-graph",
+ "sensai-interp",
+ "sensai-lower",
+ "sensai-models",
+ "sensai-rules",
+ "sensai-run",
+ "sensai-testkit",
+ "sensai-trace",
+ "serde_json",
+]
+
+[[package]]
+name = "sensai-platform"
+version = "0.1.0"
+dependencies = [
+ "include_dir",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sensai-ranks"
+version = "0.1.0"
+dependencies = [
+ "sensai-bundle",
+ "sensai-checkpoint",
+ "sensai-engine-comm",
+ "sensai-frontend-comm",
+ "sensai-frontend-settings",
+ "sensai-graph",
+ "sensai-interp",
+ "sensai-lower",
+ "sensai-models",
+ "sensai-rules",
+ "sensai-run",
+ "sensai-sim",
+ "sensai-testkit",
+ "sensai-trace",
+]
+
+[[package]]
+name = "sensai-recipe"
+version = "0.1.0"
+dependencies = [
+ "sensai-engine",
+ "serde",
+ "thiserror",
+ "toml",
+ "ureq",
+]
+
+[[package]]
+name = "sensai-rules"
+version = "0.1.0"
+dependencies = [
+ "sensai-attention",
+ "sensai-cpu",
+ "sensai-kernels",
+ "sensai-linear",
+]
+
+[[package]]
+name = "sensai-run"
+version = "0.1.0"
+dependencies = [
+ "rayon",
+ "sensai-codegen",
+ "sensai-engine-comm",
+ "sensai-engine-settings",
+ "sensai-gpukit",
+ "sensai-graph",
+ "sensai-host",
+ "sensai-interp",
+ "sensai-jit",
+ "sensai-lower",
+ "sensai-mem",
+ "sensai-sim",
+ "sensai-testkit",
+ "sensai-trace",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "sensai-serve"
+version = "0.1.0"
+dependencies = [
+ "httparse",
+ "sensai-bundle",
+ "sensai-engine",
+ "sensai-frontend-settings",
+ "sensai-tasks",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sensai-shape"
+version = "0.1.0"
+
+[[package]]
+name = "sensai-sim"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "sensai-tasks"
+version = "0.1.0"
+dependencies = [
+ "sensai-bundle",
+ "sensai-checkpoint",
+ "sensai-engine",
+ "sensai-frontend-settings",
+ "sensai-testkit",
+ "serde_json",
+]
+
+[[package]]
+name = "sensai-testkit"
+version = "0.1.0"
+dependencies = [
+ "sensai-graph",
+ "sensai-mem",
+ "sensai-trace",
+]
+
+[[package]]
+name = "sensai-trace"
+version = "0.1.0"
+dependencies = [
+ "sensai-graph",
+ "sensai-trace-derive",
+]
+
+[[package]]
+name = "sensai-trace-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "sensai-wasm"
+version = "0.1.0"
+dependencies = [
+ "sensai-graph",
+ "sensai-interp",
+ "sensai-kernels",
+ "sensai-linear",
+ "sensai-lower",
+ "sensai-run",
+ "sensai-testkit",
+ "sensai-trace",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "wasmi",
+ "wat",
+]
+
+[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2050,34 +2131,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "serve"
-version = "0.1.0"
-dependencies = [
- "bundle",
- "engine",
- "frontend-settings",
- "httparse",
- "serde",
- "serde_json",
- "tasks",
-]
-
-[[package]]
-name = "shape"
-version = "0.1.0"
-
-[[package]]
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
-
-[[package]]
-name = "sim"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "simd-adler32"
@@ -2204,36 +2261,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c447be3a2abfa84b2d91680c56600bd6b2873866de27b36ec911be705e291da"
 
 [[package]]
-name = "tasks"
-version = "0.1.0"
-dependencies = [
- "bundle",
- "checkpoint",
- "engine",
- "frontend-settings",
- "serde_json",
- "testkit",
-]
-
-[[package]]
 name = "tessera-check"
 version = "0.1.0"
 dependencies = [
- "findings",
- "frontend-settings",
  "roxmltree",
+ "sensai-findings",
+ "sensai-frontend-settings",
 ]
 
 [[package]]
 name = "tessera-lint"
 version = "0.1.0"
 dependencies = [
- "findings",
  "proc-macro2",
  "quote",
+ "sensai-findings",
+ "sensai-shape",
  "serde",
  "serde_json",
- "shape",
  "syn 2.0.119",
  "toml",
 ]
@@ -2243,20 +2288,11 @@ name = "tessera-style"
 version = "0.1.0"
 dependencies = [
  "fancy-regex",
- "findings",
- "frontend-settings",
- "tasks",
- "testkit",
+ "sensai-findings",
+ "sensai-frontend-settings",
+ "sensai-tasks",
+ "sensai-testkit",
  "ureq",
-]
-
-[[package]]
-name = "testkit"
-version = "0.1.0"
-dependencies = [
- "graph",
- "mem",
- "trace",
 ]
 
 [[package]]
@@ -2377,23 +2413,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
-name = "trace"
-version = "0.1.0"
-dependencies = [
- "graph",
- "trace-derive",
-]
-
-[[package]]
-name = "trace-derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2502,25 +2521,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487"
 dependencies = [
  "wit-bindgen",
-]
-
-[[package]]
-name = "wasm"
-version = "0.1.0"
-dependencies = [
- "graph",
- "interp",
- "kernels",
- "linear",
- "lower",
- "run",
- "serde",
- "serde_json",
- "testkit",
- "thiserror",
- "trace",
- "wasmi",
- "wat",
 ]
 
 [[package]]

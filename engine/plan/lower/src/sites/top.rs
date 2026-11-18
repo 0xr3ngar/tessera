@@ -1,6 +1,6 @@
 use super::Pattern;
 use crate::tree::{T, Term, Tree};
-use graph::{Op, Select};
+use sensai_graph::{Op, Select};
 
 /// Indices of each row's `k` largest entries.
 #[derive(Clone, Copy, Debug)]

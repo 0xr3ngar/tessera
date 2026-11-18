@@ -1,9 +1,9 @@
 //! Softmax over rows, generated.
 
 use crate::per_row;
-use codegen::prelude::*;
-use graph::Stage;
-use lower::{Arg, Kernel, Launch, Shape, Step, stage_rule};
+use sensai_codegen::prelude::*;
+use sensai_graph::Stage;
+use sensai_lower::{Arg, Kernel, Launch, Shape, Step, stage_rule};
 
 /// One thread per row: peak, sum, then the probabilities.
 #[kernel]

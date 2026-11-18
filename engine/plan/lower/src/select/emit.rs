@@ -10,7 +10,7 @@ use crate::rule::Draft;
 use crate::select::cover::EDGE;
 use crate::select::{Home, Op, Selected, Val, Value};
 use crate::tree::{T, Tree};
-use graph::{DimExpr, NodeId};
+use sensai_graph::{DimExpr, NodeId};
 use std::collections::HashMap;
 
 /// The ops written, and the values they use.

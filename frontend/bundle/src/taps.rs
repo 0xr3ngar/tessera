@@ -2,9 +2,9 @@
 
 use crate::tokenize::hf::Hf;
 use crate::{Template, config, pull};
-use checkpoint::Shards;
-use engine::decoder::{Swiglu, taps};
-use engine::{Graph, Norm, Pins, Weight};
+use sensai_checkpoint::Shards;
+use sensai_engine::decoder::{Swiglu, taps};
+use sensai_engine::{Graph, Norm, Pins, Weight};
 use std::error::Error;
 use std::path::Path;
 

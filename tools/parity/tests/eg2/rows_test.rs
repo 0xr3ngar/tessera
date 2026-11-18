@@ -1,8 +1,8 @@
 use super::rotation_test::text;
-use bundle::names::{repo, resolve};
-use models::Rotated;
-use models::eg2::{Config, program};
-use parity::slices;
+use sensai_bundle::names::{repo, resolve};
+use sensai_models::Rotated;
+use sensai_models::eg2::{Config, program};
+use sensai_parity::slices;
 
 /// Each layer takes its rows of the stacked projection.
 #[test]

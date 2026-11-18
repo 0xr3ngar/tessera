@@ -1,5 +1,5 @@
 [package]
-name = "wasm"
+name = "sensai-wasm"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,18 +7,18 @@ publish.workspace = true
 description = "Lowering rules a sandboxed wasm module proposes, over JSON"
 
 [dependencies]
-lower = { workspace = true }
+sensai-lower = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 wasmi = "0.51"
 
 [dev-dependencies]
-graph = { workspace = true }
-interp = { workspace = true }
-kernels = { workspace = true }
-linear = { workspace = true }
-run = { workspace = true }
-testkit = { workspace = true }
-trace = { workspace = true }
+sensai-graph = { workspace = true }
+sensai-interp = { workspace = true }
+sensai-kernels = { workspace = true }
+sensai-linear = { workspace = true }
+sensai-run = { workspace = true }
+sensai-testkit = { workspace = true }
+sensai-trace = { workspace = true }
 wat = "1"

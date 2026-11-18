@@ -2,15 +2,15 @@
 
 use crate::Error;
 use crate::run::{Base, Run, line};
-use codegen::Precision;
-use codegen::ir::{Body, Param, Ty};
-use engine_settings::Memory;
-use gpukit::{Limits, Platform};
-use host::exec::{self, ArgVal, Grid};
-use host::lockstep::THREADS;
-use jit::{Buf, Ctx, Entry};
-use lower::{Arg, Extent, Launch, Plan, Shape, Source};
-use mem::{Buffer, Host};
+use sensai_codegen::Precision;
+use sensai_codegen::ir::{Body, Param, Ty};
+use sensai_engine_settings::Memory;
+use sensai_gpukit::{Limits, Platform};
+use sensai_host::exec::{self, ArgVal, Grid};
+use sensai_host::lockstep::THREADS;
+use sensai_jit::{Buf, Ctx, Entry};
+use sensai_lower::{Arg, Extent, Launch, Plan, Shape, Source};
+use sensai_mem::{Buffer, Host};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::OnceLock;
@@ -157,7 +157,7 @@ impl Run for Runner {
             let entry = match self.known.get(&key) {
                 Some(entry) => *entry,
                 None => {
-                    let entry = jit::compile(body).ok();
+                    let entry = sensai_jit::compile(body).ok();
                     self.known.insert(key, entry);
                     entry
                 }
@@ -265,21 +265,21 @@ fn compiled(
             len: b.len(),
         })
         .collect();
-    let args: Vec<jit::Arg> = args
+    let args: Vec<sensai_jit::Arg> = args
         .iter()
         .map(|a| match *a {
-            ArgVal::Buf { at, skip, .. } => jit::Arg {
+            ArgVal::Buf { at, skip, .. } => sensai_jit::Arg {
                 buf: at,
                 skip,
                 bits: 0,
             },
-            ArgVal::U32(v) => jit::Arg {
+            ArgVal::U32(v) => sensai_jit::Arg {
                 bits: v,
-                ..jit::Arg::default()
+                ..sensai_jit::Arg::default()
             },
-            ArgVal::F32(v) => jit::Arg {
+            ArgVal::F32(v) => sensai_jit::Arg {
                 bits: v.to_bits(),
-                ..jit::Arg::default()
+                ..sensai_jit::Arg::default()
             },
         })
         .collect();
@@ -303,7 +303,7 @@ fn compiled(
             }
         }),
     }
-    match jit::failure() {
+    match sensai_jit::failure() {
         Some(why) => Err(Error::Jit(why)),
         None => Ok(()),
     }
