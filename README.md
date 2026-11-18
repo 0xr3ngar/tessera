@@ -35,6 +35,7 @@ tessera is not alpha or beta. It's an experiment right now and no numbers are av
 <tr><td colspan="2">&emsp;<a href="engine/ir"><b>ir/</b></a></td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/ir/graph">graph</a></td><td>The model graph: typed nodes, symbolic shapes, a JSON form</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/ir/interp">interp</a></td><td>Runs a graph op by op on the CPU: the reference for every plan</td></tr>
+<tr><td>&emsp;&emsp;<a href="engine/ir/kv">kv</a></td><td>Pages of kept rows, shared between runs by refcount</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/ir/mem">mem</a></td><td>Buffers in zones, typed views onto them, and storage forms</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/ir/testkit">testkit</a></td><td>Helpers that tests share: noise, comparisons and scratch files</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/ir/trace">trace</a></td><td>Builds graphs by running model descriptions</td></tr>
