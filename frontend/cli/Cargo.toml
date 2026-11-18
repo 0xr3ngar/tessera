@@ -16,6 +16,7 @@ cuda = ["serve/cuda"]
 rocm = ["serve/rocm"]
 
 [dependencies]
+engine = { workspace = true }
 frontend-settings = { workspace = true }
 recipe = { workspace = true }
 serve = { workspace = true }
