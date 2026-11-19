@@ -1742,6 +1742,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sensai-glm53-moe-module"
+version = "0.1.0"
+dependencies = [
+ "sensai-guest",
+ "serde_json",
+]
+
+[[package]]
 name = "sensai-gpukit"
 version = "0.1.0"
 dependencies = [
@@ -1780,6 +1788,10 @@ dependencies = [
 [[package]]
 name = "sensai-guest"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "sensai-host"
@@ -1927,10 +1939,14 @@ version = "0.1.0"
 dependencies = [
  "sensai-bundle",
  "sensai-checkpoint",
+ "sensai-codegen",
+ "sensai-engine",
+ "sensai-engine-settings",
  "sensai-graph",
  "sensai-interp",
  "sensai-lower",
  "sensai-models",
+ "sensai-recipe",
  "sensai-rules",
  "sensai-run",
  "sensai-testkit",

@@ -8,7 +8,9 @@ use sensai_graph::DimName::{Context, Ffn, Hidden, Rows, Seqs};
 use sensai_graph::{Act, Composite};
 use sensai_interp::{Store, Tensor, run_kept};
 use sensai_lower::kept::{self, Layout};
-use sensai_lower::{Arg, Cache, Device, Extent, Plan, Rule, Settings, Shape, Source, lower};
+use sensai_lower::{
+    Arg, Cache, Device, Extent, Limits, Plan, Platform, Rule, Shape, Source, lower,
+};
 use sensai_run::Run;
 use sensai_run::testing::{host, runs};
 use sensai_testkit::{Noise, graphs, max_abs_diff};
@@ -23,10 +25,14 @@ struct Layer {
 
 /// `a = x w`, then `silu(a) * a` as a region.
 fn graph(region: bool) -> Graph {
+    sized(region, 64, 32)
+}
+
+fn sized(region: bool, hidden: u64, ffn: u64) -> Graph {
     let m = Model::new(vec![
         Dim::bounded(Rows, 16),
-        Dim::fixed(Hidden, 64),
-        Dim::fixed(Ffn, 32),
+        Dim::fixed(Hidden, hidden),
+        Dim::fixed(Ffn, ffn),
     ]);
     let w: Layer = sensai_trace::declare(&m);
     let ty = TensorType::new([Rows, Hidden], DType::F32);
@@ -169,6 +175,13 @@ fn on_gpus(g: &Graph, rule: &'static Rule) {
     }
 }
 
+/// A device with a compiler, so lowering runs on CPU.
+fn compiling() -> Device {
+    let mut device = Device::default();
+    device.platform = Platform::assumed(Limits::assumed());
+    device
+}
+
 fn rules(plan: &Plan) -> Vec<&'static str> {
     plan.steps.iter().map(|s| s.rule).collect()
 }
@@ -176,9 +189,12 @@ fn rules(plan: &Plan) -> Vec<&'static str> {
 #[test]
 fn module_matmul_wins() {
     let rule = load("matmul", json!([gemm()]));
-    let device = Device::guess(&host()).adding(rule);
-    let plan = lower(&graph(false), 0, &[(Rows, 4)], &device).unwrap();
+    let plan = lower(&graph(false), 0, &[(Rows, 4)], &compiling().adding(rule)).unwrap();
     assert_eq!(rules(&plan), ["wasm_matmul"]);
+    // The host lacks a compiler.
+    let host = Device::guess(&host()).adding(rule);
+    let plain = lower(&graph(false), 0, &[(Rows, 4)], &host).unwrap();
+    assert!(!rules(&plain).contains(&"wasm_matmul"));
     let step = &plan.steps[0];
     let Source::Fixed { entry, cuda, .. } = step.kernel.source() else {
         panic!("module kernels are fixed text");
@@ -198,10 +214,22 @@ fn module_matmul_wins() {
 }
 
 #[test]
+fn cuda_alone_opens() {
+    let kernels = json!([{"name": "wasm_gemm", "entry": "gemm", "cuda": GEMM_CUDA}]);
+    let bytes = module(&declare(ABI, "matmul", kernels), &json!([gemm()]), "");
+    let rule = sensai_wasm::load(&bytes).unwrap()[0];
+    let plan = lower(&graph(false), 0, &[(Rows, 4)], &compiling().adding(rule)).unwrap();
+    let Source::Fixed { metal, cuda, .. } = plan.steps[0].kernel.source() else {
+        panic!("module kernels are fixed text");
+    };
+    assert!(metal.is_empty() && cuda == GEMM_CUDA);
+}
+
+#[test]
 fn module_region_wins() {
     let rule = load("mlp", json!([gemm(), act()]));
     let g = graph(true);
-    let device = Device::guess(&host()).adding(rule);
+    let device = compiling().adding(rule);
     let mut cache = Cache::default();
     let (plan, _) = cache.upto(&g, 0, &[(Rows, 4)], &[Rows], &device).unwrap();
     assert_eq!(rules(plan), ["wasm_mlp", "wasm_mlp"]);
@@ -214,6 +242,29 @@ fn module_region_wins() {
         "{size:?}"
     );
     on_gpus(&g, rule);
+}
+
+#[test]
+fn module_reads_parts() {
+    let whole = json!({
+        "kernel": "wasm_gemm", "len": 512,
+        "reads": [0, {"part": [1, 0]}, {"part": [1, 1]}, {"part": [1, 2]}],
+        "shape": {"line": 512}, "work": 512, "guess": 1e-15,
+    });
+    let rule = load("mlp", json!([whole]));
+    let rotated = sensai_lower::form::named("trellis_k4_rot").unwrap();
+    let device = Device::default()
+        .adding(rule)
+        .pinned(sensai_lower::Pins::all(rotated));
+    let plan = lower(&sized(true, 128, 128), 0, &[(Rows, 4)], &device).unwrap();
+    assert_eq!(rules(&plan), ["wasm_mlp"]);
+    // Codes, `suh`, then `svh`, as the offer names them.
+    let parts: Vec<_> = (0..3).map(|p| plan.weights[p].slot).collect();
+    assert_eq!(
+        plan.weights.iter().map(|w| w.part).collect::<Vec<_>>(),
+        [Some(0), Some(1), Some(2)]
+    );
+    assert_eq!(plan.steps[0].reads[1..], parts);
 }
 
 #[test]
@@ -330,8 +381,8 @@ fn attention(layout: &dyn Layout, ctx: usize) -> &'static Rule {
 }
 
 /// The plan for one launch of `ctx` positions.
-fn kept_plan(settings: &Settings, layout: &'static dyn Layout, ctx: usize) -> Plan {
-    let mut device = Device::guess(settings).adding(attention(layout, ctx));
+fn kept_plan(device: Device, layout: &'static dyn Layout, ctx: usize) -> Plan {
+    let mut device = device.adding(attention(layout, ctx));
     device.kept = layout;
     let sizes = [(Seqs, 4), (Rows, 4), (Context, ctx as u64)];
     lower(&kept_graph(), 0, &sizes, &device).unwrap()
@@ -346,7 +397,7 @@ fn module_attention_writes_kept() {
     ];
     let layouts: [&'static dyn Layout; 2] = [kept::DENSE, &kept::PAGED16];
     for layout in layouts {
-        let plan = kept_plan(&host(), layout, 4);
+        let plan = kept_plan(compiling(), layout, 4);
         assert_eq!(rules(&plan), ["wasm_attention", "wasm_attention"]);
         assert_eq!(plan.kept.len(), 2);
         // Only a GPU runs fixed text.
@@ -354,7 +405,7 @@ fn module_attention_writes_kept() {
             let (mut store, mut draws) = (Store::default(), Noise(9));
             let mut runner: Option<Box<dyn Run>> = None;
             for (i, rows) in launches.iter().enumerate() {
-                let plan = kept_plan(settings, layout, 2 * i + 2);
+                let plan = kept_plan(Device::guess(settings), layout, 2 * i + 2);
                 let table = plan.table;
                 let r = match &mut runner {
                     Some(r) => {
@@ -389,4 +440,36 @@ fn module_attention_writes_kept() {
             }
         }
     }
+}
+
+#[test]
+fn module_speaks_guest() {
+    use sensai_guest::site::{self, Count, Kind, Manifest, Offer, Place};
+    let manifest = Manifest {
+        abi: sensai_guest::ABI,
+        kernels: vec![site::kernel("wasm_gemm", "gemm", GEMM_CUDA)],
+        rules: vec![site::Rule {
+            name: "wasm_matmul",
+            site: Kind::Matmul,
+        }],
+        graph: false,
+    };
+    let rows = Count::Dim {
+        dim: "Rows".into(),
+        mul: 1,
+    };
+    let offer = Offer {
+        kernel: "wasm_gemm",
+        reads: vec![Place::Read(0), Place::Read(1)],
+        len: 128,
+        counts: vec![rows, Count::Fixed(32), Count::Fixed(64)],
+        shape: site::Shape::Line(128),
+        work: 8192.0,
+        guess: 1e-15,
+    };
+    let bytes = module(&json!(manifest), &json!([offer]), "");
+    let rule = sensai_wasm::load(&bytes).unwrap()[0];
+    let device = Device::default().adding(rule);
+    let plan = lower(&graph(false), 0, &[(Rows, 4)], &device).unwrap();
+    assert_eq!(rules(&plan), ["wasm_matmul"]);
 }
