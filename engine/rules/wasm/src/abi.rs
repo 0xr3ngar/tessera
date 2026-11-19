@@ -1,10 +1,11 @@
 //! The JSON a module and the host exchange.
 
 use sensai_graph::DimName;
+pub(crate) use sensai_guest::site::Kind;
 use serde::{Deserialize, Serialize};
 
 /// The version of this exchange the host reads.
-pub(crate) const ABI: u32 = 4;
+pub(crate) use sensai_guest::ABI;
 
 /// What `manifest()` returns.
 #[derive(Debug, Deserialize)]
@@ -36,15 +37,6 @@ pub(crate) struct Text {
 pub(crate) struct Declared {
     pub name: String,
     pub site: Kind,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum Kind {
-    Matmul,
-    Mlp,
-    Moe,
-    Attention,
 }
 
 /// What `propose` is given.

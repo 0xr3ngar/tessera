@@ -1,0 +1,147 @@
+//! The module's side of its JSON exchange with the host.
+
+use serde::{Deserialize, Serialize};
+
+/// The output of `manifest()`.
+#[derive(Debug, Serialize)]
+pub struct Manifest {
+    pub abi: u32,
+    pub kernels: Vec<Kernel>,
+    pub rules: Vec<Rule>,
+    /// Whether the module exports `graph` and `tables`.
+    pub graph: bool,
+}
+
+/// One kernel's source, the same for every launch.
+#[derive(Debug, Serialize)]
+pub struct Kernel {
+    pub name: &'static str,
+    pub entry: &'static str,
+    pub metal: &'static str,
+    pub cuda: &'static str,
+}
+
+/// A kernel with CUDA text alone.
+pub fn kernel(name: &'static str, entry: &'static str, cuda: &'static str) -> Kernel {
+    Kernel {
+        name,
+        entry,
+        metal: "",
+        cuda,
+    }
+}
+
+/// A rule, and the site kind it is asked at.
+#[derive(Debug, Serialize)]
+pub struct Rule {
+    pub name: &'static str,
+    pub site: Kind,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    Matmul,
+    Mlp,
+    Moe,
+    Attention,
+}
+
+/// The input of `propose`.
+#[derive(Debug, Deserialize)]
+pub struct Ask {
+    pub rule: String,
+    pub site: Site,
+}
+
+/// A site's sizes. Offers name reads by place.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Site {
+    /// `x[m, k]` times `w[n, k]` transposed. Reads `[x, w]`.
+    Matmul {
+        m: usize,
+        n: usize,
+        k: usize,
+        form: String,
+    },
+    /// A whole region. Reads are its inputs, in order.
+    Region {
+        kind: Kind,
+        inputs: Vec<Input>,
+        len: usize,
+        kept: Vec<Kept>,
+    },
+}
+
+/// Kept rows a region appends to. Its launches write them.
+#[derive(Debug, Deserialize)]
+pub struct Kept {
+    pub index: u32,
+    pub slots: usize,
+    pub context: usize,
+    pub width: usize,
+    pub layout: String,
+    pub page: Option<usize>,
+    pub params: Vec<String>,
+    pub values: Vec<u32>,
+    /// Input places of the slot and position ids.
+    pub by: [Option<usize>; 2],
+}
+
+/// One value a region reads.
+#[derive(Debug, Deserialize)]
+pub struct Input {
+    pub shape: Vec<usize>,
+    /// Per axis: the dimension read at launch, if any.
+    pub dims: Vec<Option<String>>,
+    pub form: String,
+    /// A weight's dotted path.
+    pub weight: Option<String>,
+    /// This rank's part: axis, first, count, whole.
+    pub share: Option<[usize; 4]>,
+}
+
+/// A site read, or an earlier offer's output.
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(untagged)]
+pub enum Place {
+    Read(usize),
+    Draft { draft: usize },
+    Kept { kept: usize },
+}
+
+/// A u32 argument, fixed or read at launch.
+#[derive(Clone, Debug, Serialize)]
+#[serde(untagged)]
+pub enum Count {
+    Fixed(u32),
+    Dim { dim: String, mul: usize },
+}
+
+/// One launch `propose` offers. `null` offers none.
+#[derive(Debug, Serialize)]
+pub struct Offer {
+    pub kernel: &'static str,
+    /// In kernel argument order.
+    pub reads: Vec<Place>,
+    /// Elements written.
+    pub len: usize,
+    /// u32 arguments after the output.
+    pub counts: Vec<Count>,
+    pub shape: Shape,
+    /// Work units, and seconds per unit until measured.
+    pub work: f64,
+    pub guess: f64,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Shape {
+    Line(usize),
+    Grid {
+        across: usize,
+        down: usize,
+        threads: usize,
+    },
+}
