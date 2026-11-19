@@ -35,9 +35,7 @@ fn eg2_run() {
     let sizes = [(Seqs, 1), (Context, n as u64)];
     let plans = [0, 1].map(|r| lower(&sharded, 0, &sizes, &device.clone().as_rank(r)).unwrap());
     let mut ranks = Loopback::open(&plans, &settings).unwrap();
-    for (at, w) in weights.iter().enumerate() {
-        ranks.load_weight(at as u32, w).unwrap();
-    }
+    weights.each(|at, w| ranks.load_weight(at, w)).unwrap();
     let tokens = Tensor::u32(vec![1, n], ids);
     let positions = Tensor::u32(vec![1, n], (0..n as u32).collect());
     let got = ranks.run(&[tokens.view(), positions.view()]).unwrap();
