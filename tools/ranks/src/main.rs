@@ -10,7 +10,7 @@ use sensai_graph::shard;
 use sensai_interp::Tensor;
 use sensai_lower::{Cluster, Device, Link, Pick, Weight, Zone, ZoneKind, lower};
 use sensai_models::decoder::{Config, Moe, Swiglu, program};
-use sensai_run::Rank;
+use sensai_run::{Rank, Run};
 use sensai_sim::Tag;
 use sensai_trace::Norm;
 use std::net::{SocketAddr, TcpListener};
@@ -284,11 +284,7 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         true => "on the device",
         false => "on the host",
     };
-    eprintln!(
-        "rank {}: on {}, sums {sums}",
-        args.rank,
-        rank.runner().device()
-    );
+    eprintln!("rank {}: on {}, sums {sums}", args.rank, rank.device());
     let start = Instant::now();
     // Each rank cuts its part from the packed bytes.
     for (at, w) in weights.iter().enumerate() {

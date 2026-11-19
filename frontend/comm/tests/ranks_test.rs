@@ -10,7 +10,7 @@ use sensai_graph::{Graph, shard};
 use sensai_interp::{Tensor, run};
 use sensai_lower::{Cluster, Device, Pick, Plan, Settings, View, lower};
 use sensai_models::decoder::{Config, Swiglu, program};
-use sensai_run::Rank;
+use sensai_run::{Rank, Run};
 use sensai_testkit::{Noise, fill, max_abs_diff};
 use sensai_trace::DimName::{self, Context, Seqs};
 use sensai_trace::{Norm, TensorType};
@@ -76,7 +76,12 @@ fn rank<T: Transport + 'static>(
     }
     let inputs: Vec<Tensor> = inputs.iter().map(rebuilt).collect();
     let feeds: Vec<View> = inputs.iter().map(Tensor::view).collect();
-    let out = rank.run(&feeds).unwrap().remove(0);
+    // A launch in two halves sums the same.
+    rank.feed(&feeds).unwrap();
+    let steps = plan.steps.len();
+    rank.submit(0..steps / 2).unwrap();
+    rank.submit(steps / 2..steps).unwrap();
+    let out = rank.read(plan.outputs[0].slot).unwrap();
     out.floats().unwrap().to_vec()
 }
 
