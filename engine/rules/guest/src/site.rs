@@ -48,14 +48,14 @@ pub enum Kind {
 }
 
 /// The input of `propose`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Ask {
     pub rule: String,
     pub site: Site,
 }
 
 /// A site's sizes. Offers name reads by place.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Site {
     /// `x[m, k]` times `w[n, k]` transposed. Reads `[x, w]`.
@@ -75,12 +75,14 @@ pub enum Site {
 }
 
 /// Kept rows a region appends to. Its launches write them.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Kept {
     pub index: u32,
+    /// Slots, rows per slot, and elements per row.
     pub slots: usize,
     pub context: usize,
     pub width: usize,
+    /// The row layout, its rows per page, and its scalars.
     pub layout: String,
     pub page: Option<usize>,
     pub params: Vec<String>,
@@ -90,20 +92,22 @@ pub struct Kept {
 }
 
 /// One value a region reads.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Input {
     pub shape: Vec<usize>,
     /// Per axis: the dimension read at launch, if any.
     pub dims: Vec<Option<String>>,
     pub form: String,
     /// A weight's dotted path.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub weight: Option<String>,
     /// This rank's part: axis, first, count, whole.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub share: Option<[usize; 4]>,
 }
 
 /// A site read, or an earlier offer's output.
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum Place {
     Read(usize),
@@ -135,8 +139,8 @@ pub struct Offer {
     pub guess: f64,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 pub enum Shape {
     Line(usize),
     Grid {
