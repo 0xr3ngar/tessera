@@ -1,13 +1,15 @@
 //! One process's rank of a plan, over a transport.
 
-use crate::Error;
-use crate::Run;
 use crate::open;
+use crate::{Base, Error, Run};
+use sensai_codegen::Precision;
 use sensai_engine_comm::reduce::{CUDA, ENTRY};
 use sensai_engine_comm::{Reduce, Transport, summed};
 use sensai_engine_settings::Settings;
-use sensai_lower::{Arg, Plan, Shape, Step, Weight};
-use sensai_mem::{Tensor, View};
+use sensai_gpukit::Platform;
+use sensai_lower::{Arg, Launching, Plan, Shape, Step};
+use sensai_mem::{DType, Tensor};
+use std::ops::Range;
 
 /// One rank: its runner and its way to the others.
 pub struct Rank<T: Transport> {
@@ -79,45 +81,85 @@ impl<T: Transport> Rank<T> {
         launched
     }
 
-    pub fn runner(&self) -> &dyn Run {
-        &*self.runner
+    /// One sum on the host, over the transport.
+    fn exchange(&mut self, step: &Step) -> Result<(), Error> {
+        let part = self.runner.read(step.reads[0])?;
+        let parts = self.transport.exchange(part.bytes())?;
+        let floats = |p: &Vec<u8>| Tensor::from_bytes(vec![p.len() / 4], DType::F32, p);
+        let parts: Vec<Tensor> = parts.iter().map(floats).collect();
+        let sum = summed(parts.iter().map(|p| p.floats().expect("floats")));
+        let sum = Tensor::f32(vec![step.write.len], sum);
+        self.runner.write(step.write, sum.view())
+    }
+}
+
+impl<T: Transport> Run for Rank<T> {
+    fn base(&self) -> &Base {
+        self.runner.base()
     }
 
-    /// Takes this rank's slice of the whole weight.
-    pub fn load(&mut self, weight: u32, data: View) -> Result<(), Error> {
-        self.runner.load(weight, data)
+    fn base_mut(&mut self) -> &mut Base {
+        self.runner.base_mut()
     }
 
-    /// Takes this rank's part of the weight as stored.
-    pub fn load_weight(&mut self, weight: u32, w: &Weight) -> Result<(), Error> {
-        self.runner.load_weight(weight, w)
+    fn replan(&mut self, plan: &Plan) -> Result<(), Error> {
+        self.runner.replan(plan)
     }
 
-    /// Runs every step. Sums wait for every rank.
-    pub fn run(&mut self, inputs: &[View]) -> Result<Vec<Tensor>, Error> {
-        self.runner.feed(inputs)?;
-        let steps = self.runner.plan().steps.clone();
-        for (i, step) in steps.iter().enumerate() {
+    /// Runs these steps. Sums wait for every rank.
+    fn submit(&mut self, steps: Range<usize>) -> Result<(), Error> {
+        let mut from = steps.start;
+        for i in steps.clone() {
+            let step = &self.runner.plan().steps[i];
             if step.kernel.name() != "all_reduce" {
-                self.runner.submit(i..i + 1)?;
                 continue;
             }
-            if self.reduce.is_some() {
-                self.reduce(step)?;
-                continue;
+            let step = step.clone();
+            self.runner.submit(from..i)?;
+            from = i + 1;
+            match self.reduce {
+                Some(_) => self.reduce(&step)?,
+                None => self.exchange(&step)?,
             }
-            let part = self.runner.read(step.reads[0])?;
-            let parts = self.transport.exchange(part.bytes())?;
-            let floats =
-                |p: &Vec<u8>| Tensor::from_bytes(vec![p.len() / 4], sensai_mem::DType::F32, p);
-            let parts: Vec<Tensor> = parts.iter().map(floats).collect();
-            let sum = summed(parts.iter().map(|p| p.floats().expect("floats")));
-            let sum = Tensor::f32(vec![step.write.len], sum);
-            self.runner.write(step.write, sum.view())?;
         }
-        let outputs = self.runner.plan().outputs.clone();
-        let read =
-            |o: &sensai_lower::Output| Ok(self.runner.read(o.slot)?.reshaped(o.shape.clone()));
-        outputs.iter().map(read).collect()
+        self.runner.submit(from..steps.end)
+    }
+
+    fn fixed(&self) -> bool {
+        self.runner.fixed()
+    }
+
+    fn launch_fixed(
+        &self,
+        source: &'static str,
+        entry: &'static str,
+        args: &[Arg],
+        shape: Shape,
+    ) -> Result<(), Error> {
+        self.runner.launch_fixed(source, entry, args, shape)
+    }
+
+    fn launching(&mut self, how: Launching) {
+        self.runner.launching(how)
+    }
+
+    fn repeat(&mut self, step: usize, times: usize) -> Result<f64, Error> {
+        self.runner.repeat(step, times)
+    }
+
+    fn device(&self) -> String {
+        self.runner.device()
+    }
+
+    fn compiled(&self) -> (usize, usize) {
+        self.runner.compiled()
+    }
+
+    fn platform(&self) -> Platform {
+        self.runner.platform()
+    }
+
+    fn precision(&self) -> Precision {
+        self.runner.precision()
     }
 }
