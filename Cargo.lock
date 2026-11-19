@@ -1667,6 +1667,7 @@ dependencies = [
  "sensai-engine-settings",
  "sensai-graph",
  "sensai-interp",
+ "sensai-kv",
  "sensai-lower",
  "sensai-mem",
  "sensai-models",
