@@ -1980,7 +1980,6 @@ dependencies = [
  "sensai-models",
  "sensai-rules",
  "sensai-run",
- "sensai-sim",
  "sensai-testkit",
  "sensai-trace",
 ]
@@ -2037,8 +2036,11 @@ dependencies = [
  "httparse",
  "sensai-bundle",
  "sensai-engine",
+ "sensai-frontend-comm",
  "sensai-frontend-settings",
+ "sensai-models",
  "sensai-tasks",
+ "sensai-testkit",
  "serde",
  "serde_json",
 ]
