@@ -8,7 +8,9 @@ use sensai_graph::DimName::{Context, Ffn, Hidden, Rows, Seqs};
 use sensai_graph::{Act, Composite};
 use sensai_interp::{Store, Tensor, run_kept};
 use sensai_lower::kept::{self, Layout};
-use sensai_lower::{Arg, Cache, Device, Extent, Plan, Rule, Settings, Shape, Source, lower};
+use sensai_lower::{
+    Arg, Cache, Device, Extent, Limits, Plan, Platform, Rule, Shape, Source, lower,
+};
 use sensai_run::Run;
 use sensai_run::testing::{host, runs};
 use sensai_testkit::{Noise, graphs, max_abs_diff};
@@ -169,6 +171,13 @@ fn on_gpus(g: &Graph, rule: &'static Rule) {
     }
 }
 
+/// A device with a compiler. Lowering needs no GPU.
+fn compiling() -> Device {
+    let mut device = Device::default();
+    device.platform = Platform::assumed(Limits::assumed());
+    device
+}
+
 fn rules(plan: &Plan) -> Vec<&'static str> {
     plan.steps.iter().map(|s| s.rule).collect()
 }
@@ -176,9 +185,12 @@ fn rules(plan: &Plan) -> Vec<&'static str> {
 #[test]
 fn module_matmul_wins() {
     let rule = load("matmul", json!([gemm()]));
-    let device = Device::guess(&host()).adding(rule);
-    let plan = lower(&graph(false), 0, &[(Rows, 4)], &device).unwrap();
+    let plan = lower(&graph(false), 0, &[(Rows, 4)], &compiling().adding(rule)).unwrap();
     assert_eq!(rules(&plan), ["wasm_matmul"]);
+    // The host compiles no text.
+    let host = Device::guess(&host()).adding(rule);
+    let plain = lower(&graph(false), 0, &[(Rows, 4)], &host).unwrap();
+    assert!(!rules(&plain).contains(&"wasm_matmul"));
     let step = &plan.steps[0];
     let Source::Fixed { entry, cuda, .. } = step.kernel.source() else {
         panic!("module kernels are fixed text");
@@ -198,10 +210,22 @@ fn module_matmul_wins() {
 }
 
 #[test]
+fn cuda_alone_opens() {
+    let kernels = json!([{"name": "wasm_gemm", "entry": "gemm", "cuda": GEMM_CUDA}]);
+    let bytes = module(&declare(ABI, "matmul", kernels), &json!([gemm()]), "");
+    let rule = sensai_wasm::load(&bytes).unwrap()[0];
+    let plan = lower(&graph(false), 0, &[(Rows, 4)], &compiling().adding(rule)).unwrap();
+    let Source::Fixed { metal, cuda, .. } = plan.steps[0].kernel.source() else {
+        panic!("module kernels are fixed text");
+    };
+    assert!(metal.is_empty() && cuda == GEMM_CUDA);
+}
+
+#[test]
 fn module_region_wins() {
     let rule = load("mlp", json!([gemm(), act()]));
     let g = graph(true);
-    let device = Device::guess(&host()).adding(rule);
+    let device = compiling().adding(rule);
     let mut cache = Cache::default();
     let (plan, _) = cache.upto(&g, 0, &[(Rows, 4)], &[Rows], &device).unwrap();
     assert_eq!(rules(plan), ["wasm_mlp", "wasm_mlp"]);
@@ -330,8 +354,8 @@ fn attention(layout: &dyn Layout, ctx: usize) -> &'static Rule {
 }
 
 /// The plan for one launch of `ctx` positions.
-fn kept_plan(settings: &Settings, layout: &'static dyn Layout, ctx: usize) -> Plan {
-    let mut device = Device::guess(settings).adding(attention(layout, ctx));
+fn kept_plan(device: Device, layout: &'static dyn Layout, ctx: usize) -> Plan {
+    let mut device = device.adding(attention(layout, ctx));
     device.kept = layout;
     let sizes = [(Seqs, 4), (Rows, 4), (Context, ctx as u64)];
     lower(&kept_graph(), 0, &sizes, &device).unwrap()
@@ -346,7 +370,7 @@ fn module_attention_writes_kept() {
     ];
     let layouts: [&'static dyn Layout; 2] = [kept::DENSE, &kept::PAGED16];
     for layout in layouts {
-        let plan = kept_plan(&host(), layout, 4);
+        let plan = kept_plan(compiling(), layout, 4);
         assert_eq!(rules(&plan), ["wasm_attention", "wasm_attention"]);
         assert_eq!(plan.kept.len(), 2);
         // Only a GPU runs fixed text.
@@ -354,7 +378,7 @@ fn module_attention_writes_kept() {
             let (mut store, mut draws) = (Store::default(), Noise(9));
             let mut runner: Option<Box<dyn Run>> = None;
             for (i, rows) in launches.iter().enumerate() {
-                let plan = kept_plan(settings, layout, 2 * i + 2);
+                let plan = kept_plan(Device::guess(settings), layout, 2 * i + 2);
                 let table = plan.table;
                 let r = match &mut runner {
                     Some(r) => {

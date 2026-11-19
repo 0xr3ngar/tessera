@@ -2,7 +2,7 @@
 
 use crate::abi::{Offer, Shape};
 use sensai_lower::kept::Layout;
-use sensai_lower::{Arg, Kernel, Launch, Source, Step};
+use sensai_lower::{Arg, Kernel, Launch, Needs, Source, Step};
 use std::fmt;
 
 /// A module kernel's text, never freed.
@@ -106,5 +106,9 @@ impl Kernel for Text {
     /// The module saw each read's form before it offered.
     fn accepts(&self, _: usize, _: &dyn sensai_lower::form::Load) -> bool {
         true
+    }
+
+    fn needs(&self) -> Needs {
+        Needs::text()
     }
 }

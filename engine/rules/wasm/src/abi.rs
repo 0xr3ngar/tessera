@@ -26,6 +26,8 @@ pub(crate) struct Manifest {
 pub(crate) struct Text {
     pub name: String,
     pub entry: String,
+    /// Empty when the kernel has no Metal text.
+    #[serde(default)]
     pub metal: String,
     pub cuda: String,
 }
