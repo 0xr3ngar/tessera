@@ -111,9 +111,13 @@ fn mla_run() {
     let sizes = [(Seqs, 1), (Context, ROWS as u64)];
     let plans = [0, 1].map(|r| lower(&sharded, 0, &sizes, &device.clone().as_rank(r)).unwrap());
     let mut ranks = Loopback::open(&plans, &settings).unwrap();
-    for (at, w) in stored.iter().enumerate() {
-        ranks.load_weight(at as u32, w).unwrap();
-    }
+    let mut loaded = 0;
+    let load = |at, w: &_| {
+        loaded += 1;
+        ranks.load_weight(at, w)
+    };
+    stored.each(load).unwrap();
+    assert_eq!(loaded, g.weights.len());
     let got = ranks.run(&[tokens.view(), positions.view()]).unwrap();
     let got = got[0].floats().unwrap();
     let scale = want.iter().fold(0.0f32, |m, v| m.max(v.abs()));

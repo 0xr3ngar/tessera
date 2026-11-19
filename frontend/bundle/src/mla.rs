@@ -1,7 +1,7 @@
 //! DeepSeek-style releases: config, weight names, weights.
 
 use crate::names::Rule;
-use crate::pull;
+use crate::{each, pins};
 use sensai_checkpoint::{File, Offer, exlr8};
 use sensai_engine::mla::{Config, Index, Moe, RotatedMoe, program};
 use sensai_engine::{Graph, Pins, Stack, Weight};
@@ -166,9 +166,24 @@ pub fn rules(c: &Config, rotated: bool) -> Vec<Rule> {
 pub struct Release {
     pub config: Config,
     pub graph: Graph,
-    pub weights: Vec<Weight>,
     /// Forms packed in the file, when any are.
     pub pins: Pins,
+    offer: Box<dyn Offer>,
+    rules: Vec<Rule>,
+}
+
+impl Release {
+    /// Each weight in graph order, read one at a time.
+    pub fn each(
+        &self,
+        mut take: impl FnMut(u32, Weight) -> Result<(), Box<dyn Error + Send + Sync>>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let mut at = 0;
+        each(&self.graph, &*self.offer, &[&self.rules], |weight, _| {
+            at += 1;
+            take(at - 1, weight)
+        })
+    }
 }
 
 /// `dir` as safetensors, or exlr8 with experts at `width`.
@@ -192,11 +207,12 @@ pub fn release(
         }
     };
     let rules = rules(&config, exlr8);
-    let (weights, pins) = pull(&graph, &*offer, config.stack.layers, &[&rules])?;
+    let pins = pins(&graph, &*offer, config.stack.layers, &[&rules])?;
     Ok(Release {
         config,
         graph,
-        weights,
         pins,
+        offer,
+        rules,
     })
 }

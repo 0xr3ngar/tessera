@@ -164,6 +164,7 @@ pub fn pulled(model: &str, g: &Graph, offer: &dyn Offer) -> Vec<Tensor> {
             }
             Weight::Packed(f, bytes) => Tensor::f32(shape, f.unpack_all(&bytes)),
         });
+        Ok(())
     })
     .unwrap();
     out

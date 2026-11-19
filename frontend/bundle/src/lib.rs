@@ -94,8 +94,41 @@ pub fn pull(
     each(graph, offer, rules, |weight, form| {
         weights.push(weight);
         forms.push(form);
+        Ok(())
     })?;
     Ok((weights, gguf::pins(graph, &forms, layers)))
+}
+
+/// The forms `offer` stores. No weight bytes are read.
+pub fn pins(
+    graph: &Graph,
+    offer: &dyn Offer,
+    layers: u64,
+    rules: &[&[Rule]],
+) -> Result<Pins, Box<dyn Error + Send + Sync>> {
+    let slices = offer.slices();
+    let claims = names::resolve(graph, &slices, rules)?;
+    let mut forms: Vec<&'static dyn Load> = Vec::with_capacity(claims.len());
+    for c in &claims {
+        let slice = slices.iter().find(|s| s.name == c.name).expect("resolved");
+        forms.push(form(slice.stored, !c.parts.is_empty())?);
+    }
+    Ok(gguf::pins(graph, &forms, layers))
+}
+
+/// A slice's form. A `set` joins many slices.
+fn form(stored: Stored, set: bool) -> Result<&'static dyn Load, Box<dyn Error + Send + Sync>> {
+    match stored {
+        Stored::Bf16 => Ok(BF16_FORM),
+        // Only a form without a header joins byte for byte.
+        Stored::Form(f) if set && f.bytes(0) != 0 => {
+            Err(format!("a set of {} matrices, each with a header", f.name()).into())
+        }
+        Stored::Form(f) => {
+            named(f.name()).ok_or_else(|| format!("no loads for {}", f.name()).into())
+        }
+        _ => Ok(F32_FORM),
+    }
 }
 
 /// Each weight in graph order, read one at a time.
@@ -103,7 +136,7 @@ pub fn each(
     graph: &Graph,
     offer: &dyn Offer,
     rules: &[&[Rule]],
-    mut take: impl FnMut(Weight, &'static dyn Load),
+    mut take: impl FnMut(Weight, &'static dyn Load) -> Result<(), Box<dyn Error + Send + Sync>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let slices = offer.slices();
     let claims = names::resolve(graph, &slices, rules)?;
@@ -111,20 +144,15 @@ pub fn each(
         let slice = slices.iter().find(|s| s.name == c.name).expect("resolved");
         let axis = |e: &sensai_engine::DimExpr| e.value(&graph.dims, &|_| None).map(|n| n as usize);
         let shape: Option<Vec<usize>> = w.ty.shape.0.iter().map(axis).collect();
-        let (weight, form) = match (slice.stored, c.rows) {
+        let f = form(slice.stored, !c.parts.is_empty())?;
+        let weight = match (slice.stored, c.rows) {
             _ if !c.parts.is_empty() => stacked(offer, slice.stored, &c.parts, shape)?,
-            (Stored::Form(f), rows) => {
-                let f = named(f.name()).ok_or_else(|| format!("no loads for {}", f.name()))?;
-                let bytes = match rows {
-                    Some(rows) => offer.packed_rows(&c.name, rows)?,
-                    None => offer.packed(&c.name)?,
-                };
-                (Weight::Packed(f, bytes), f)
-            }
-            (Stored::Bf16, _) => (halves(offer, slice, c.rows)?, BF16_FORM),
-            _ => (floats(offer, slice, c.rows, shape)?, F32_FORM),
+            (Stored::Form(_), Some(rows)) => Weight::Packed(f, offer.packed_rows(&c.name, rows)?),
+            (Stored::Form(_), None) => Weight::Packed(f, offer.packed(&c.name)?),
+            (Stored::Bf16, _) => halves(offer, slice, c.rows)?,
+            _ => floats(offer, slice, c.rows, shape)?,
         };
-        take(weight, form);
+        take(weight, f)?;
     }
     Ok(())
 }
@@ -135,25 +163,20 @@ fn stacked(
     stored: Stored,
     parts: &[String],
     shape: Option<Vec<usize>>,
-) -> Result<(Weight, &'static dyn Load), Box<dyn Error + Send + Sync>> {
+) -> Result<Weight, Box<dyn Error + Send + Sync>> {
     let mut all = Vec::new();
     match stored {
         Stored::Bf16 => {
             for p in parts {
                 all.extend(offer.bf16(p)?);
             }
-            Ok((Weight::Packed(BF16_FORM, all), BF16_FORM))
+            Ok(Weight::Packed(BF16_FORM, all))
         }
-        // A form without a header joins byte for byte.
-        Stored::Form(f) if f.bytes(0) == 0 => {
-            let f = named(f.name()).ok_or_else(|| format!("no loads for {}", f.name()))?;
+        Stored::Form(_) => {
             for p in parts {
                 all.extend(offer.packed(p)?);
             }
-            Ok((Weight::Packed(f, all), f))
-        }
-        Stored::Form(f) => {
-            Err(format!("a set of {} matrices, each with a header", f.name()).into())
+            Ok(Weight::Packed(form(stored, true)?, all))
         }
         _ => {
             let mut floats = Vec::new();
@@ -161,7 +184,7 @@ fn stacked(
                 floats.extend(offer.floats(p)?);
             }
             let shape = shape.unwrap_or_else(|| vec![floats.len()]);
-            Ok((Weight::Floats(Tensor::f32(shape, floats)), F32_FORM))
+            Ok(Weight::Floats(Tensor::f32(shape, floats)))
         }
     }
 }

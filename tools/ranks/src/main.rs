@@ -139,7 +139,33 @@ fn main() -> ExitCode {
     }
 }
 
-type Loaded = (sensai_graph::Graph, Vec<Weight>, sensai_lower::Pins);
+/// A model's weights: held, or read as they load.
+enum Weights {
+    Held(Vec<Weight>),
+    Streamed(sensai_bundle::mla::Release),
+}
+
+impl Weights {
+    /// Each weight in graph order, one held at a time.
+    fn each(
+        &self,
+        mut take: impl FnMut(u32, &Weight) -> Result<(), sensai_run::Error>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        match self {
+            Weights::Held(all) => {
+                for (at, w) in all.iter().enumerate() {
+                    take(at as u32, w)?;
+                }
+            }
+            Weights::Streamed(release) => release
+                .each(|at, w| Ok(take(at, &w)?))
+                .map_err(|e| e.to_string())?,
+        }
+        Ok(())
+    }
+}
+
+type Loaded = (sensai_graph::Graph, Weights, sensai_lower::Pins);
 
 /// One sequence's graph for `n` tokens, its weights and forms.
 fn model(name: &str, fixture: &Path, n: u64) -> Result<Loaded, Box<dyn std::error::Error>> {
@@ -148,18 +174,20 @@ fn model(name: &str, fixture: &Path, n: u64) -> Result<Loaded, Box<dyn std::erro
         "granite" => program::<(), Moe>(&Config::granite(1, n)),
         "deepseek" | "glm53" => {
             let r = sensai_bundle::mla::release(fixture, 1, n, 3).map_err(|e| e.to_string())?;
-            return Ok((r.graph, r.weights, r.pins));
+            let (graph, pins) = (r.graph.clone(), r.pins.clone());
+            return Ok((graph, Weights::Streamed(r), pins));
         }
         "eg2" => {
             let e = sensai_bundle::encoder::encoder(&fixture.join("exlr8"), [1, n], false)
                 .map_err(|e| e.to_string())?;
-            return Ok((e.graph, e.weights, sensai_lower::Pins::default()));
+            let pins = sensai_lower::Pins::default();
+            return Ok((e.graph, Weights::Held(e.weights), pins));
         }
         _ => return Err("a model this tool knows".into()),
     };
     let file = sensai_checkpoint::File::open(&fixture.join("model.safetensors"))?;
     let (weights, pins) = sensai_bundle::pull(&g, &file, 0, &[]).map_err(|e| e.to_string())?;
-    Ok((g, weights, pins))
+    Ok((g, Weights::Held(weights), pins))
 }
 
 /// Room for every token's logits, and then some.
@@ -291,9 +319,7 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     );
     let start = Instant::now();
     // Each rank cuts its part from the packed bytes.
-    for (at, w) in weights.iter().enumerate() {
-        rank.load_weight(at as u32, w)?;
-    }
+    weights.each(|at, w| rank.load_weight(at, w))?;
     eprintln!(
         "rank {}: loaded in {:.1} s",
         args.rank,
