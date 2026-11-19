@@ -171,7 +171,7 @@ fn on_gpus(g: &Graph, rule: &'static Rule) {
     }
 }
 
-/// A device with a compiler. Lowering needs no GPU.
+/// A device with a compiler, so lowering runs on CPU.
 fn compiling() -> Device {
     let mut device = Device::default();
     device.platform = Platform::assumed(Limits::assumed());
@@ -187,7 +187,7 @@ fn module_matmul_wins() {
     let rule = load("matmul", json!([gemm()]));
     let plan = lower(&graph(false), 0, &[(Rows, 4)], &compiling().adding(rule)).unwrap();
     assert_eq!(rules(&plan), ["wasm_matmul"]);
-    // The host compiles no text.
+    // The host lacks a compiler.
     let host = Device::guess(&host()).adding(rule);
     let plain = lower(&graph(false), 0, &[(Rows, 4)], &host).unwrap();
     assert!(!rules(&plain).contains(&"wasm_matmul"));
