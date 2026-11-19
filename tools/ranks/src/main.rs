@@ -142,7 +142,7 @@ fn main() -> ExitCode {
 /// A model's weights: held, or read as they load.
 enum Weights {
     Held(Vec<Weight>),
-    Streamed(sensai_bundle::mla::Release),
+    Streamed(Box<sensai_bundle::mla::Release>),
 }
 
 impl Weights {
@@ -175,7 +175,7 @@ fn model(name: &str, fixture: &Path, n: u64) -> Result<Loaded, Box<dyn std::erro
         "deepseek" | "glm53" => {
             let r = sensai_bundle::mla::release(fixture, 1, n, 3).map_err(|e| e.to_string())?;
             let (graph, pins) = (r.graph.clone(), r.pins.clone());
-            return Ok((graph, Weights::Streamed(r), pins));
+            return Ok((graph, Weights::Streamed(Box::new(r)), pins));
         }
         "eg2" => {
             let e = sensai_bundle::encoder::encoder(&fixture.join("exlr8"), [1, n], false)
