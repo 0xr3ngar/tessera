@@ -545,18 +545,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tessera-findings"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "tessera-shape"
-version = "0.1.0"
-
-[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -661,16 +649,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "tessera-findings"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "tessera-shape"
+version = "0.1.0"
+
+[[package]]
 name = "tessera-simcheck"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "eg2cpu",
  "rayon",
- "tessera-findings",
- "tessera-shape",
  "serde",
  "serde_json",
+ "tessera-findings",
+ "tessera-shape",
  "toml",
  "ureq",
 ]
