@@ -11,7 +11,7 @@ mod images;
 mod images_test;
 #[cfg(test)]
 mod lib_test;
-pub mod metrics;
+mod metrics;
 #[cfg(test)]
 mod mocks;
 pub mod ranks;
@@ -41,8 +41,6 @@ pub struct Model {
     pub image: Option<Arc<dyn GenerateImage>>,
     /// Unknown request fields refuse the request. Else they warn.
     pub strict: bool,
-    /// The kept rows' totals, for `/metrics`.
-    pub kv: metrics::Shared,
 }
 
 /// The model once it loads. Until then routes answer 503.
@@ -140,6 +138,12 @@ fn embeddings(slot: &Slot, body: &[u8]) -> Response {
     })
 }
 
+sensai_engine::metric_registry!(API = "api");
+sensai_engine::metric!(COMPLETIONS in API = Counter "tessera:completion_requests_total", "Requests to /v1/completions.");
+sensai_engine::metric!(CHATS in API = Counter "tessera:chat_requests_total", "Requests to /v1/chat/completions.");
+sensai_engine::metric!(EMBEDS in API = Counter "tessera:embedding_requests_total", "Requests to /v1/embeddings.");
+sensai_engine::metric!(IMAGES in API = Counter "tessera:image_requests_total", "Requests to /v1/images/generations.");
+
 /// Answers one request.
 pub fn route(slot: &Slot, request: &Request) -> Response {
     let body = request.body.as_slice();
@@ -147,13 +151,25 @@ pub fn route(slot: &Slot, request: &Request) -> Response {
         ("GET", "/health" | "/v1/health" | "/v1/health/ready" | "/ping") => health(slot),
         ("GET", "/version") => Response::json(200, &json!({"version": env!("CARGO_PKG_VERSION")})),
         ("GET", "/v1/models") => models(slot),
-        ("GET", "/metrics") => metrics::metrics(slot),
+        ("GET", "/metrics") => metrics::metrics(),
         ("POST", "/tokenize") => tokenize(slot, body),
         ("POST", "/detokenize") => detokenize(slot, body),
-        ("POST", "/v1/embeddings") => embeddings(slot, body),
-        ("POST", "/v1/images/generations") => images::generations(slot, body),
-        ("POST", "/v1/completions") => answer::completions(slot, body),
-        ("POST", "/v1/chat/completions") => answer::chat_completions(slot, body),
+        ("POST", "/v1/embeddings") => {
+            EMBEDS.add(1);
+            embeddings(slot, body)
+        }
+        ("POST", "/v1/images/generations") => {
+            IMAGES.add(1);
+            images::generations(slot, body)
+        }
+        ("POST", "/v1/completions") => {
+            COMPLETIONS.add(1);
+            answer::completions(slot, body)
+        }
+        ("POST", "/v1/chat/completions") => {
+            CHATS.add(1);
+            answer::chat_completions(slot, body)
+        }
         _ => refuse(404, "no such route", None).into(),
     }
 }

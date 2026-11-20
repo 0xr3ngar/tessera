@@ -5,6 +5,15 @@ use sensai_kv::{Pool, Prefixes, RunId, Stats, Tag};
 
 const TAG: Tag = Tag(0);
 
+crate::metric_registry!(KV = "kv");
+crate::metric!(SIZE in KV = Gauge "vllm:kv_cache_size_tokens", "Rows the kept-row pool holds.");
+crate::metric!(ACTIVE in KV = Gauge "vllm:kv_active_tokens", "Rows in pages live answers hold.");
+crate::metric!(WORST in KV = Gauge "tessera:kv_worst_tokens", "Rows live answers may grow to.");
+crate::metric!(LIVE in KV = Gauge "tessera:kv_live_runs", "Answers that hold kept rows.");
+crate::metric!(RETAINED in KV = Gauge "tessera:kv_kept_runs", "Finished answers whose rows stay.");
+crate::metric!(HITS in KV = Counter "tessera:kv_hits_total", "Prompts that started on kept rows.");
+crate::metric!(MISSES in KV = Counter "tessera:kv_misses_total", "Prompts that started with no rows.");
+
 /// The kept rows' pool, and how prompts met it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Totals {
@@ -93,9 +102,19 @@ impl Kept {
 
     fn count(&mut self, skip: usize) {
         match skip {
-            0 => self.misses += 1,
-            _ => self.hits += 1,
-        }
+            0 => (self.misses += 1, MISSES.add(1)),
+            _ => (self.hits += 1, HITS.add(1)),
+        };
+    }
+
+    /// Sets the pool's gauges.
+    pub fn publish(&self) {
+        let stats = self.pool.stats();
+        SIZE.set(stats.size as u64);
+        ACTIVE.set(stats.active as u64);
+        WORST.set(stats.worst as u64);
+        LIVE.set(stats.live_runs as u64);
+        RETAINED.set(stats.kept_runs as u64);
     }
 
     pub fn totals(&self) -> Totals {
