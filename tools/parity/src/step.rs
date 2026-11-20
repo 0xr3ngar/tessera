@@ -79,7 +79,10 @@ pub fn steps(spec: &Spec) {
         assert!(store.len(kept) >= LEN, "kept rows {kept}");
     }
     let off = max_abs_diff(&got, want);
-    assert!(off < 1e-5, "steps drift from the forward pass by {off:e}");
+    assert!(
+        off < stepper.drift,
+        "steps drift from the forward pass by {off:e}"
+    );
     planned(spec.name, &step, &weights, &tokens, &each);
 }
 
