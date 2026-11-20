@@ -545,7 +545,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sensai-findings"
+name = "tessera-findings"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -553,7 +553,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sensai-shape"
+name = "tessera-shape"
 version = "0.1.0"
 
 [[package]]
@@ -667,8 +667,8 @@ dependencies = [
  "anyhow",
  "eg2cpu",
  "rayon",
- "sensai-findings",
- "sensai-shape",
+ "tessera-findings",
+ "tessera-shape",
  "serde",
  "serde_json",
  "toml",

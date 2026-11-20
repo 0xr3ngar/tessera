@@ -1,15 +1,15 @@
 //! Graphs on runners: decode loops and single launches.
 
 // Linking the crates registers their rules.
-use sensai_rules as _;
+use tessera_rules as _;
 
-use sensai_graph::DimName::{Candidates, Context, Picks, Rows, Segments, Seqs, VocabWords};
-use sensai_lower::{Cache, Device};
-use sensai_run::{Run, open};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::mpsc;
 use std::time::Instant;
+use tessera_graph::DimName::{Candidates, Context, Picks, Rows, Segments, Seqs, VocabWords};
+use tessera_lower::{Cache, Device};
+use tessera_run::{Run, open};
 
 mod guide;
 mod kept;
@@ -28,17 +28,17 @@ pub use ranks::Place;
 pub use schedule::{Batch, Fair, Policy, Seq, Sink};
 
 // The front end reaches the engine crates only through these.
-pub use sensai_engine_comm as comm;
-pub use sensai_engine_settings::{Backend, Memory};
-pub use sensai_graph::{Bf16, DimExpr, E4M3, F16, Graph, PathSeg, Shape};
-pub use sensai_interp::{Tensor, bind, fold};
-pub use sensai_lower::{Pick, Pins, Recipe, Settings, Weight, form};
-pub use sensai_mem::form as storage;
-pub use sensai_mem::{block, trellis};
-pub use sensai_models::{Stack, clip, decoder, eg2, flux2, keys, mla, sprite, tagger, vae};
-pub use sensai_run::{gpu, pinning};
-pub use sensai_trace::{Linear, Norm};
-pub use sensai_wasm as wasm;
+pub use tessera_engine_comm as comm;
+pub use tessera_engine_settings::{Backend, Memory};
+pub use tessera_graph::{Bf16, DimExpr, E4M3, F16, Graph, PathSeg, Shape};
+pub use tessera_interp::{Tensor, bind, fold};
+pub use tessera_lower::{Pick, Pins, Recipe, Settings, Weight, form};
+pub use tessera_mem::form as storage;
+pub use tessera_mem::{block, trellis};
+pub use tessera_models::{Stack, clip, decoder, eg2, flux2, keys, mla, sprite, tagger, vae};
+pub use tessera_run::{gpu, pinning};
+pub use tessera_trace::{Linear, Norm};
+pub use tessera_wasm as wasm;
 
 /// Tokens to continue, and when to stop.
 #[derive(Default, Serialize, Deserialize)]
@@ -76,11 +76,11 @@ pub enum Event {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Lower(#[from] sensai_lower::Error),
+    Lower(#[from] tessera_lower::Error),
     #[error(transparent)]
-    Run(#[from] sensai_run::Error),
+    Run(#[from] tessera_run::Error),
     #[error("interpreter: {0}")]
-    Interp(#[from] sensai_interp::Error),
+    Interp(#[from] tessera_interp::Error),
     #[error("the rows do not fit the engine")]
     Rows,
     #[error("a row's slot or position is out of range")]
@@ -88,11 +88,11 @@ pub enum Error {
     #[error("an input has no axis for a bounded dimension")]
     InputAxis,
     #[error(transparent)]
-    Graph(#[from] sensai_graph::VerifyError),
+    Graph(#[from] tessera_graph::VerifyError),
     #[error("the masks do not fit the graph's mask port")]
     Mask,
     #[error("kept rows: {0}")]
-    Kept(#[from] sensai_kv::Error),
+    Kept(#[from] tessera_kv::Error),
     #[error("a slot's next row is in another run's page")]
     SharedPage,
 }
@@ -146,7 +146,7 @@ fn launch_of(
     rows: &[Row],
     picks: &[u32],
     slots: usize,
-) -> (Vec<(sensai_graph::DimName, u64)>, Vec<Tensor>) {
+) -> (Vec<(tessera_graph::DimName, u64)>, Vec<Tensor>) {
     let furthest = rows.iter().map(|r| r.position).max().unwrap_or(0);
     let mut seen: Vec<u32> = rows.iter().map(|r| r.slot).collect();
     seen.sort_unstable();
@@ -197,12 +197,12 @@ impl Engine {
         recipe: &Recipe,
         settings: &Settings,
         place: Option<&Place>,
-        run: impl FnOnce(sensai_lower::Plan) -> Result<Box<dyn Run>, Error>,
+        run: impl FnOnce(tessera_lower::Plan) -> Result<Box<dyn Run>, Error>,
     ) -> Result<Self, Error> {
-        let mut graph = sensai_graph::trim(&graph, 0)?;
+        let mut graph = tessera_graph::trim(&graph, 0)?;
         let sparse = graph.entries.len() > 1;
         if sparse {
-            graph = sensai_graph::trim(&graph, 1)?;
+            graph = tessera_graph::trim(&graph, 1)?;
         }
         let ranked = |device: Device| match place {
             Some(place) => place.device(device),
@@ -231,7 +231,7 @@ impl Engine {
         runner.launching(recipe.launch);
         runner.profiling(settings.profile.is_some());
         let device = Device::stored(runner.platform(), settings)
-            .map_err(sensai_lower::Error::from)?
+            .map_err(tessera_lower::Error::from)?
             .with(recipe);
         let device = ranked(device);
         let words = graph.dims.iter().find(|d| d.name == VocabWords);
@@ -410,7 +410,7 @@ impl Engine {
     }
 
     /// Seconds per kernel and phase since the last take.
-    pub fn take_profile(&mut self) -> Option<sensai_run::Profile> {
+    pub fn take_profile(&mut self) -> Option<tessera_run::Profile> {
         self.runner.take_profile()
     }
 

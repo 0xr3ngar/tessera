@@ -2,12 +2,12 @@
 
 use crate::names::Rule;
 use crate::{each, pins};
-use sensai_checkpoint::{File, Offer, exlr8};
-use sensai_engine::mla::{Config, Index, Moe, RotatedMoe, program, stepper};
-use sensai_engine::{Graph, Pins, Stack, Weight};
 use serde::Deserialize;
 use std::error::Error;
 use std::path::Path;
+use tessera_checkpoint::{File, Offer, exlr8};
+use tessera_engine::mla::{Config, Index, Moe, RotatedMoe, program, stepper};
+use tessera_engine::{Graph, Pins, Stack, Weight};
 
 /// The `config.json` keys a DeepSeek-V3 release sets.
 #[derive(Deserialize)]

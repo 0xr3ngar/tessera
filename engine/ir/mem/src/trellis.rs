@@ -1,7 +1,7 @@
 //! The exlr8 trellis form: K-bit codes in tiles.
 
 use crate::form::{Form, Read, form};
-use sensai_graph::{DType, E4M3, F16};
+use tessera_graph::{DType, E4M3, F16};
 
 /// The mcg codebook's multiplier.
 pub const MCG: u32 = 0xCBAC_1FED;

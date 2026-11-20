@@ -2,12 +2,12 @@
 
 mod shard_test;
 
-use sensai_models::decoder::{Config, Swiglu, program, stepper};
-use sensai_parity::{LOGITS, Spec, Stepper, decoder, suite};
-use sensai_trace::Composite::{Attention, Layer, Mlp, Model};
-use sensai_trace::{Graph, Norm};
+use tessera_models::decoder::{Config, Swiglu, program, stepper};
+use tessera_parity::{LOGITS, Spec, Stepper, decoder, suite};
+use tessera_trace::Composite::{Attention, Layer, Mlp, Model};
+use tessera_trace::{Graph, Norm};
 
-decoder!(Norm, Swiglu, sensai_models::small::qwen3(), Config::qwen3);
+decoder!(Norm, Swiglu, tessera_models::small::qwen3(), Config::qwen3);
 
 const SPEC: Spec = Spec {
     name: "qwen3",

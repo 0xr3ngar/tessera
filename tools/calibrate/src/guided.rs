@@ -1,11 +1,11 @@
 //! Guided decode steps: full head, mask and sparse head.
 
-use sensai_engine::form::BF16_FORM;
-use sensai_engine::{Allowed, Engine, Error, FEW, Pins, Recipe, Row, Settings, Stack, Weight};
-use sensai_models::decoder::{self, Config, Swiglu};
-use sensai_testkit::{Noise, weights_with};
-use sensai_trace::Norm;
 use std::time::Instant;
+use tessera_engine::form::BF16_FORM;
+use tessera_engine::{Allowed, Engine, Error, FEW, Pins, Recipe, Row, Settings, Stack, Weight};
+use tessera_models::decoder::{self, Config, Swiglu};
+use tessera_testkit::{Noise, weights_with};
+use tessera_trace::Norm;
 
 /// Rows each slot keeps.
 const CONTEXT: u64 = 256;

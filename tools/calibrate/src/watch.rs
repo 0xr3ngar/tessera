@@ -2,17 +2,17 @@
 
 use crate::grid::bounded;
 use crate::plans::{feeds, sizes, subjects};
-use sensai_bundle::flux2::transformer;
-use sensai_graph::DimName::{self, Context, Rows, Seqs};
-use sensai_graph::Graph;
-use sensai_lower::{Device, Pins, Plan, Settings, Source, Step, Tensor, View, Weight, lower};
-use sensai_run::{Outcome, Reload, Run, open};
-use sensai_testkit::graphs::{attention, linear};
-use sensai_testkit::{Noise, weights};
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
+use tessera_bundle::flux2::transformer;
+use tessera_graph::DimName::{self, Context, Rows, Seqs};
+use tessera_graph::Graph;
+use tessera_lower::{Device, Pins, Plan, Settings, Source, Step, Tensor, View, Weight, lower};
+use tessera_run::{Outcome, Reload, Run, open};
+use tessera_testkit::graphs::{attention, linear};
+use tessera_testkit::{Noise, weights};
 
 const USAGE: &str = "usage: tessera-calibrate watch <dir> \
     gemm <m> <k> <n> | attend <heads> <kv heads> <width> <queries> <keys> | \

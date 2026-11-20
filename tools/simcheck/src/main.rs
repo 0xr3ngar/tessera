@@ -77,7 +77,7 @@ fn all_windows(root: &Path, s: &Settings) -> Result<Vec<Window>> {
             continue;
         };
         // Both sides of a conflict match. tessera-lint reports the file.
-        if sensai_shape::conflict(&text).is_some() {
+        if tessera_shape::conflict(&text).is_some() {
             continue;
         }
         out.extend(cut(path, &text, s.similar_window, s.similar_spacing));

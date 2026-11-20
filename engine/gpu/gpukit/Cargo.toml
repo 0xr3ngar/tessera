@@ -1,5 +1,5 @@
 [package]
-name = "sensai-gpukit"
+name = "tessera-gpukit"
 version = "0.1.0"
 edition = "2024"
 description = "The GPU runtimes tessera loads at run time: pipelines and buffers"
@@ -15,10 +15,10 @@ rocm = []
 
 [dependencies]
 thiserror = "2"
-sensai-dl = { workspace = true }
-sensai-engine-settings = { workspace = true }
-sensai-mem = { workspace = true }
-sensai-platform = { workspace = true }
+tessera-dl = { workspace = true }
+tessera-engine-settings = { workspace = true }
+tessera-mem = { workspace = true }
+tessera-platform = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", default-features = false, features = ["std"] }

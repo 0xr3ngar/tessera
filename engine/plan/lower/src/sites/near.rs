@@ -1,7 +1,7 @@
 use super::Pattern;
 use crate::form::F32_FORM;
 use crate::tree::{T, Term, Tree};
-use sensai_graph::{Op, Select, View};
+use tessera_graph::{Op, Select, View};
 
 /// A matmul input of each pixel's neighbours, gathered by id.
 #[derive(Clone, Copy, Debug)]

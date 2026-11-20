@@ -174,8 +174,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: grammar
-      - run: cargo clippy -p sensai-grammar --all-targets --features llguidance
-      - run: cargo test -p sensai-grammar --features llguidance
+      - run: cargo clippy -p tessera-grammar --all-targets --features llguidance
+      - run: cargo test -p tessera-grammar --features llguidance
 
   macos:
     # Light on pull requests. A push to main runs it only when its merge
@@ -360,7 +360,7 @@ jobs:
           sudo apt-get install -y -q cuda-nvcc-13-0 cuda-cuobjdump-13-0 cuda-nvdisasm-13-0 clang
           echo /usr/local/cuda-13.0/bin >> "$GITHUB_PATH"
       - run: which nvcc cuobjdump nvdisasm clang++
-      - run: cargo test -p sensai-linear --test platforms_test -- --nocapture
+      - run: cargo test -p tessera-linear --test platforms_test -- --nocapture
 
   success:
     # The one check to require: every job above passed or was skipped

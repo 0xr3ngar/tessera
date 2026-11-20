@@ -1,22 +1,22 @@
 //! The tiled matmul against the CPU interpreter, on the GPU.
 
 // The other matmul rules come from here.
-use sensai_kernels as _;
+use tessera_kernels as _;
 
-use sensai_codegen::trellis;
-use sensai_graph::DimName::Rows;
-use sensai_interp::{Tensor, run};
+use tessera_codegen::trellis;
+use tessera_graph::DimName::Rows;
+use tessera_interp::{Tensor, run};
 
 mod common;
 use common::{linear, noise, terms};
-use sensai_gpukit::platform::{Asked, Platform};
-use sensai_graph::F16;
-use sensai_linear::{SCHEDULES, Schedule};
-use sensai_lower::form::{BF16_FORM, LOADS, named};
-use sensai_lower::{Device, Dialect, Pins, Settings, Source, Weight, lower, select};
-use sensai_run::open;
-use sensai_run::testing::{emulations, host, runs};
-use sensai_testkit::{Noise, cosine_f32, max_abs_diff};
+use tessera_gpukit::platform::{Asked, Platform};
+use tessera_graph::F16;
+use tessera_linear::{SCHEDULES, Schedule};
+use tessera_lower::form::{BF16_FORM, LOADS, named};
+use tessera_lower::{Device, Dialect, Pins, Settings, Source, Weight, lower, select};
+use tessera_run::open;
+use tessera_run::testing::{emulations, host, runs};
+use tessera_testkit::{Noise, cosine_f32, max_abs_diff};
 
 /// A device that can only choose schedule `at`.
 fn only(at: usize, settings: &Settings) -> Device {
@@ -192,7 +192,7 @@ fn tables_pick_schedules() {
             arch: arch.into(),
             name: name.into(),
             driver: String::new(),
-            limits: sensai_gpukit::Limits::assumed(),
+            limits: tessera_gpukit::Limits::assumed(),
             units: 0,
             bandwidth: 0.0,
             integrated: true,
@@ -211,7 +211,7 @@ fn tables_pick_schedules() {
 #[test]
 fn near_matches_cpu() {
     let g =
-        sensai_testkit::graphs::neighbours(&[sensai_trace::Dim::bounded(Rows, 64)], [12, 9, 32]);
+        tessera_testkit::graphs::neighbours(&[tessera_trace::Dim::bounded(Rows, 64)], [12, 9, 32]);
     let mut draws = Noise(31);
     // Ids past the twelve rows read zeros.
     let ids = (0..12 * 9).map(|i| ((i / 9 + i % 9) % 13) as f32).collect();

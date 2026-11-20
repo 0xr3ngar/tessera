@@ -2,8 +2,8 @@
 
 use super::Talk;
 use crate::source::Stop;
-use sensai_bundle::Message;
 use std::io::{BufRead, IsTerminal, Write};
+use tessera_bundle::Message;
 
 fn message(role: &str, content: &str) -> Message {
     Message {
@@ -35,7 +35,7 @@ pub fn run(talk: Talk, extra: &[String]) -> Result<(), Stop> {
             Ok(text) => history.push(message("assistant", text.trim())),
             Err(Stop::Failed(e)) => {
                 history.pop();
-                eprintln!("sensai: {e}");
+                eprintln!("tesserax: {e}");
             }
             Err(other) => return Err(other),
         }

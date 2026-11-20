@@ -4,8 +4,6 @@ mod roce;
 
 pub use roce::{port, ports};
 
-use sensai_engine::Settings;
-use sensai_engine::comm::{Error, Fabric, Reduce, Shm, Sockets, Transport, Verbs};
 use std::cell::RefCell;
 use std::fs::OpenOptions;
 use std::io::{self, Read, Write};
@@ -14,6 +12,8 @@ use std::path::Path;
 use std::rc::Rc;
 use std::thread;
 use std::time::{Duration, Instant};
+use tessera_engine::Settings;
+use tessera_engine::comm::{Error, Fabric, Reduce, Shm, Sockets, Transport, Verbs};
 
 /// How long a rank waits for the others.
 const PATIENCE: Duration = Duration::from_secs(10);
@@ -61,7 +61,7 @@ pub fn join(
         return Ok([Box::new(Shared(met.clone())), Box::new(Shared(met))]);
     };
     let (rank, ranks) = (met.rank(), met.ranks());
-    let pinning = sensai_engine::pinning(settings);
+    let pinning = tessera_engine::pinning(settings);
     let verbs = Verbs::connect(rank, ranks, fabric, CAPACITY, &mut *met, pinning)?;
     eprintln!("rank {rank}: sums over {} RDMA lanes", fabric.lanes());
     Ok([Box::new(verbs), met])

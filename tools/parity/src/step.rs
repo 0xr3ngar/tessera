@@ -1,13 +1,13 @@
 //! A step entry's ragged rows against whole forward passes.
 
 use super::{Spec, loaded};
-use sensai_interp::{Store, Tensor, run, run_kept};
-use sensai_lower::{Cache, Device, View};
-use sensai_run::Run;
-use sensai_run::testing::runs;
-use sensai_testkit::{Noise, argmax, cosine_f32, max_abs_diff, weights};
-use sensai_trace::DimName::{Context, Rows, Seqs};
-use sensai_trace::Graph;
+use tessera_interp::{Store, Tensor, run, run_kept};
+use tessera_lower::{Cache, Device, View};
+use tessera_run::Run;
+use tessera_run::testing::runs;
+use tessera_testkit::{Noise, argmax, cosine_f32, max_abs_diff, weights};
+use tessera_trace::DimName::{Context, Rows, Seqs};
+use tessera_trace::Graph;
 
 const SEQS: usize = 2;
 const LEN: usize = 7;

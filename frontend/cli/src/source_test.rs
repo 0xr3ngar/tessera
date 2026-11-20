@@ -29,7 +29,7 @@ fn options_carry_rules() {
     let Ok(mut source) = Source::open(Some(Origin::Recipe(dir.into()))) else {
         panic!("the recipe opens");
     };
-    source.cache = Some(sensai_testkit::scratch("recipes"));
+    source.cache = Some(tessera_testkit::scratch("recipes"));
     let Ok(options) = source.options(&[]) else {
         panic!("the recipe gives options");
     };

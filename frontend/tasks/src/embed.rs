@@ -3,11 +3,11 @@
 use crate::Error;
 use crate::api::{Embed, Embedded, Tokens};
 use crate::worker::Worker;
-use sensai_bundle::Overrides;
-use sensai_bundle::encoder::encoder;
-use sensai_bundle::tokenize::hf::Hf;
-use sensai_engine::{Model, Recipe, Settings, Tensor};
 use std::path::{Path, PathBuf};
+use tessera_bundle::Overrides;
+use tessera_bundle::encoder::encoder;
+use tessera_bundle::tokenize::hf::Hf;
+use tessera_engine::{Model, Recipe, Settings, Tensor};
 
 /// Tokens per text, `<bos>` and `<eos>` included.
 const MAX_TOKENS: usize = 1024;

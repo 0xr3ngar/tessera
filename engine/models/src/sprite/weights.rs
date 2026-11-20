@@ -2,8 +2,8 @@
 
 use super::tables::{COLOR_FEATS, COLOR_FREQS, RATIO_FREQS};
 use super::{Block, Config, Level, PREFIX, REGISTERS, Sprite, Stages, TAPS, TEXT, Table};
-use sensai_trace::DimName::*;
-use sensai_trace::{
+use tessera_trace::DimName::*;
+use tessera_trace::{
     Act, DType, DimExpr, DimName, Linear, Model, Norm, PathSeg, Shape, Tensor, TensorType, Vector,
 };
 

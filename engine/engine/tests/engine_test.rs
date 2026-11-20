@@ -1,18 +1,18 @@
 //! The engine's decode loop against the interpreter.
 
-use sensai_engine::{
+use std::sync::{Arc, Mutex};
+use tessera_engine::{
     Allowed, Batch, Engine, Event, Fair, Fault, Guide, Prefix, Reason, Request, Row,
 };
-use sensai_graph::{Graph, Op};
-use sensai_interp::{Store, Tensor, run_kept};
-use sensai_lower::{Recipe, Settings, Weight, kept, rules};
-use sensai_models::decoder::{Config, Moe, Swiglu, stepper};
-use sensai_models::{mla, small};
-use sensai_run::testing::runs;
-use sensai_testkit::{Noise, weights};
-use sensai_trace::DimName::Picks;
-use sensai_trace::Norm;
-use std::sync::{Arc, Mutex};
+use tessera_graph::{Graph, Op};
+use tessera_interp::{Store, Tensor, run_kept};
+use tessera_lower::{Recipe, Settings, Weight, kept, rules};
+use tessera_models::decoder::{Config, Moe, Swiglu, stepper};
+use tessera_models::{mla, small};
+use tessera_run::testing::runs;
+use tessera_testkit::{Noise, weights};
+use tessera_trace::DimName::Picks;
+use tessera_trace::Norm;
 
 /// Tokens, positions and slots of `rows`.
 fn feeds(rows: &[Row]) -> Vec<Tensor> {
@@ -398,8 +398,9 @@ fn trim_keeps_picks() {
         (vec![row(0, 4, 1), row(1, 3, 2)], vec![0, 1]),
     ];
     for g in graphs {
-        let trimmed = sensai_graph::trim(&g, 0).unwrap();
-        let picked = |n: &sensai_graph::Node| n.op == Op::Matmul && n.ty.shape.0[0] == Picks.into();
+        let trimmed = tessera_graph::trim(&g, 0).unwrap();
+        let picked =
+            |n: &tessera_graph::Node| n.op == Op::Matmul && n.ty.shape.0[0] == Picks.into();
         assert!(trimmed.nodes.iter().any(picked));
         let weights = weights(&g, &mut Noise(3));
         let (mut whole, mut cut) = (Store::default(), Store::default());
@@ -436,7 +437,7 @@ impl Guide for Fixed {
 fn heads_agree() {
     let mut c = Config::toy(1, 16);
     c.stack.masked = true;
-    let trimmed = sensai_graph::trim(&stepper::<Norm, Swiglu>(&c), 0).unwrap();
+    let trimmed = tessera_graph::trim(&stepper::<Norm, Swiglu>(&c), 0).unwrap();
     assert_eq!(trimmed.entries[0].inputs[3].ty.shape.0[0], Picks.into());
     let set = [2u32, 11, 17, 30];
     for s in runs() {
@@ -493,18 +494,18 @@ fn budget_refuses_plan() {
     let open = |memory| {
         let settings = Settings {
             memory,
-            ..sensai_run::testing::host()
+            ..tessera_run::testing::host()
         };
         Engine::open(g(), 16, &Recipe::default(), &settings)
     };
-    let refused = open(sensai_engine::Memory::Bytes(1024));
+    let refused = open(tessera_engine::Memory::Bytes(1024));
     assert!(matches!(
         refused,
-        Err(sensai_engine::Error::Run(
-            sensai_run::Error::OverBudget { .. }
+        Err(tessera_engine::Error::Run(
+            tessera_run::Error::OverBudget { .. }
         ))
     ));
-    assert!(open(sensai_engine::Memory::Off).is_ok());
+    assert!(open(tessera_engine::Memory::Off).is_ok());
 }
 
 /// Fails on its first pick.

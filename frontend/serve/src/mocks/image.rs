@@ -1,7 +1,7 @@
 //! Pictures for `/v1/images/generations`.
 
-use sensai_tasks::Error;
-use sensai_tasks::api::{GenerateImage, Image, Sizes};
+use tessera_tasks::Error;
+use tessera_tasks::api::{GenerateImage, Image, Sizes};
 
 /// Red is the seed, blue the index.
 pub(super) struct MockImage;

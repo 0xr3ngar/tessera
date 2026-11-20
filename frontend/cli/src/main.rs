@@ -1,4 +1,4 @@
-//! `sensai (--recipe <src> | --model <dir | hf:<owner>/<name>[@<revision>]>) <verb>`.
+//! `tesserax (--recipe <src> | --model <dir | hf:<owner>/<name>[@<revision>]>) <verb>`.
 
 mod fetch;
 mod serve;
@@ -7,12 +7,12 @@ mod source;
 mod source_test;
 mod task;
 
-use sensai_serve::ranks::FLAGS as RANKS;
-use sensai_serve::start::FLAGS;
 use source::{Source, Stop, split};
 use std::process::ExitCode;
+use tessera_serve::ranks::FLAGS as RANKS;
+use tessera_serve::start::FLAGS;
 
-const USAGE: &str = "usage: sensai (--recipe <dir | git+<url>#<commit>> | --model <dir>) <verb>
+const USAGE: &str = "usage: tesserax (--recipe <dir | git+<url>#<commit>> | --model <dir>) <verb>
   serve [flags]  load the model and answer OpenAI-shaped requests
   fetch          download the recipe and its weights, then print where they are
   task <task>    run one task on the model";
@@ -40,13 +40,13 @@ fn main() -> ExitCode {
         }
         Err(Stop::Tasks(unknown)) => {
             if let Some(name) = unknown {
-                eprintln!("sensai: unknown task {name}");
+                eprintln!("tesserax: unknown task {name}");
             }
             eprintln!("{}", task::LIST);
             ExitCode::from(2)
         }
         Err(Stop::Failed(e)) => {
-            eprintln!("sensai: {e}");
+            eprintln!("tesserax: {e}");
             ExitCode::FAILURE
         }
     }

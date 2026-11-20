@@ -1,5 +1,5 @@
 [package]
-name = "sensai-grammar"
+name = "tessera-grammar"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -9,11 +9,11 @@ description = "Grammars that limit which tokens a decode step may pick"
 [features]
 default = []
 # The llguidance engine. Off by default.
-llguidance = ["dep:sensai-bundle", "dep:sensai-engine", "dep:llguidance", "dep:serde_json", "dep:toktrie"]
+llguidance = ["dep:tessera-bundle", "dep:tessera-engine", "dep:llguidance", "dep:serde_json", "dep:toktrie"]
 
 [dependencies]
-sensai-bundle = { workspace = true, optional = true }
-sensai-engine = { workspace = true, optional = true }
+tessera-bundle = { workspace = true, optional = true }
+tessera-engine = { workspace = true, optional = true }
 llguidance = { version = "1.9", default-features = false, features = ["lark"], optional = true }
 serde_json = { version = "1", optional = true }
 toktrie = { version = "1.9", optional = true }

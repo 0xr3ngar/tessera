@@ -2,12 +2,12 @@
 
 use crate::tensor::Tensor;
 use crate::weights::{Embed, Linears};
-use sensai_graph::{
+use std::cell::RefCell;
+use std::rc::Rc;
+use tessera_graph::{
     Attend, Composite, Dim, DimName, Entry, EntryKind, Graph, Mask, Node, NodeId, Numerics, Op,
     Output, PathSeg, Port, Region, Role, Select, Size, TensorType, Weight, infer, verify,
 };
-use std::cell::RefCell;
-use std::rc::Rc;
 
 /// Shared by every tensor the description creates.
 pub(crate) type Shared = Rc<RefCell<Graph>>;

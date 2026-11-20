@@ -3,8 +3,8 @@
 use crate::cost::Device;
 use crate::plan::Plan;
 use crate::{Error, lower_upto};
-use sensai_graph::{DimName, Graph};
 use std::collections::HashMap;
+use tessera_graph::{DimName, Graph};
 
 /// A plan holds while its graph and device stay unchanged.
 type Key = (u64, usize, Vec<(DimName, u64)>, Vec<DimName>, u64);

@@ -25,14 +25,14 @@ pub mod vae;
 pub use template::{Clock, Message, Template};
 
 use names::Rule;
-use sensai_checkpoint::{File, Offer, Stored};
-use sensai_engine::decoder::{self, Config, Moe, Scales, Swiglu};
-use sensai_engine::form::{BF16_FORM, F32_FORM, Load, named};
-use sensai_engine::keys::{Keys, Offered};
-use sensai_engine::{Graph, Norm, Pins, Stack, Tensor, Weight};
 use serde::Deserialize;
 use std::error::Error;
 use std::path::Path;
+use tessera_checkpoint::{File, Offer, Stored};
+use tessera_engine::decoder::{self, Config, Moe, Scales, Swiglu};
+use tessera_engine::form::{BF16_FORM, F32_FORM, Load, named};
+use tessera_engine::keys::{Keys, Offered};
+use tessera_engine::{Graph, Norm, Pins, Stack, Tensor, Weight};
 use tokenize::hf::Hf;
 
 /// Fields the graph needs from a Hugging Face `config.json`.
@@ -211,7 +211,8 @@ pub fn each(
     let claims = names::resolve(graph, &slices, rules)?;
     for (at, (c, w)) in claims.iter().zip(&graph.weights).enumerate() {
         let slice = slices.iter().find(|s| s.name == c.name).expect("resolved");
-        let axis = |e: &sensai_engine::DimExpr| e.value(&graph.dims, &|_| None).map(|n| n as usize);
+        let axis =
+            |e: &tessera_engine::DimExpr| e.value(&graph.dims, &|_| None).map(|n| n as usize);
         let shape: Option<Vec<usize>> = w.ty.shape.0.iter().map(axis).collect();
         let f = form(slice.stored, !c.parts.is_empty())?;
         let weight = match (slice.stored, c.rows) {
@@ -264,9 +265,9 @@ fn stacked(
 /// A bf16 slice's bytes, or its `rows`, kept packed.
 fn halves(
     offer: &dyn Offer,
-    slice: &sensai_checkpoint::Slice,
+    slice: &tessera_checkpoint::Slice,
     rows: Option<(usize, usize)>,
-) -> Result<Weight, sensai_checkpoint::Error> {
+) -> Result<Weight, tessera_checkpoint::Error> {
     let mut v = offer.bf16(&slice.name)?;
     if let Some((first, count)) = rows {
         let stride = 2 * slice.elements() / slice.shape[0];
@@ -278,10 +279,10 @@ fn halves(
 /// A slice's floats, or its `rows`, in the graph's shape.
 fn floats(
     offer: &dyn Offer,
-    slice: &sensai_checkpoint::Slice,
+    slice: &tessera_checkpoint::Slice,
     rows: Option<(usize, usize)>,
     shape: Option<Vec<usize>>,
-) -> Result<Weight, sensai_checkpoint::Error> {
+) -> Result<Weight, tessera_checkpoint::Error> {
     let mut v = offer.floats(&slice.name)?;
     if let Some((first, count)) = rows {
         let stride = slice.elements() / slice.shape[0];

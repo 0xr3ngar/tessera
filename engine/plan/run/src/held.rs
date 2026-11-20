@@ -1,9 +1,9 @@
 //! Buffers a runner keeps across plans.
 
 use crate::Error;
-use sensai_lower::{Plan, Slot};
-use sensai_mem::{Buffer, View, ViewMut};
 use std::collections::HashMap;
+use tessera_lower::{Plan, Slot};
+use tessera_mem::{Buffer, View, ViewMut};
 
 /// The owner of a buffer that outlives a plan.
 #[derive(Clone, Copy)]

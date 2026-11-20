@@ -1,7 +1,7 @@
 //! Calls an HTTP front end makes on a loaded model.
 
 use crate::Error;
-use sensai_bundle::Message;
+use tessera_bundle::Message;
 
 /// The served model's name and context size.
 #[derive(Clone, Debug)]

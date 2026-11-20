@@ -1,8 +1,8 @@
 //! The mean or weighted sum over one axis.
 
-use sensai_codegen::prelude::*;
-use sensai_graph::Op;
-use sensai_lower::{Draft, Extent, Kernel, T, Term, Tree};
+use tessera_codegen::prelude::*;
+use tessera_graph::Op;
+use tessera_lower::{Draft, Extent, Kernel, T, Term, Tree};
 
 /// Sums `count` strided values, in order. `w` weights each.
 #[kernel]
@@ -81,4 +81,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(mean, reads, outer.most() * inner)])
 }
 
-sensai_lower::rule!("mean", propose);
+tessera_lower::rule!("mean", propose);

@@ -1,5 +1,5 @@
 [package]
-name = "sensai-parity"
+name = "tessera-parity"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -8,24 +8,24 @@ description = "Every model against its reference, the interpreter and the device
 
 [features]
 default = []
-cuda = ["sensai-run/cuda"]
-rocm = ["sensai-run/rocm"]
+cuda = ["tessera-run/cuda"]
+rocm = ["tessera-run/rocm"]
 
 [dependencies]
 serde_json = "1"
-sensai-bundle = { workspace = true }
-sensai-checkpoint = { workspace = true }
-sensai-graph = { workspace = true }
-sensai-interp = { workspace = true }
-sensai-rules = { workspace = true }
-sensai-lower = { workspace = true }
-sensai-run = { workspace = true }
-sensai-testkit = { workspace = true }
-sensai-trace = { workspace = true }
+tessera-bundle = { workspace = true }
+tessera-checkpoint = { workspace = true }
+tessera-graph = { workspace = true }
+tessera-interp = { workspace = true }
+tessera-rules = { workspace = true }
+tessera-lower = { workspace = true }
+tessera-run = { workspace = true }
+tessera-testkit = { workspace = true }
+tessera-trace = { workspace = true }
 
 [dev-dependencies]
-sensai-codegen = { workspace = true }
-sensai-engine = { workspace = true }
-sensai-engine-settings = { workspace = true }
-sensai-models = { workspace = true }
-sensai-recipe = { workspace = true }
+tessera-codegen = { workspace = true }
+tessera-engine = { workspace = true }
+tessera-engine-settings = { workspace = true }
+tessera-models = { workspace = true }
+tessera-recipe = { workspace = true }

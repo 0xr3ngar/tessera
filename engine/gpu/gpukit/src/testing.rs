@@ -25,6 +25,6 @@ pub fn require_gpu() {
     assert_eq!(
         got,
         Some(want),
-        "TESSERA_REQUIRE_GPU={want}, but this build picks {got:?}: build with --features sensai-run/{want}"
+        "TESSERA_REQUIRE_GPU={want}, but this build picks {got:?}: build with --features tessera-run/{want}"
     );
 }

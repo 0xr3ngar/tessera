@@ -1,8 +1,8 @@
 //! Ranks, proxies and links under a seeded random schedule.
 
 use crate::proxy::{Fetched, Fetcher, Host, Lane, Link, Op, Part, Pool, Proxy, Sent, Word};
-use sensai_engine_comm::Error as CommError;
 use std::collections::{HashMap, VecDeque};
+use tessera_engine_comm::Error as CommError;
 
 /// Words in one part, and in one all-to-all block.
 const PART: usize = 4;

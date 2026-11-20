@@ -1,8 +1,8 @@
 //! `tessera-serve --model <dir>`: OpenAI-shaped routes over one model.
 
-use sensai_serve::ranks::FLAGS as RANKS;
-use sensai_serve::start::{FLAGS, Options};
 use std::process::ExitCode;
+use tessera_serve::ranks::FLAGS as RANKS;
+use tessera_serve::start::{FLAGS, Options};
 
 fn args() -> Option<Options> {
     let mut options = Options::default();
@@ -25,7 +25,7 @@ fn main() -> ExitCode {
         eprintln!("usage: tessera-serve --model <dir> {FLAGS} {RANKS}");
         return ExitCode::from(2);
     };
-    match sensai_serve::start::run(options) {
+    match tessera_serve::start::run(options) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("tessera-serve: {e}");

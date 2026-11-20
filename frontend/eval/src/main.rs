@@ -2,14 +2,14 @@
 
 mod embed;
 
-use sensai_checkpoint::exlr8::Release;
-use sensai_checkpoint::{File, Gguf, Offer};
-use sensai_engine::{Engine, Pins, Recipe, Row};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
+use tessera_checkpoint::exlr8::Release;
+use tessera_checkpoint::{File, Gguf, Offer};
+use tessera_engine::{Engine, Pins, Recipe, Row};
 
 /// Anything that stops a run.
 type Failure = Box<dyn std::error::Error + Send + Sync>;
@@ -128,7 +128,7 @@ fn run(
     prompt: &[u32],
     m: usize,
     new: usize,
-) -> Result<Run, sensai_engine::Error> {
+) -> Result<Run, tessera_engine::Error> {
     let row = |slot: usize, token: u32, position: usize| Row {
         slot: slot as u32,
         token,
@@ -183,18 +183,19 @@ fn reference(dir: &Path) -> Result<(Vec<u32>, Vec<u32>), Failure> {
 
 fn evaluate(args: &Args) -> Result<Report, Failure> {
     let slots = args.m.iter().copied().max().unwrap_or(1) as u64;
-    let settings = sensai_frontend_settings::read();
+    let settings = tessera_frontend_settings::read();
     let rules = match &settings.names {
-        Some(path) => sensai_bundle::names::rules(&std::fs::read_to_string(path)?)?,
+        Some(path) => tessera_bundle::names::rules(&std::fs::read_to_string(path)?)?,
         None => Vec::new(),
     };
-    let loaded = sensai_bundle::load_named(&args.model, slots, args.context as u64, &rules, false)?;
+    let loaded =
+        tessera_bundle::load_named(&args.model, slots, args.context as u64, &rules, false)?;
     let recipe = match &args.recipe {
         Some(path) => Recipe::load(path)?,
         None => Recipe {
             pins: loaded
                 .pins
-                .unwrap_or_else(|| Pins::all(sensai_engine::form::BF16_FORM)),
+                .unwrap_or_else(|| Pins::all(tessera_engine::form::BF16_FORM)),
             ..Recipe::default()
         },
     };

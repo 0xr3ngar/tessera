@@ -18,8 +18,8 @@ mod workspace;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use sensai_findings::Level;
 use syn::Item;
+use tessera_findings::Level;
 
 use crate::files::{Source, owner};
 use crate::rust::{is_test, is_test_file};

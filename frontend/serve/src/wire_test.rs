@@ -1,8 +1,8 @@
 use crate::mocks::{MockGenerator, json, loaded};
 use crate::wire::ResponseFormat;
-use sensai_tasks::api::Format;
 use serde_json::json;
 use std::sync::Arc;
+use tessera_tasks::api::Format;
 
 #[test]
 fn formats_parse() {

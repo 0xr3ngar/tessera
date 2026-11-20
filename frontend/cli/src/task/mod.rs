@@ -9,13 +9,13 @@ mod image_test;
 mod tag;
 
 use crate::source::{Origin, Source, Stop};
-use sensai_bundle::Message;
-use sensai_serve::start::{self, Options};
-use sensai_serve::{Model, Slot};
-use sensai_tasks::api::{Params, Step};
 use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::time::Duration;
+use tessera_bundle::Message;
+use tessera_serve::start::{self, Options};
+use tessera_serve::{Model, Slot};
+use tessera_tasks::api::{Params, Step};
 
 pub const LIST: &str = "tasks:
   ask [--max-tokens <n>] [prompt...]  answer one prompt, from stdin if none

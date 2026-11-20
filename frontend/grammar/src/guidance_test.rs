@@ -1,7 +1,7 @@
 use crate::Vocab;
-use sensai_bundle::tokenize::hf::Hf;
-use sensai_engine::{Allowed, Guide};
 use serde_json::json;
+use tessera_bundle::tokenize::hf::Hf;
+use tessera_engine::{Allowed, Guide};
 
 const EOS: u32 = 256;
 const ROWS: usize = 300;

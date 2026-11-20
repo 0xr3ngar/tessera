@@ -2,10 +2,10 @@
 
 use crate::abi::{File, Offer, Shape};
 use crate::leak;
-use sensai_device::{Backend, Options, Problem, flatten};
-use sensai_lower::kept::Layout;
-use sensai_lower::{Arg, Kernel, Launch, Needs, Source, Step};
 use std::fmt;
+use tessera_device::{Backend, Options, Problem, flatten};
+use tessera_lower::kept::Layout;
+use tessera_lower::{Arg, Kernel, Launch, Needs, Source, Step};
 
 /// A module kernel's text, never freed.
 #[derive(Debug)]
@@ -20,14 +20,14 @@ pub struct Fixed {
 }
 
 /// Metal, CUDA and HIP text of `file`, or empty.
-fn flat(file: &str, files: &[File]) -> Result<[String; 3], sensai_device::Error> {
+fn flat(file: &str, files: &[File]) -> Result<[String; 3], tessera_device::Error> {
     let load = |path: &str| {
         files
             .iter()
             .find(|f| f.path == path)
             .map(|f| f.text.clone())
     };
-    let text = load(file).ok_or_else(|| sensai_device::Error {
+    let text = load(file).ok_or_else(|| tessera_device::Error {
         file: file.into(),
         line: 0,
         problem: Problem::Missing(file.into()),
@@ -58,7 +58,7 @@ fn flat(file: &str, files: &[File]) -> Result<[String; 3], sensai_device::Error>
 
 impl Fixed {
     /// Kernel `k`, with any recipe file flattened per backend.
-    pub fn open(k: crate::abi::Text, files: &[File]) -> Result<Self, sensai_device::Error> {
+    pub fn open(k: crate::abi::Text, files: &[File]) -> Result<Self, tessera_device::Error> {
         let [metal, cuda, hip] = if k.file.is_empty() {
             let cuda = leak(k.cuda);
             [leak(k.metal), cuda, cuda]
@@ -83,7 +83,7 @@ impl Fixed {
 pub struct Text {
     pub fixed: &'static Fixed,
     pub args: Vec<Arg>,
-    pub shape: sensai_lower::Shape,
+    pub shape: tessera_lower::Shape,
     pub work: f64,
     pub guess: f64,
     /// For kept-row launches: the layout and its scalars.
@@ -93,12 +93,12 @@ pub struct Text {
 impl Text {
     pub fn new(fixed: &'static Fixed, offer: &Offer, args: Vec<Arg>) -> Self {
         let shape = match offer.shape {
-            Shape::Line(n) => sensai_lower::Shape::Line(n),
+            Shape::Line(n) => tessera_lower::Shape::Line(n),
             Shape::Grid {
                 across,
                 down,
                 threads,
-            } => sensai_lower::Shape::Grid {
+            } => tessera_lower::Shape::Grid {
                 across,
                 down,
                 threads,
@@ -177,7 +177,7 @@ impl Kernel for Text {
     }
 
     /// The module saw each read's form before it offered.
-    fn accepts(&self, _: usize, _: &dyn sensai_lower::form::Load) -> bool {
+    fn accepts(&self, _: usize, _: &dyn tessera_lower::form::Load) -> bool {
         true
     }
 

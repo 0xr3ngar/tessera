@@ -2,11 +2,11 @@
 
 use crate::Error;
 use crate::api::Image;
-use sensai_bundle::Overrides;
-use sensai_bundle::vae::decoder;
-use sensai_engine::vae::{TAPS, TOKEN};
-use sensai_engine::{Model, Recipe, Settings, Tensor};
 use std::path::Path;
+use tessera_bundle::Overrides;
+use tessera_bundle::vae::decoder;
+use tessera_engine::vae::{TAPS, TOKEN};
+use tessera_engine::{Model, Recipe, Settings, Tensor};
 
 pub struct Pictures {
     model: Model,

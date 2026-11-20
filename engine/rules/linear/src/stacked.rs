@@ -1,9 +1,9 @@
 //! Products with blocks of a stored matrix, read in place.
 
-use sensai_codegen::prelude::*;
-use sensai_graph::{Op, View};
-use sensai_lower::form::Load as Stored;
-use sensai_lower::{Draft, Kernel, T, Term, Tree};
+use tessera_codegen::prelude::*;
+use tessera_graph::{Op, View};
+use tessera_lower::form::Load as Stored;
+use tessera_lower::{Draft, Kernel, T, Term, Tree};
 
 /// One thread per output. Batch `b` reads block `b`.
 #[kernel]
@@ -131,4 +131,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(kernel, [x, b.leaf], kernel.len)])
 }
 
-sensai_lower::rule!("stacked", propose);
+tessera_lower::rule!("stacked", propose);

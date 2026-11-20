@@ -2,9 +2,9 @@
 
 use super::{load, text};
 use crate::source::{Source, Stop};
-use sensai_serve::{fresh, square};
-use sensai_tasks::png;
 use std::path::PathBuf;
+use tessera_serve::{fresh, square};
+use tessera_tasks::png;
 
 #[derive(Debug, Default, PartialEq)]
 pub(super) struct Args {

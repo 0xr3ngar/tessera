@@ -62,7 +62,7 @@ pub fn run() -> Result<()> {
         emit::emit(&meta, o, &owners, &rel, &base)?;
     }
     let cli = outs.iter().find(|o| o.name == plan::CLI).ok_or("no cli")?;
-    let launcher = meta.workspace_root.join("tools/publish/npm/sensaix.js");
+    let launcher = meta.workspace_root.join("tools/publish/npm/tesserax.js");
     dist::npm(cli, &rel, &launcher, &base.join("npm"))?;
     let mut workspace = Table::new();
     workspace.insert("resolver".into(), "3".into());

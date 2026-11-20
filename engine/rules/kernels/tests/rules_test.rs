@@ -1,19 +1,19 @@
 //! Each rule's plans, and its launches against the CPU interpreter.
 
-use sensai_attention as _;
-use sensai_kernels as _;
-use sensai_linear as _;
+use tessera_attention as _;
+use tessera_kernels as _;
+use tessera_linear as _;
 
-use sensai_graph::DimName::{Context, HeadDim, Heads, Rows, Seqs};
-use sensai_graph::{DType, Dim, DimName, Graph, NodeId, verify};
-use sensai_interp::{Tensor, run};
-use sensai_lower::form::{BF16_FORM, F32_FORM};
-use sensai_lower::{Device, Limits, Pins, Plan, Platform, Settings, View, cut, lower, rules};
-use sensai_run::open;
-use sensai_run::testing::{host, runs};
-use sensai_testkit::graphs::{self, floats, ids};
-use sensai_testkit::{Noise, fill, max_abs_diff};
-use sensai_trace::{Act, EntryKind, Model, Pairs, Role};
+use tessera_graph::DimName::{Context, HeadDim, Heads, Rows, Seqs};
+use tessera_graph::{DType, Dim, DimName, Graph, NodeId, verify};
+use tessera_interp::{Tensor, run};
+use tessera_lower::form::{BF16_FORM, F32_FORM};
+use tessera_lower::{Device, Limits, Pins, Plan, Platform, Settings, View, cut, lower, rules};
+use tessera_run::open;
+use tessera_run::testing::{host, runs};
+use tessera_testkit::graphs::{self, floats, ids};
+use tessera_testkit::{Noise, fill, max_abs_diff};
+use tessera_trace::{Act, EntryKind, Model, Pairs, Role};
 
 const SIZES: [(DimName, u64); 3] = [(Seqs, 2), (Rows, 3), (Context, 5)];
 
@@ -41,9 +41,9 @@ fn gap(g: &Graph, inputs: &[Tensor], device: &Device, settings: &Settings) -> f3
 }
 
 /// The rules this crate registers.
-fn ours() -> Vec<&'static sensai_lower::Rule> {
+fn ours() -> Vec<&'static tessera_lower::Rule> {
     let ours = rules().into_iter();
-    ours.filter(|r| r.module.starts_with("sensai_kernels::"))
+    ours.filter(|r| r.module.starts_with("tessera_kernels::"))
         .collect()
 }
 
@@ -112,12 +112,12 @@ fn rotations() -> Graph {
     ]);
     let port = || floats([Seqs, Rows, Heads, HeadDim]);
     let [x, y, at] = m.entry(EntryKind::Forward, [port(), port(), ids([Seqs, Rows])]);
-    let turn = |t: &sensai_trace::Tensor| t.rope(&at, 1e4, Pairs::Halves);
+    let turn = |t: &tessera_trace::Tensor| t.rope(&at, 1e4, Pairs::Halves);
     m.finish([(Role::Logits, &turn(&x).add(&turn(&y)).act(Act::Silu))])
 }
 
 fn count(plan: &Plan, kernel: &str) -> usize {
-    let named = |s: &&sensai_lower::Step| s.kernel.name() == kernel;
+    let named = |s: &&tessera_lower::Step| s.kernel.name() == kernel;
     plan.steps.iter().filter(named).count()
 }
 
@@ -146,13 +146,13 @@ fn favoring_stays_local() {
 #[test]
 fn trips_are_counted() {
     // Walking a row opens a line every sixteen floats.
-    let norm = sensai_kernels::RmsNorm {
+    let norm = tessera_kernels::RmsNorm {
         rows: 4,
         width: 64,
         eps: 1e-5,
         weighted: true,
     };
-    let trip = sensai_lower::Kernel::load(&norm, 64).unwrap().trip;
+    let trip = tessera_lower::Kernel::load(&norm, 64).unwrap().trip;
     assert_eq!((trip.loads, trip.stores), (3.0, 1.0));
     assert!((trip.fresh - 1.0 / 16.0).abs() < 1e-9, "{trip:?}");
     assert_eq!(trip.special, 0.0, "the root lies outside the loops");

@@ -8,13 +8,13 @@ use crate::rule::Draft;
 use crate::sites;
 use crate::sites::After;
 use crate::tree::{T, Tree};
-use sensai_codegen::hash;
-use sensai_codegen::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt};
-use sensai_codegen::prelude::*;
-use sensai_codegen::stage::Row;
-use sensai_graph::Act;
-use sensai_work::Load;
 use std::cmp::Ordering;
+use tessera_codegen::hash;
+use tessera_codegen::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt};
+use tessera_codegen::prelude::*;
+use tessera_codegen::stage::Row;
+use tessera_graph::Act;
+use tessera_work::Load;
 
 /// Adds `count` f32 operands `a0..` to `body`, at `at`.
 pub fn add_operands(body: &mut Body, at: usize, count: usize) {
@@ -205,18 +205,18 @@ fn map_launches(_: &Map, step: &Step) -> Vec<Launch> {
 
 impl Map {
     /// The skeleton with the stages and the store appended.
-    fn tree(&self) -> sensai_codegen::ir::Body {
+    fn tree(&self) -> tessera_codegen::ir::Body {
         let mut body = map_ir();
         // The operands sit between the input and the output.
         add_operands(&mut body, 1, operands(&self.0));
         let gid = || Expr::Call(Intrinsic::Gid, Vec::new());
-        let at = || Expr::cast(sensai_codegen::ir::Ty::U64, gid());
+        let at = || Expr::cast(tessera_codegen::ir::Ty::U64, gid());
         // A repeating operand is read within its span.
         let read = |k: usize| {
             let at = match self.1[k] {
-                Some(1) => Expr::cast(sensai_codegen::ir::Ty::U64, Expr::Int(0)),
+                Some(1) => Expr::cast(tessera_codegen::ir::Ty::U64, Expr::Int(0)),
                 Some(span) => Expr::cast(
-                    sensai_codegen::ir::Ty::U64,
+                    tessera_codegen::ir::Ty::U64,
                     Expr::bin(BinOp::Rem, gid(), Expr::Int(span as i64)),
                 ),
                 None => at(),

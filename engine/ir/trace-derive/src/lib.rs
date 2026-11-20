@@ -35,17 +35,17 @@ fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         let key = name.to_string();
         let passed = passed(&dims);
         let binds = passed.iter().map(|(ident, i)| {
-            quote! { let #ident: ::sensai_trace::DimExpr = given[#i].clone(); }
+            quote! { let #ident: ::tessera_trace::DimExpr = given[#i].clone(); }
         });
         inits.push(quote! {
             #name: {
-                path.push(::sensai_trace::PathSeg::Field(#key.into()));
+                path.push(::tessera_trace::PathSeg::Field(#key.into()));
                 let shape = {
-                    use ::sensai_trace::DimName::*;
+                    use ::tessera_trace::DimName::*;
                     #(#binds)*
-                    [#(::sensai_trace::DimExpr::from(#dims)),*]
+                    [#(::tessera_trace::DimExpr::from(#dims)),*]
                 };
-                let value = <#ty as ::sensai_trace::Weights>::declare(m, path, &shape);
+                let value = <#ty as ::tessera_trace::Weights>::declare(m, path, &shape);
                 path.pop();
                 value
             }
@@ -54,13 +54,13 @@ fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     Ok(quote! {
-        impl #impl_generics ::sensai_trace::Weights for #ident #ty_generics #where_clause {
+        impl #impl_generics ::tessera_trace::Weights for #ident #ty_generics #where_clause {
             #[allow(unused_imports)]
             #[allow(unused_variables, non_snake_case)]
             fn declare(
-                m: &::sensai_trace::Model,
-                path: &mut Vec<::sensai_trace::PathSeg>,
-                given: &[::sensai_trace::DimExpr],
+                m: &::tessera_trace::Model,
+                path: &mut Vec<::tessera_trace::PathSeg>,
+                given: &[::tessera_trace::DimExpr],
             ) -> Self {
                 Self { #(#inits),* }
             }

@@ -3,9 +3,9 @@
 use crate::lower::{Kind, Lowerer, Res};
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{InstBuilder, MemFlagsData, Type, Value, types};
-use sensai_codegen::form::{LOADS, Load, Read};
-use sensai_codegen::ir::{BinOp, Expr, Intrinsic, Ty};
-use sensai_codegen::stage::{TANH_CLAMP, TANH_P, TANH_Q};
+use tessera_codegen::form::{LOADS, Load, Read};
+use tessera_codegen::ir::{BinOp, Expr, Intrinsic, Ty};
+use tessera_codegen::stage::{TANH_CLAMP, TANH_P, TANH_Q};
 
 /// One lane's value: a scalar, or four floats.
 #[derive(Clone, Copy)]

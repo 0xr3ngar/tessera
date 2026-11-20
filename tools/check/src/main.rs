@@ -10,10 +10,10 @@ mod tests;
 mod tests_test;
 
 use run::{Changes, Dirs};
-use sensai_findings::Report;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
+use tessera_findings::Report;
 
 const USAGE: &str =
     "usage: tessera-check run [--staged | <base> <head>] [--markdown <file> [<link_base>]]
@@ -38,7 +38,7 @@ fn root() -> Result<PathBuf, String> {
 fn dirs() -> Result<Dirs, String> {
     Ok(Dirs::new(
         &root()?,
-        sensai_frontend_settings::read().check.as_deref(),
+        tessera_frontend_settings::read().check.as_deref(),
     ))
 }
 
@@ -99,5 +99,5 @@ fn run(args: &[&str]) -> Result<bool, String> {
 }
 
 fn main() -> ExitCode {
-    sensai_findings::main_of("tessera-check", run)
+    tessera_findings::main_of("tessera-check", run)
 }

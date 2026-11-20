@@ -1,4 +1,4 @@
-use sensai_kv::{Pool, Prefixes, Tag};
+use tessera_kv::{Pool, Prefixes, Tag};
 
 #[test]
 fn longest_newest_wins() {

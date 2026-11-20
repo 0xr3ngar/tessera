@@ -1,10 +1,10 @@
 //! Where the model comes from, and the options it gives.
 
-use sensai_engine::wasm::Module;
-use sensai_recipe::Recipe;
-use sensai_serve::start::Options;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tessera_engine::wasm::Module;
+use tessera_recipe::Recipe;
+use tessera_serve::start::Options;
 
 /// Why a run stops early.
 pub enum Stop {
@@ -14,8 +14,8 @@ pub enum Stop {
     Failed(String),
 }
 
-impl From<sensai_recipe::Error> for Stop {
-    fn from(e: sensai_recipe::Error) -> Self {
+impl From<tessera_recipe::Error> for Stop {
+    fn from(e: tessera_recipe::Error) -> Self {
         Stop::Failed(e.to_string())
     }
 }
@@ -87,15 +87,15 @@ impl Source {
     /// Opens the recipe, if the origin is one.
     pub fn open(origin: Option<Origin>) -> Result<Source, Stop> {
         let origin = origin.ok_or(Stop::Usage)?;
-        let settings = sensai_frontend_settings::read();
+        let settings = tessera_frontend_settings::read();
         let (cache, token) = (settings.recipes, settings.hf_token);
         let mut fetched = None;
         let recipe = match &origin {
             Origin::Recipe(src) => Some(Recipe::open(src, cache.as_deref())?),
             Origin::Model(_) => None,
             Origin::Hub(spec) => {
-                let dir = cache.as_deref().ok_or(sensai_recipe::Error::NoCache)?;
-                fetched = Some(sensai_recipe::fetch_hf(spec, dir, token.as_deref())?);
+                let dir = cache.as_deref().ok_or(tessera_recipe::Error::NoCache)?;
+                fetched = Some(tessera_recipe::fetch_hf(spec, dir, token.as_deref())?);
                 None
             }
         };
@@ -117,7 +117,7 @@ impl Source {
             options.name = Some(r.name.clone());
             options.lower = r.lower.clone();
             options.names = r.names();
-            options.config = sensai_bundle::Overrides::new(r.overrides());
+            options.config = tessera_bundle::Overrides::new(r.overrides());
             if let Some(bytes) = r.module_bytes(cache)? {
                 let module = Module::open(&bytes).map_err(|e| Stop::Failed(e.to_string()))?;
                 let rules = module.rules.iter().copied();

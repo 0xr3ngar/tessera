@@ -1,7 +1,7 @@
 //! A model's graph, its lowering per rank, tokens moving.
 
 // Linking these registers their lowering rules.
-use sensai_rules as _;
+use tessera_rules as _;
 
 mod dot;
 mod html;
@@ -113,17 +113,17 @@ fn run(args: &Args) -> Result<(), Box<dyn Error>> {
             (args.model.clone(), g)
         }
     };
-    let parts = sensai_graph::Parts(args.specs.iter().map(|s| s.part).collect());
+    let parts = tessera_graph::Parts(args.specs.iter().map(|s| s.part).collect());
     let model = Model::new(name, source, &parts)?;
     for w in &model.whole {
         let path = &model.source.weights[w.weight as usize].path;
         eprintln!("{path:?} stays whole: {}", w.why);
     }
     let pins = match &args.form {
-        Some(form) => sensai_lower::Pins::all(
-            sensai_lower::form::named(form).ok_or_else(|| format!("no form `{form}`"))?,
+        Some(form) => tessera_lower::Pins::all(
+            tessera_lower::form::named(form).ok_or_else(|| format!("no form `{form}`"))?,
         ),
-        None => sensai_lower::Pins::default(),
+        None => tessera_lower::Pins::default(),
     };
     let setup = Setup {
         model: &model,

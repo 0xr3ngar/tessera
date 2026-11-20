@@ -18,7 +18,7 @@ const FILES: [&str; 5] = [
 
 /// An agent on the environment's proxy, if `HOST` has one.
 fn agent() -> Result<ureq::Agent, String> {
-    match sensai_frontend_settings::proxy(HOST) {
+    match tessera_frontend_settings::proxy(HOST) {
         None => Ok(ureq::Agent::new()),
         Some(url) => ureq::Proxy::new(&url)
             .map(|p| ureq::AgentBuilder::new().proxy(p).build())

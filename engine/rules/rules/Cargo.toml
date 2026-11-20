@@ -1,5 +1,5 @@
 [package]
-name = "sensai-rules"
+name = "tessera-rules"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,7 @@ publish.workspace = true
 description = "Links every lowering rule crate"
 
 [dependencies]
-sensai-attention = { workspace = true }
-sensai-cpu = { workspace = true }
-sensai-kernels = { workspace = true }
-sensai-linear = { workspace = true }
+tessera-attention = { workspace = true }
+tessera-cpu = { workspace = true }
+tessera-kernels = { workspace = true }
+tessera-linear = { workspace = true }

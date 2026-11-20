@@ -2,7 +2,7 @@ use super::Pattern;
 use crate::form::{F32_FORM, Load};
 use crate::select::Home;
 use crate::tree::{T, Term, Tree};
-use sensai_graph::{Op, Select};
+use tessera_graph::{Op, Select};
 
 /// Rows of `table` picked by `ids`, along its first axis.
 #[derive(Clone, Copy, Debug)]

@@ -1,11 +1,11 @@
 use super::Pattern;
 use crate::tree::{T, Term, Tree, map_stage};
-use sensai_graph::Stage as Row;
+use tessera_graph::Stage as Row;
 
 /// One row stage that is not elementwise.
 #[derive(Clone, Debug)]
 pub struct Stage {
-    pub stage: sensai_graph::Stage,
+    pub stage: tessera_graph::Stage,
     pub x: T,
     /// The stage's argument, and its element count.
     pub operand: Option<(T, usize)>,

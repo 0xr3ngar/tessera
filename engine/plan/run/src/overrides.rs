@@ -3,13 +3,13 @@
 use crate::Error;
 use crate::kernels::{dialect, fixed_text};
 use crate::run::{Outcome, Reload};
-use sensai_codegen::Dialect;
-use sensai_gpukit::backend::Backend;
-use sensai_lower::Source;
 use std::collections::HashMap;
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use tessera_codegen::Dialect;
+use tessera_gpukit::backend::Backend;
+use tessera_lower::Source;
 
 /// A file's change time, length and inode.
 #[derive(Clone, Copy, PartialEq, Eq)]

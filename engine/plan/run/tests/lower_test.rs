@@ -1,28 +1,28 @@
 //! Plans for small graphs, with lower's own kernels.
 
-use sensai_graph::DimName::{self, Context, Hidden, Rows, Seqs};
-use sensai_graph::{Act, DType, Dim, Graph, TensorType};
-use sensai_interp::{Tensor, run};
-use sensai_lower::form::{BF16_FORM, F32_FORM};
-use sensai_lower::kernels::{Map, MapStage, Widen};
-use sensai_lower::sites;
-use sensai_lower::{
+use tessera_graph::DimName::{self, Context, Hidden, Rows, Seqs};
+use tessera_graph::{Act, DType, Dim, Graph, TensorType};
+use tessera_interp::{Tensor, run};
+use tessera_lower::form::{BF16_FORM, F32_FORM};
+use tessera_lower::kernels::{Map, MapStage, Widen};
+use tessera_lower::sites;
+use tessera_lower::{
     Arg, Buffer, Device, Dialect, Draft, Error, Fit, Kernel, KernelRef, Pins, Plan, Slot, Source,
     Step, T, Tree,
 };
-use sensai_lower::{assign, lower, peak, rules, schedule, select};
-use sensai_run::testing::{host, runs};
-use sensai_run::{Held, open};
-use sensai_sim::Chip;
-use sensai_testkit::{Noise, fill, max_abs_diff, scratch};
-use sensai_trace::{EntryKind, Model, Port, Role, Vector, Weights, declare};
+use tessera_lower::{assign, lower, peak, rules, schedule, select};
+use tessera_run::testing::{host, runs};
+use tessera_run::{Held, open};
+use tessera_sim::Chip;
+use tessera_testkit::{Noise, fill, max_abs_diff, scratch};
+use tessera_trace::{EntryKind, Model, Port, Role, Vector, Weights, declare};
 
 // Lowering needs one rule from outside lower.
 fn nothing(_: &Tree, _: T) -> Option<Vec<Draft>> {
     None
 }
 
-sensai_lower::rule!("nothing", nothing);
+tessera_lower::rule!("nothing", nothing);
 
 const SIZES: [(DimName, u64); 2] = [(Seqs, 2), (Rows, 3)];
 
@@ -86,7 +86,7 @@ fn appended() -> Graph {
 }
 
 fn count(plan: &Plan, kernel: &str) -> usize {
-    let named = |s: &&sensai_lower::Step| s.kernel.name() == kernel;
+    let named = |s: &&tessera_lower::Step| s.kernel.name() == kernel;
     plan.steps.iter().filter(named).count()
 }
 
@@ -135,7 +135,7 @@ fn maps_match_cpu() {
 fn buffers_are_shared() {
     let g = ladder();
     let plan = lower(&g, 0, &SIZES, &Device::guess(&host())).unwrap();
-    assert_eq!(plan.order(), sensai_graph::Order::Fixed);
+    assert_eq!(plan.order(), tessera_graph::Order::Fixed);
     for s in &plan.steps {
         let in_place = s.reads.iter().any(|r| r.buffer == s.write.buffer);
         assert_eq!(in_place, s.kernel.overwrites());
@@ -354,7 +354,7 @@ fn models_fill_gaps() {
 #[test]
 fn trees_cut_shared() {
     let g = ladder();
-    let tree = Tree::new(&g, 0, &SIZES, &Pins::default(), sensai_lower::kept::DENSE).unwrap();
+    let tree = Tree::new(&g, 0, &SIZES, &Pins::default(), tessera_lower::kept::DENSE).unwrap();
     let chains = |want: &[MapStage]| -> Vec<(T, Vec<T>)> {
         let all = (0..tree.len() as u32).map(T);
         let chain = |t: T| match tree.site(t)? {
@@ -383,8 +383,8 @@ fn trees_cut_shared() {
 
 #[test]
 fn pins_match_paths() {
-    use sensai_graph::PathSeg::{Field, Index};
-    let path = |s: &str| -> Vec<sensai_graph::PathSeg> {
+    use tessera_graph::PathSeg::{Field, Index};
+    let path = |s: &str| -> Vec<tessera_graph::PathSeg> {
         let seg = |p: &str| p.parse().map_or(Field(p.into()), Index);
         s.split('.').map(seg).collect()
     };
@@ -429,7 +429,7 @@ fn pinned_weights_narrow() {
 #[test]
 fn plans_are_cached() {
     let g = ladder();
-    let mut cache = sensai_lower::Cache::default();
+    let mut cache = tessera_lower::Cache::default();
     let device = Device::guess(&host());
     let first = cache.lower(&g, 0, &SIZES, &device).unwrap();
     let again = cache.lower(&g, 0, &SIZES, &device).unwrap();
@@ -470,7 +470,7 @@ fn trips_are_counted() {
 
 #[test]
 fn uncovered_is_named() {
-    use sensai_graph::DimName::Vocab;
+    use tessera_graph::DimName::Vocab;
     let m = Model::new(vec![
         Dim::bounded(Seqs, 4),
         Dim::bounded(Rows, 4),
@@ -489,12 +489,12 @@ fn uncovered_is_named() {
 #[test]
 fn unlinked_rules_fail() {
     let all = rules();
-    assert!(sensai_lower::linked(&all).is_ok());
+    assert!(tessera_lower::linked(&all).is_ok());
     let own: Vec<_> = all
         .into_iter()
-        .filter(|r| r.module.starts_with("sensai_lower::"))
+        .filter(|r| r.module.starts_with("tessera_lower::"))
         .collect();
-    let Err(Error::Unsupported(what)) = sensai_lower::linked(&own) else {
+    let Err(Error::Unsupported(what)) = tessera_lower::linked(&own) else {
         panic!("the linked rules were all this crate's");
     };
     assert!(what.to_string().contains("use rules as _;"), "{what}");

@@ -1,10 +1,10 @@
 //! An engine as one rank of several.
 
 use crate::{Engine, Error, Head, Row};
-use sensai_engine_comm::Transport;
-use sensai_graph::{Graph, Parts, shard};
-use sensai_lower::{Cluster, Device, Recipe, Settings, ZoneKind};
-use sensai_run::{Rank, Run};
+use tessera_engine_comm::Transport;
+use tessera_graph::{Graph, Parts, shard};
+use tessera_lower::{Cluster, Device, Recipe, Settings, ZoneKind};
+use tessera_run::{Rank, Run};
 
 /// A rank's zones and each rank's share of split weights.
 pub struct Place {
@@ -91,7 +91,7 @@ impl Engine {
         let Some(control) = &mut self.control else {
             return Ok(None);
         };
-        let mut parts = control.exchange(mine).map_err(sensai_run::Error::from)?;
+        let mut parts = control.exchange(mine).map_err(tessera_run::Error::from)?;
         Ok(Some(parts.swap_remove(0)))
     }
 

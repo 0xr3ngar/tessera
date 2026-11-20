@@ -1,12 +1,12 @@
 //! Rules that cover a whole traced region.
 
-use sensai_graph::DimName::{self, Context, Hidden, Rows, Seqs};
-use sensai_graph::{Act, Composite, DType, Dim, Graph, NodeId, TensorType};
-use sensai_lower::kernels::Map;
-use sensai_lower::{Device, Draft, Kernel, Plan, Propose, Read, Rule, T, Tree, lower, sites};
-use sensai_run::testing::host;
-use sensai_testkit::graphs;
-use sensai_trace::{EntryKind, Model, Port, Role};
+use tessera_graph::DimName::{self, Context, Hidden, Rows, Seqs};
+use tessera_graph::{Act, Composite, DType, Dim, Graph, NodeId, TensorType};
+use tessera_lower::kernels::Map;
+use tessera_lower::{Device, Draft, Kernel, Plan, Propose, Read, Rule, T, Tree, lower, sites};
+use tessera_run::testing::host;
+use tessera_testkit::graphs;
+use tessera_trace::{EntryKind, Model, Port, Role};
 
 /// A launch whose cost its rule sets.
 #[derive(Clone, Copy, Debug, Kernel)]

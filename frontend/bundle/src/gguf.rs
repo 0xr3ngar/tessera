@@ -3,13 +3,13 @@
 use crate::names::Rule;
 use crate::tokenize::hf::Hf;
 use crate::{Bundle, Template, head_dim, stepper};
-use sensai_checkpoint::Gguf;
-use sensai_engine::decoder::{Config, Scales};
-use sensai_engine::form::{F32_FORM, Load, named};
-use sensai_engine::{Graph, PathSeg, Pins, Stack};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 use std::path::Path;
+use tessera_checkpoint::Gguf;
+use tessera_engine::decoder::{Config, Scales};
+use tessera_engine::form::{F32_FORM, Load, named};
+use tessera_engine::{Graph, PathSeg, Pins, Stack};
 
 type Failure = Box<dyn std::error::Error + Send + Sync>;
 

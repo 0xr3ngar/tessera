@@ -1,7 +1,7 @@
 //! Joins rows of two inputs along the last axis.
 
 use crate::{Extent, Kernel};
-use sensai_codegen::prelude::*;
+use tessera_codegen::prelude::*;
 
 /// One thread per output element, from whichever side holds it.
 #[kernel]

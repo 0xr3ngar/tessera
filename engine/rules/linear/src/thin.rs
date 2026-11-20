@@ -1,11 +1,11 @@
 //! A matmul with one thread per output column.
 
 use crate::product::{Product, Variant};
-use sensai_codegen::ir::{Body, Expr, Intrinsic};
-use sensai_codegen::prelude::*;
-use sensai_graph::Order;
-use sensai_lower::form::Load as Stored;
-use sensai_lower::{Draft, Kernel, Launch, Load, Shape, Step, T, Tree};
+use tessera_codegen::ir::{Body, Expr, Intrinsic};
+use tessera_codegen::prelude::*;
+use tessera_graph::Order;
+use tessera_lower::form::Load as Stored;
+use tessera_lower::{Draft, Kernel, Launch, Load, Shape, Step, T, Tree};
 
 /// Its row limit: each thread keeps one sum per row.
 pub(crate) const THIN_ROWS: usize = 32;
@@ -101,4 +101,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(Thin { product }, reads, len)])
 }
 
-sensai_lower::rule!("thin", propose);
+tessera_lower::rule!("thin", propose);

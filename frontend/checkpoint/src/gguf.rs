@@ -2,12 +2,12 @@
 
 use crate::Error;
 use crate::offer::{Offer, Slice, Stored};
-use sensai_engine::block;
-use sensai_engine::storage::{self, Form};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
+use tessera_engine::block;
+use tessera_engine::storage::{self, Form};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Meta {
@@ -62,7 +62,7 @@ impl GgufType {
         let of = |form: &dyn Form| (form.block(), form.bytes(form.block()));
         let (block, bytes) = match self {
             Self::F32 => of(&storage::F32),
-            Self::F16 => (1, size_of::<sensai_engine::F16>()),
+            Self::F16 => (1, size_of::<tessera_engine::F16>()),
             Self::Q4_0 => of(&block::Q4_0),
             Self::Q8_0 => of(&block::Q8_0),
         };
@@ -371,7 +371,7 @@ impl Gguf {
                 .iter()
                 .map(|b| f32::from_le_bytes(*b))
                 .collect(),
-            _ => sensai_engine::F16::floats(&bytes),
+            _ => tessera_engine::F16::floats(&bytes),
         })
     }
 }

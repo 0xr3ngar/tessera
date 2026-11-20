@@ -2,14 +2,14 @@
 
 use crate::keys::Keys;
 use crate::shared::{Attend, Dense, Side, Stack, listed as listed_ports, tokens};
-use sensai_trace::DimName::*;
-use sensai_trace::{
-    Act, Composite, Dim, DimExpr, Embed, Graph, Mask, Model, Norm, Pairs, Role, Scalar, Tensor,
-    Weights, each,
-};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::BTreeMap;
+use tessera_trace::DimName::*;
+use tessera_trace::{
+    Act, Composite, Dim, DimExpr, Embed, Graph, Mask, Model, Norm, Pairs, Role, Scalar, Tensor,
+    Weights, each,
+};
 
 pub struct Config {
     /// Its `head_dim` is a sliding layer's.
@@ -273,7 +273,7 @@ fn attend<D: Dense>(
 /// The graph of one stage, from tokens and positions.
 fn staged<D: Dense>(c: &Config, stage: Stage<D>) -> Graph {
     let m = Model::new(c.dims());
-    let w: Eg2<D> = sensai_trace::declare(&m);
+    let w: Eg2<D> = tessera_trace::declare(&m);
     let attention = attention(&m, c);
     let [tokens, positions] = tokens(&m);
     let out = stage(&m, c, &w, &attention, [&tokens, &positions]);
@@ -290,7 +290,7 @@ pub fn program<D: Dense>(c: &Config) -> Graph {
 /// Padded texts reading listed `Keys`: a row per token.
 pub fn batched<D: Dense>(c: &Config) -> Graph {
     let m = Model::new(c.dims());
-    let w: Eg2<D> = sensai_trace::declare(&m);
+    let w: Eg2<D> = tessera_trace::declare(&m);
     let attention = attention(&m, c);
     let [tokens, positions, keys] = listed_ports(&m);
     let x = listed(&m, c, &w, &attention, [&tokens, &positions], Some(&keys));

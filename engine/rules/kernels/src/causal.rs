@@ -1,8 +1,8 @@
 //! Entries past each row's position, set to -inf.
 
-use sensai_codegen::prelude::*;
-use sensai_graph::Stage;
-use sensai_lower::{Kernel, stage_rule};
+use tessera_codegen::prelude::*;
+use tessera_graph::Stage;
+use tessera_lower::{Kernel, stage_rule};
 
 /// One thread per entry. Each position covers `per` rows.
 #[kernel]

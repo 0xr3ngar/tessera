@@ -216,7 +216,7 @@ impl<D: Device> DeviceBuffer<D> {
 }
 
 /// Device memory for a zone, mapped when shared.
-impl<D: Device> sensai_mem::Backing for DeviceBuffer<D> {
+impl<D: Device> tessera_mem::Backing for DeviceBuffer<D> {
     fn bytes(&self) -> usize {
         self.size
     }
@@ -232,20 +232,20 @@ impl<D: Device> sensai_mem::Backing for DeviceBuffer<D> {
         Some(unsafe { std::slice::from_raw_parts_mut(at.as_ptr(), self.size) })
     }
 
-    fn upload(&mut self, at: usize, bytes: &[u8]) -> Result<(), sensai_mem::Error> {
+    fn upload(&mut self, at: usize, bytes: &[u8]) -> Result<(), tessera_mem::Error> {
         self.assert_fits(at + bytes.len());
         let ptr = self.ptr + at as u64;
         self.ctx
             .upload(ptr, bytes)
-            .map_err(|e| sensai_mem::Error::Device(e.to_string()))
+            .map_err(|e| tessera_mem::Error::Device(e.to_string()))
     }
 
-    fn download(&self, at: usize, out: &mut [u8]) -> Result<(), sensai_mem::Error> {
+    fn download(&self, at: usize, out: &mut [u8]) -> Result<(), tessera_mem::Error> {
         self.assert_fits(at + out.len());
         let ptr = self.ptr + at as u64;
         self.ctx
             .download(ptr, out)
-            .map_err(|e| sensai_mem::Error::Device(e.to_string()))
+            .map_err(|e| tessera_mem::Error::Device(e.to_string()))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

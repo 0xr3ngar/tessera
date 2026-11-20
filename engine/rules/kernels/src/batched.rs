@@ -1,9 +1,9 @@
 //! Products of two computed values, batch by batch.
 
-use sensai_codegen::prelude::*;
-use sensai_graph::Op;
-use sensai_lower::form::F32_FORM;
-use sensai_lower::{Draft, Kernel, T, Term, Tree};
+use tessera_codegen::prelude::*;
+use tessera_graph::Op;
+use tessera_lower::form::F32_FORM;
+use tessera_lower::{Draft, Kernel, T, Term, Tree};
 
 /// One thread per output. Batches of `w` serve rows.
 #[kernel]
@@ -68,4 +68,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(kernel, [x, w], kernel.len)])
 }
 
-sensai_lower::rule!("batched", propose);
+tessera_lower::rule!("batched", propose);

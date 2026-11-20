@@ -4,8 +4,8 @@ use crate::buffer::Buffer;
 use crate::layout::Layout;
 use crate::view::{View, ViewMut};
 use crate::{Error, mismatch};
-use sensai_graph::DType;
 use std::fmt;
+use tessera_graph::DType;
 
 /// Row-major and contiguous, on the host.
 pub struct Tensor {

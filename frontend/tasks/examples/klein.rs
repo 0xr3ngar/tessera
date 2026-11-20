@@ -1,13 +1,13 @@
 //! A FLUX.2 klein picture for a prompt, written to PNG.
 
-use sensai_bundle::Overrides;
-use sensai_checkpoint::File;
-use sensai_recipe::Recipe;
-use sensai_tasks::klein::{Klein, noise};
-use sensai_tasks::png;
 use std::time::Instant;
+use tessera_bundle::Overrides;
+use tessera_checkpoint::File;
+use tessera_recipe::Recipe;
+use tessera_tasks::klein::{Klein, noise};
+use tessera_tasks::png;
 
-fn main() -> Result<(), sensai_tasks::Error> {
+fn main() -> Result<(), tessera_tasks::Error> {
     let args: Vec<String> = std::env::args().collect();
     let usage = "usage: klein <recipe> <out.png> <latent side> <seed | noise.safetensors> <prompt>";
     let [_, recipe, out, side, from, prompt @ ..] = args.as_slice() else {
@@ -18,7 +18,7 @@ fn main() -> Result<(), sensai_tasks::Error> {
         Ok(seed) => noise(seed, side * side * 128),
         Err(_) => File::open(from.as_ref())?.floats("noise")?,
     };
-    let settings = sensai_frontend_settings::read();
+    let settings = tessera_frontend_settings::read();
     let (cache, token) = (settings.recipes.clone(), settings.hf_token.clone());
     let recipe = Recipe::open(recipe, cache.as_deref())?;
     let dir = recipe.weights(cache.as_deref(), token.as_deref())?;

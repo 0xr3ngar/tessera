@@ -1,26 +1,26 @@
 //! Ranks on threads, joined over handles the front end opened.
 
 // Linking these registers their lowering rules.
-use sensai_rules as _;
+use tessera_rules as _;
 
-use sensai_engine::comm::Transport;
-use sensai_frontend_comm::{shm, sockets};
-use sensai_frontend_settings::read as settings;
-use sensai_graph::{Graph, shard};
-use sensai_interp::{Tensor, run};
-use sensai_lower::{Cluster, Device, Pick, Plan, Settings, View, lower};
-use sensai_models::decoder::{Config, Swiglu, program};
-use sensai_run::{Rank, Run};
-use sensai_testkit::{Noise, fill, max_abs_diff};
-use sensai_trace::DimName::{self, Context, Seqs};
-use sensai_trace::{Norm, TensorType};
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
+use tessera_engine::comm::Transport;
+use tessera_frontend_comm::{shm, sockets};
+use tessera_frontend_settings::read as settings;
+use tessera_graph::{Graph, shard};
+use tessera_interp::{Tensor, run};
+use tessera_lower::{Cluster, Device, Pick, Plan, Settings, View, lower};
+use tessera_models::decoder::{Config, Swiglu, program};
+use tessera_run::{Rank, Run};
+use tessera_testkit::{Noise, fill, max_abs_diff};
+use tessera_trace::DimName::{self, Context, Seqs};
+use tessera_trace::{Norm, TensorType};
 
 const SIZES: [(DimName, u64); 2] = [(Seqs, 1), (Context, 8)];
 
 /// A tensor's parts, which may cross to another thread.
-type Plain = (Vec<usize>, Vec<u8>, sensai_mem::DType);
+type Plain = (Vec<usize>, Vec<u8>, tessera_mem::DType);
 
 fn plain(t: &Tensor) -> Plain {
     (t.shape.clone(), t.bytes().to_vec(), t.dtype())
@@ -58,7 +58,7 @@ fn planned(g: &Graph, host: &Settings) -> [Plan; 2] {
     let device = Device::guess(host)
         .zoned(Cluster::two("a", "b"))
         .ranked(vec![0, 1]);
-    let sharded = shard(g, &sensai_graph::Parts::even(2)).unwrap().graph;
+    let sharded = shard(g, &tessera_graph::Parts::even(2)).unwrap().graph;
     [0, 1].map(|r| lower(&sharded, 0, &SIZES, &device.clone().as_rank(r)).unwrap())
 }
 
@@ -126,7 +126,7 @@ fn two_sockets() {
 /// Ranks on threads over one mapped file, against one rank.
 #[test]
 fn two_shm() {
-    let path: PathBuf = sensai_testkit::scratch(&format!("ranks-{}", std::process::id()));
+    let path: PathBuf = tessera_testkit::scratch(&format!("ranks-{}", std::process::id()));
     both(|r| shm(&path, r, 2, 1 << 16).unwrap());
     let _ = std::fs::remove_file(&path);
 }

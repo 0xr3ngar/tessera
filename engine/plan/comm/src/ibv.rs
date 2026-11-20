@@ -1,9 +1,9 @@
 //! libibverbs, loaded at run time with dlopen.
 
-use sensai_dl::message;
 use std::ffi::{c_char, c_int, c_void};
 use std::io;
 use std::sync::OnceLock;
+use tessera_dl::message;
 
 pub(crate) const QPT_RC: u32 = 2;
 const WR_RDMA_WRITE: u32 = 0;
@@ -241,7 +241,7 @@ type WcStatusStr = unsafe extern "C" fn(c_int) -> *const c_char;
 type PollCq = unsafe extern "C" fn(*mut Cq, c_int, *mut Wc) -> c_int;
 type PostSend = unsafe extern "C" fn(*mut Qp, *mut SendWr, *mut *mut SendWr) -> c_int;
 
-sensai_dl::library! {
+tessera_dl::library! {
     /// The entry points the transport calls.
     pub(crate) struct Lib as "libibverbs" in ["libibverbs.so.1"] {
         get_device_list: GetDeviceList = "ibv_get_device_list",

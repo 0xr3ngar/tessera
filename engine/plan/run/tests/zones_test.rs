@@ -1,18 +1,18 @@
 //! Plans over a GPU zone and a host zone.
 
-use sensai_engine_settings::Settings;
-use sensai_graph::DimName::{Rows, Seqs, Vocab};
-use sensai_graph::{DType, Dim, Graph, TensorType};
-use sensai_lower::kernels::Map;
-use sensai_lower::sites;
-use sensai_lower::{
+use tessera_engine_settings::Settings;
+use tessera_graph::DimName::{Rows, Seqs, Vocab};
+use tessera_graph::{DType, Dim, Graph, TensorType};
+use tessera_lower::kernels::Map;
+use tessera_lower::sites;
+use tessera_lower::{
     Cluster, Device, Draft, Kernel, Link, Plan, Step, T, Tree, Zone, ZoneKind, lower,
 };
-use sensai_run::open;
-use sensai_run::testing::host;
-use sensai_sim::Tag;
-use sensai_testkit::scratch;
-use sensai_trace::{EntryKind, Model, Port, Role};
+use tessera_run::open;
+use tessera_run::testing::host;
+use tessera_sim::Tag;
+use tessera_testkit::scratch;
+use tessera_trace::{EntryKind, Model, Port, Role};
 
 /// Picks each row's largest entry on the host.
 #[derive(Clone, Copy, Debug, Kernel)]
@@ -57,8 +57,8 @@ fn device_top(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(DeviceTop { rows }, [x], rows)])
 }
 
-sensai_lower::rule!("host_top", host_top);
-sensai_lower::rule!("device_top", device_top);
+tessera_lower::rule!("host_top", host_top);
+tessera_lower::rule!("device_top", device_top);
 
 /// Each row's likeliest entry.
 fn likeliest() -> Graph {
@@ -132,7 +132,10 @@ fn cheap_links_place_work() {
     }
     let cost = device.cost(&plan);
     assert!(cost.seconds.is_finite() && cost.seconds > 0.0);
-    assert!(matches!(open(plan, &host()), Err(sensai_run::Error::Zones)));
+    assert!(matches!(
+        open(plan, &host()),
+        Err(tessera_run::Error::Zones)
+    ));
 }
 
 #[test]

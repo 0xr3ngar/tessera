@@ -1,8 +1,8 @@
 //! Decoders: grouped-query attention, RoPE, a dense or routed MLP.
 
 use crate::shared::{Attend, Side, Stack, listed, pick, sparse_ports, step_ports, swiglu, tokens};
-use sensai_trace::DimName::*;
-use sensai_trace::{
+use tessera_trace::DimName::*;
+use tessera_trace::{
     Act, Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Linears, Mask, Model,
     Norm, Pairs, Role, Size, Tensor, TensorType, Weights,
 };
@@ -348,7 +348,7 @@ impl Pass<'_> {
 /// One forward entry: tokens and positions in, logits out.
 pub fn program<N: HeadNorm, M: Mlp>(c: &Config) -> Graph {
     let m = Model::new(c.dims());
-    let w: Decoder<N, M> = sensai_trace::declare(&m);
+    let w: Decoder<N, M> = tessera_trace::declare(&m);
     let [tokens, positions] = tokens(&m);
     let logits = forward(&m, c, &w, &tokens, &positions);
     m.finish([(Role::Logits, &logits)])
@@ -357,7 +357,7 @@ pub fn program<N: HeadNorm, M: Mlp>(c: &Config) -> Graph {
 /// Residual rows after `layers`, joined on the last axis.
 pub fn taps<N: HeadNorm, M: Mlp>(c: &Config, layers: &[u64]) -> Graph {
     let m = Model::new(c.dims());
-    let w: Decoder<N, M> = sensai_trace::declare(&m);
+    let w: Decoder<N, M> = tessera_trace::declare(&m);
     // Key lists keep padding out of each row's attention.
     let [tokens, positions, keys] = listed(&m);
     let pass = Pass {
@@ -386,7 +386,7 @@ pub fn stepper<N: HeadNorm, M: Mlp>(c: &Config) -> Graph {
     let size = Size::Bounded(c.stack.max_context);
     dims.push(Dim { name: Rows, size });
     let m = Model::new(dims);
-    let w: Decoder<N, M> = sensai_trace::declare(&m);
+    let w: Decoder<N, M> = tessera_trace::declare(&m);
     let ([tokens, positions, slots], allowed) = step_ports(&m, c.stack.masked);
     let ty = TensorType::new([Seqs, Context, KvHeads, HeadDim], DType::F32);
     let cache = |_: &Layer<N, M>| [m.kept(ty.clone()), m.kept(ty.clone())];

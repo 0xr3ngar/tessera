@@ -3,13 +3,13 @@
 use crate::Error;
 use crate::api::{GenerateImage, Image, Sizes, Tokens};
 use crate::worker::Worker;
-use sensai_bundle::Overrides;
-use sensai_bundle::sprite::{denoiser, text_tower};
-use sensai_bundle::tokenize::hf::Hf;
-use sensai_engine::wasm::Module;
-use sensai_engine::{Model, Recipe, Settings, Tensor};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tessera_bundle::Overrides;
+use tessera_bundle::sprite::{denoiser, text_tower};
+use tessera_bundle::tokenize::hf::Hf;
+use tessera_engine::wasm::Module;
+use tessera_engine::{Model, Recipe, Settings, Tensor};
 
 const GRID: usize = 16;
 const PIXELS: usize = GRID * GRID;

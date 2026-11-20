@@ -1,7 +1,7 @@
 //! Vectors for `/v1/embeddings`.
 
-use sensai_tasks::Error;
-use sensai_tasks::api::{Embed, Embedded};
+use tessera_tasks::Error;
+use tessera_tasks::api::{Embed, Embedded};
 
 /// One vector per text: its length in bytes.
 pub(super) struct MockEmbed;

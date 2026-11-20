@@ -1,9 +1,9 @@
 use crate::exlr8::Release;
 use crate::{Offer, Stored};
-use sensai_engine::block::{INT4_G32, MXFP8};
-use sensai_engine::storage::Form;
-use sensai_engine::{E4M3, F16, trellis};
 use std::path::Path;
+use tessera_engine::block::{INT4_G32, MXFP8};
+use tessera_engine::storage::Form;
+use tessera_engine::{E4M3, F16, trellis};
 
 /// One tensor: name, safetensors dtype, shape, bytes.
 type Tensor<'a> = (&'a str, &'a str, Vec<usize>, Vec<u8>);
@@ -56,7 +56,7 @@ fn e4m3(b: u8) -> f32 {
 /// Each format decodes as the release's README says.
 #[test]
 fn glm_dense_formats() {
-    let dir = sensai_testkit::scratch(&format!("{}-glm-exlr8", std::process::id()));
+    let dir = tessera_testkit::scratch(&format!("{}-glm-exlr8", std::process::id()));
     let fp8 = ramp(2 * 128, 7);
     let (e8m0, block) = (vec![126u8, 128, 127, 129], [0.5f32]);
     let (q4, s4) = (ramp(2 * 32, 11), [0.5f32, 1.0, 2.0, 4.0]);
@@ -113,7 +113,7 @@ fn glm_dense_formats() {
     );
     assert_eq!(found("model.layers.0.blk.weight").stored, Stored::Bf16);
     assert_eq!(found("lm_head.weight").stored, Stored::F32);
-    let turned = Stored::Form(&sensai_engine::trellis::TRELLIS_K2_ROT);
+    let turned = Stored::Form(&tessera_engine::trellis::TRELLIS_K2_ROT);
     assert_eq!(found("model.layers.0.tr.weight").stored, turned);
     assert_eq!(shape("model.layers.0.mx.weight"), [2, 64]);
     assert_eq!(shape("model.layers.0.qi.weight"), [2, 128]);
@@ -180,7 +180,7 @@ fn glm_dense_formats() {
 /// A routed layer's sets and rotations, at one width.
 #[test]
 fn glm_experts() {
-    let dir = sensai_testkit::scratch(&format!("{}-glm-experts", std::process::id()));
+    let dir = tessera_testkit::scratch(&format!("{}-glm-experts", std::process::id()));
     let norm = || ("norm.weight", "F32", vec![1], floats(&[1.0]));
     for file in ["exlr8-vocab", "exlr8-dense-000", "exlr8-dense-001"] {
         write(&dir.join(format!("dense/{file}.safetensors")), &[norm()]);
@@ -240,7 +240,9 @@ fn glm_experts() {
     assert_eq!((shared[0], shared[1]), (-4.0, 4.0));
     let gate = format!("{at}shared_experts.gate_proj.weight");
     let file = release.packed(&gate, None).unwrap();
-    let parts = sensai_engine::trellis::TRELLIS_K3_ROT.split(&file).unwrap();
+    let parts = tessera_engine::trellis::TRELLIS_K3_ROT
+        .split(&file)
+        .unwrap();
     assert_eq!(parts[1][..8], [0, 0, 128, 192, 0, 0, 128, 64]);
     let down = release
         .packed(&format!("{at}experts.down.weight"), None)

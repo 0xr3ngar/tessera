@@ -1,22 +1,22 @@
 //! Modules from text: a matmul, regions, and bad modules.
 
 // The linked rules the module's rules compete with.
-use sensai_kernels as _;
-use sensai_linear as _;
+use tessera_kernels as _;
+use tessera_linear as _;
 
-use sensai_graph::DimName::{Context, Ffn, Hidden, Rows, Seqs};
-use sensai_graph::{Act, Composite};
-use sensai_graph::{Parts, shard};
-use sensai_interp::{Store, Tensor, run_kept};
-use sensai_lower::kept::{self, Layout};
-use sensai_lower::{
+use serde_json::{Value, json};
+use tessera_graph::DimName::{Context, Ffn, Hidden, Rows, Seqs};
+use tessera_graph::{Act, Composite};
+use tessera_graph::{Parts, shard};
+use tessera_interp::{Store, Tensor, run_kept};
+use tessera_lower::kept::{self, Layout};
+use tessera_lower::{
     Arg, Cache, Cluster, Device, Extent, Limits, Plan, Platform, Rule, Shape, Source, lower,
 };
-use sensai_run::testing::{host, runs};
-use sensai_run::{Loopback, Run};
-use sensai_testkit::{Noise, graphs, max_abs_diff};
-use sensai_trace::{DType, Dim, EntryKind, Graph, Linear, Model, Port, Role, TensorType, Weights};
-use serde_json::{Value, json};
+use tessera_run::testing::{host, runs};
+use tessera_run::{Loopback, Run};
+use tessera_testkit::{Noise, graphs, max_abs_diff};
+use tessera_trace::{DType, Dim, EntryKind, Graph, Linear, Model, Port, Role, TensorType, Weights};
 
 #[derive(Weights)]
 struct Layer {
@@ -30,13 +30,13 @@ fn graph(region: bool) -> Graph {
 }
 
 /// A model of `hidden` by `ffn`, with weights and rows.
-fn traced<W: Weights>(hidden: u64, ffn: u64) -> (Model, W, sensai_trace::Tensor) {
+fn traced<W: Weights>(hidden: u64, ffn: u64) -> (Model, W, tessera_trace::Tensor) {
     let m = Model::new(vec![
         Dim::bounded(Rows, 16),
         Dim::fixed(Hidden, hidden),
         Dim::fixed(Ffn, ffn),
     ]);
-    let w: W = sensai_trace::declare(&m);
+    let w: W = tessera_trace::declare(&m);
     let ty = TensorType::new([Rows, Hidden], DType::F32);
     let role = Role::Logits;
     let [x] = m.entry(EntryKind::Forward, [Port { role, ty }]);
@@ -165,7 +165,7 @@ fn module(manifest: &Value, offer: &Value, body: &str) -> Vec<u8> {
 }
 
 fn load(site: &str, offer: Value) -> &'static Rule {
-    sensai_wasm::load(&module(&manifest(ABI, site), &offer, "")).unwrap()[0]
+    tessera_wasm::load(&module(&manifest(ABI, site), &offer, "")).unwrap()[0]
 }
 
 /// `g` with `rule` on each GPU, against the interpreter.
@@ -174,12 +174,12 @@ fn on_gpus(g: &Graph, rule: &'static Rule) {
     let w = Tensor::f32(vec![32, 64], (0..32 * 64).map(|_| draws.draw()).collect());
     let x = Tensor::f32(vec![4, 64], (0..4 * 64).map(|_| draws.draw()).collect());
     let want =
-        sensai_interp::run(g, std::slice::from_ref(&w), 0, std::slice::from_ref(&x)).unwrap();
+        tessera_interp::run(g, std::slice::from_ref(&w), 0, std::slice::from_ref(&x)).unwrap();
     // Only a GPU runs fixed text.
     for settings in runs().iter().filter(|s| s.gpu().is_some()) {
         let device = Device::guess(settings).adding(rule);
         let plan = lower(g, 0, &[(Rows, 4)], &device).unwrap();
-        let mut runner = sensai_run::open(plan, settings).unwrap();
+        let mut runner = tessera_run::open(plan, settings).unwrap();
         runner.load(0, w.view()).unwrap();
         let got = runner.run(&[x.view()]).unwrap().remove(0);
         let off = max_abs_diff(got.floats().unwrap(), want[0].floats().unwrap());
@@ -229,7 +229,7 @@ fn module_matmul_wins() {
 fn cuda_alone_opens() {
     let kernels = json!([{"name": "wasm_gemm", "entry": "gemm", "cuda": GEMM_CUDA}]);
     let bytes = module(&declare(ABI, "matmul", kernels), &json!([matmul()]), "");
-    let rule = sensai_wasm::load(&bytes).unwrap()[0];
+    let rule = tessera_wasm::load(&bytes).unwrap()[0];
     let plan = lower(&graph(false), 0, &[(Rows, 4)], &compiling().adding(rule)).unwrap();
     let Source::Fixed {
         metal, cuda, hip, ..
@@ -333,7 +333,7 @@ fn halves() -> &'static Rule {
     let down = gemm(json!([{"draft": 1}, 2]), 64, 16);
     let offers = json!([up, act, down, {"all_reduce": 2}, add]);
     let bytes = module(&declare(ABI, "layer", kernels), &offers, "");
-    sensai_wasm::load(&bytes).unwrap()[0]
+    tessera_wasm::load(&bytes).unwrap()[0]
 }
 
 /// Both ranks' plans of `g`, with `rule`.
@@ -361,7 +361,7 @@ fn module_sums_shards() {
     let mut draws = Noise(7);
     let [up, down, x] = [vec![32, 64], vec![64, 32], vec![4, 64]].map(|s| drawn(&mut draws, s));
     let weights = [up, down];
-    let want = sensai_interp::run(&g, &weights, 0, std::slice::from_ref(&x)).unwrap();
+    let want = tessera_interp::run(&g, &weights, 0, std::slice::from_ref(&x)).unwrap();
     // Only a GPU runs fixed text.
     for settings in runs().iter().filter(|s| s.gpu().is_some()) {
         let plans = ranks(&sharded, Device::guess(settings), rule);
@@ -383,10 +383,10 @@ fn module_reads_parts() {
         "shape": {"line": 512}, "work": 512, "guess": 1e-15,
     });
     let rule = load("mlp", json!([whole]));
-    let rotated = sensai_lower::form::named("trellis_k4_rot").unwrap();
+    let rotated = tessera_lower::form::named("trellis_k4_rot").unwrap();
     let device = Device::default()
         .adding(rule)
-        .pinned(sensai_lower::Pins::all(rotated));
+        .pinned(tessera_lower::Pins::all(rotated));
     let plan = lower(&sized(true, 128, 128), 0, &[(Rows, 4)], &device).unwrap();
     assert_eq!(rules(&plan), ["wasm_mlp"]);
     // Codes, `suh`, then `svh`, in the offer's order.
@@ -403,20 +403,20 @@ fn bad_modules_fail() {
     let offer = json!([matmul()]);
     let newer = module(&manifest(ABI + 1, "matmul"), &offer, "");
     assert!(matches!(
-        sensai_wasm::load(&newer),
-        Err(sensai_wasm::Error::Abi(7))
+        tessera_wasm::load(&newer),
+        Err(tessera_wasm::Error::Abi(7))
     ));
     // An endless loop runs out of fuel.
     let spin = module(&manifest(ABI, "matmul"), &offer, "(loop (br 0))");
     assert!(matches!(
-        sensai_wasm::load(&spin),
-        Err(sensai_wasm::Error::Wasm(_))
+        tessera_wasm::load(&spin),
+        Err(tessera_wasm::Error::Wasm(_))
     ));
     let imports = r#"(module (import "env" "f" (func)) (memory (export "memory") 1))"#;
     let imports = wat::parse_str(imports).unwrap();
     assert!(matches!(
-        sensai_wasm::load(&imports),
-        Err(sensai_wasm::Error::Wasm(_))
+        tessera_wasm::load(&imports),
+        Err(tessera_wasm::Error::Wasm(_))
     ));
 }
 
@@ -508,7 +508,7 @@ fn attention(layout: &dyn Layout, ctx: usize) -> &'static Rule {
     let kernels = kept_kernels(layout.page().is_some());
     let offers = json!([put(), sum(ctx)]);
     let bytes = module(&declare(ABI, "attention", kernels), &offers, "");
-    sensai_wasm::load(&bytes).unwrap()[0]
+    tessera_wasm::load(&bytes).unwrap()[0]
 }
 
 /// The plan for one launch of `ctx` positions.
@@ -543,7 +543,7 @@ fn module_attention_writes_kept() {
                         r.replan(&plan).unwrap();
                         r
                     }
-                    None => runner.insert(sensai_run::open(plan, settings).unwrap()),
+                    None => runner.insert(tessera_run::open(plan, settings).unwrap()),
                 };
                 // Reversed pages: every row lies away from its dense place.
                 if let Some(table) = table {
@@ -575,12 +575,12 @@ fn module_attention_writes_kept() {
 
 /// A module of `kernel`, `files` and a matmul offer.
 fn guest(
-    kernel: sensai_guest::site::Kernel,
-    files: Vec<sensai_guest::site::File>,
-) -> Result<&'static Rule, sensai_wasm::Error> {
-    use sensai_guest::site::{self, Count, Kind, Manifest, Offer, Place};
+    kernel: tessera_guest::site::Kernel,
+    files: Vec<tessera_guest::site::File>,
+) -> Result<&'static Rule, tessera_wasm::Error> {
+    use tessera_guest::site::{self, Count, Kind, Manifest, Offer, Place};
     let manifest = Manifest {
-        abi: sensai_guest::ABI,
+        abi: tessera_guest::ABI,
         kernels: vec![kernel],
         rules: vec![site::Rule {
             name: "wasm_matmul",
@@ -604,12 +604,12 @@ fn guest(
         writes: None,
     };
     let bytes = module(&json!(manifest), &json!([offer]), "");
-    Ok(sensai_wasm::load(&bytes)?[0])
+    Ok(tessera_wasm::load(&bytes)?[0])
 }
 
 #[test]
 fn module_speaks_guest() {
-    let kernel = sensai_guest::site::kernel("wasm_gemm", "gemm", GEMM_CUDA);
+    let kernel = tessera_guest::site::kernel("wasm_gemm", "gemm", GEMM_CUDA);
     let rule = guest(kernel, Vec::new()).unwrap();
     let device = Device::default().adding(rule);
     let plan = lower(&graph(false), 0, &[(Rows, 4)], &device).unwrap();
@@ -618,7 +618,7 @@ fn module_speaks_guest() {
 
 #[test]
 fn module_flattens_imports() {
-    use sensai_guest::site::{File, imports};
+    use tessera_guest::site::{File, imports};
     let kernel = || imports("wasm_gemm", "gemm", "gemm.kernel");
     let main = || File {
         path: "gemm.kernel",

@@ -2,19 +2,19 @@
 
 use crate::Error;
 use crate::run::{Base, Run, line};
-use sensai_codegen::Precision;
-use sensai_codegen::ir::{Body, Param, Ty};
-use sensai_engine_settings::Memory;
-use sensai_gpukit::{Limits, Platform};
-use sensai_host::exec::{self, ArgVal, Grid};
-use sensai_host::lockstep::THREADS;
-use sensai_jit::{Buf, Ctx, Entry};
-use sensai_lower::{Arg, Extent, Launch, Plan, Shape, Source};
-use sensai_mem::{Buffer, Host};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::OnceLock;
 use std::time::Instant;
+use tessera_codegen::Precision;
+use tessera_codegen::ir::{Body, Param, Ty};
+use tessera_engine_settings::Memory;
+use tessera_gpukit::{Limits, Platform};
+use tessera_host::exec::{self, ArgVal, Grid};
+use tessera_host::lockstep::THREADS;
+use tessera_jit::{Buf, Ctx, Entry};
+use tessera_lower::{Arg, Extent, Launch, Plan, Shape, Source};
+use tessera_mem::{Buffer, Host};
 
 pub(crate) struct Runner {
     base: Base,
@@ -157,7 +157,7 @@ impl Run for Runner {
             let entry = match self.known.get(&key) {
                 Some(entry) => *entry,
                 None => {
-                    let entry = sensai_jit::compile(body).ok();
+                    let entry = tessera_jit::compile(body).ok();
                     self.known.insert(key, entry);
                     entry
                 }
@@ -268,21 +268,21 @@ fn compiled(
             len: b.len(),
         })
         .collect();
-    let args: Vec<sensai_jit::Arg> = args
+    let args: Vec<tessera_jit::Arg> = args
         .iter()
         .map(|a| match *a {
-            ArgVal::Buf { at, skip, .. } => sensai_jit::Arg {
+            ArgVal::Buf { at, skip, .. } => tessera_jit::Arg {
                 buf: at,
                 skip,
                 bits: 0,
             },
-            ArgVal::U32(v) => sensai_jit::Arg {
+            ArgVal::U32(v) => tessera_jit::Arg {
                 bits: v,
-                ..sensai_jit::Arg::default()
+                ..tessera_jit::Arg::default()
             },
-            ArgVal::F32(v) => sensai_jit::Arg {
+            ArgVal::F32(v) => tessera_jit::Arg {
                 bits: v.to_bits(),
-                ..sensai_jit::Arg::default()
+                ..tessera_jit::Arg::default()
             },
         })
         .collect();
@@ -306,7 +306,7 @@ fn compiled(
             }
         }),
     }
-    match sensai_jit::failure() {
+    match tessera_jit::failure() {
         Some(why) => Err(Error::Jit(why)),
         None => Ok(()),
     }

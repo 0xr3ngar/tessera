@@ -1,5 +1,5 @@
 [package]
-name = "sensai-run"
+name = "tessera-run"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -9,25 +9,25 @@ description = "Runs lowered plans on the host, Metal, CUDA or ROCm"
 [features]
 default = []
 # The runtime loads when a plan first runs, as in gpukit.
-cuda = ["sensai-gpukit/cuda"]
-rocm = ["sensai-gpukit/rocm"]
+cuda = ["tessera-gpukit/cuda"]
+rocm = ["tessera-gpukit/rocm"]
 
 [dependencies]
-sensai-codegen = { workspace = true }
-sensai-host = { workspace = true }
-sensai-engine-comm = { workspace = true }
-sensai-engine-settings = { workspace = true }
-sensai-gpukit = { workspace = true }
-sensai-graph = { workspace = true }
-sensai-jit = { workspace = true }
-sensai-lower = { workspace = true }
-sensai-mem = { workspace = true }
+tessera-codegen = { workspace = true }
+tessera-host = { workspace = true }
+tessera-engine-comm = { workspace = true }
+tessera-engine-settings = { workspace = true }
+tessera-gpukit = { workspace = true }
+tessera-graph = { workspace = true }
+tessera-jit = { workspace = true }
+tessera-lower = { workspace = true }
+tessera-mem = { workspace = true }
 rayon = "1"
 thiserror = "2"
 
 [dev-dependencies]
-sensai-interp = { workspace = true }
+tessera-interp = { workspace = true }
 serde_json = "1"
-sensai-sim = { workspace = true }
-sensai-testkit = { workspace = true }
-sensai-trace = { workspace = true }
+tessera-sim = { workspace = true }
+tessera-testkit = { workspace = true }
+tessera-trace = { workspace = true }

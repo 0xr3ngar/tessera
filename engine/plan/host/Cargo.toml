@@ -1,5 +1,5 @@
 [package]
-name = "sensai-host"
+name = "tessera-host"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,5 +7,5 @@ publish.workspace = true
 description = "Runs kernel bodies on the host, each group in lockstep"
 
 [dependencies]
-sensai-codegen = { workspace = true }
-sensai-graph = { workspace = true }
+tessera-codegen = { workspace = true }
+tessera-graph = { workspace = true }

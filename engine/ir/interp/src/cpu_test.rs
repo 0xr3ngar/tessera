@@ -1,9 +1,9 @@
 use crate::*;
-use sensai_trace::DType::{F32, U32};
-use sensai_trace::DimName::*;
-use sensai_trace::{Act, DType, Dim, EntryKind, Model, Pairs, Port, Role, TensorType};
+use tessera_trace::DType::{F32, U32};
+use tessera_trace::DimName::*;
+use tessera_trace::{Act, DType, Dim, EntryKind, Model, Pairs, Port, Role, TensorType};
 
-pub(crate) type Traced = sensai_trace::Tensor;
+pub(crate) type Traced = tessera_trace::Tensor;
 
 pub(crate) fn model() -> Model {
     Model::new(vec![
@@ -20,7 +20,7 @@ pub(crate) fn model() -> Model {
     ])
 }
 
-pub(crate) fn port(shape: impl Into<sensai_trace::Shape>, dtype: DType) -> Port {
+pub(crate) fn port(shape: impl Into<tessera_trace::Shape>, dtype: DType) -> Port {
     Port {
         role: Role::Tokens,
         ty: TensorType::new(shape, dtype),
@@ -43,7 +43,7 @@ pub(crate) fn eval<const I: usize, const N: usize>(
 
 /// One float input shaped `[Rows, width]`, through `f`.
 fn rows<const N: usize>(
-    width: sensai_trace::DimName,
+    width: tessera_trace::DimName,
     x: Vec<f32>,
     f: impl FnOnce(Traced) -> [Traced; N],
 ) -> Vec<Tensor> {
@@ -106,10 +106,10 @@ fn sylvester(x: &[f32]) -> Vec<f32> {
     out
 }
 
-#[derive(sensai_trace::Weights)]
+#[derive(tessera_trace::Weights)]
 struct Gain {
     #[shape(Hidden)]
-    w: sensai_trace::Norm,
+    w: tessera_trace::Norm,
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn rms_divides_rows() {
     let x = Tensor::f32(vec![2, 4], vec![1., -3., 5., -1., 2., 0., 0., -2.]);
     let w = Tensor::f32(vec![4], vec![1., 2., -1., 0.5]);
     let out = eval([port([Rows, Hidden], F32)], &[x], Some(&w), |m, [x]| {
-        let g: Gain = sensai_trace::declare(m);
+        let g: Gain = tessera_trace::declare(m);
         [x.rms(7.0), x.rms_norm(&g.w, 7.0)]
     });
     let out = out.unwrap();

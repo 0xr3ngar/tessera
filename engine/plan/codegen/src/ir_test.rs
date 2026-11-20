@@ -1,4 +1,4 @@
-use crate as sensai_codegen;
+use crate as tessera_codegen;
 use crate::Dialect;
 use crate::prelude::*;
 

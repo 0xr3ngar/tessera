@@ -3,11 +3,11 @@
 use crate::names::repo;
 use crate::tokenize::hf::Hf;
 use crate::{Overrides, pull};
-use sensai_checkpoint::exlr8::Release;
-use sensai_engine::eg2::{Config, batched, program};
-use sensai_engine::{Graph, Linear, Weight};
 use std::error::Error;
 use std::path::Path;
+use tessera_checkpoint::exlr8::Release;
+use tessera_engine::eg2::{Config, batched, program};
+use tessera_engine::{Graph, Linear, Weight};
 
 pub struct Encoder {
     pub graph: Graph,

@@ -2,11 +2,11 @@
 
 use crate::names::repo;
 use crate::{Overrides, pull};
-use sensai_checkpoint::File;
-use sensai_engine::flux2::{Config, program};
-use sensai_engine::{Graph, Pins, Weight};
 use std::error::Error;
 use std::path::Path;
+use tessera_checkpoint::File;
+use tessera_engine::flux2::{Config, program};
+use tessera_engine::{Graph, Pins, Weight};
 
 type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 

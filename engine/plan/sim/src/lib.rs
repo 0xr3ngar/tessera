@@ -13,7 +13,7 @@ pub use known::{known, m3_pro};
 pub use pool::{Fit, Pool};
 pub use zone::{Cluster, Link, Zone, ZoneKind};
 
-use sensai_work::Load;
+use tessera_work::Load;
 
 /// Where a constant's value comes from.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]

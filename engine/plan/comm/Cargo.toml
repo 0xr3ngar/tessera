@@ -1,5 +1,5 @@
 [package]
-name = "sensai-engine-comm"
+name = "tessera-engine-comm"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,7 @@ description = "Moves bytes between ranks over sockets, shared memory or RDMA"
 
 [dependencies]
 thiserror = "2"
-sensai-dl = { workspace = true }
+tessera-dl = { workspace = true }
 
 [dev-dependencies]
-sensai-testkit = { workspace = true }
+tessera-testkit = { workspace = true }

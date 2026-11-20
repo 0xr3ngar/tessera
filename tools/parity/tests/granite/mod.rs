@@ -2,12 +2,12 @@
 
 mod shard_test;
 
-use sensai_models::decoder::{Config, Moe, program, stepper};
-use sensai_parity::{LOGITS, Spec, Stepper, decoder, suite};
-use sensai_trace::Composite::{Attention, Layer, Model, Moe as Routed};
-use sensai_trace::Graph;
+use tessera_models::decoder::{Config, Moe, program, stepper};
+use tessera_parity::{LOGITS, Spec, Stepper, decoder, suite};
+use tessera_trace::Composite::{Attention, Layer, Model, Moe as Routed};
+use tessera_trace::Graph;
 
-decoder!((), Moe, sensai_models::small::granite(), Config::granite);
+decoder!((), Moe, tessera_models::small::granite(), Config::granite);
 
 const SPEC: Spec = Spec {
     name: "granite",

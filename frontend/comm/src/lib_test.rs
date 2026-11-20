@@ -1,10 +1,10 @@
 use crate::shm;
-use sensai_engine::comm::Transport;
+use tessera_engine::comm::Transport;
 
 /// Rank 1 waits until rank 0 lays out the file.
 #[test]
 fn shm_joins() {
-    let path = sensai_testkit::scratch(&format!("join-{}", std::process::id()));
+    let path = tessera_testkit::scratch(&format!("join-{}", std::process::id()));
     std::thread::scope(|s| {
         let late = s.spawn(|| shm(&path, 1, 2, 16).unwrap());
         std::thread::sleep(std::time::Duration::from_millis(20));

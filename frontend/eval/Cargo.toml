@@ -1,5 +1,5 @@
 [package]
-name = "sensai-eval"
+name = "tessera-eval"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -12,14 +12,14 @@ path = "src/main.rs"
 
 [features]
 default = []
-cuda = ["sensai-engine/cuda"]
-rocm = ["sensai-engine/rocm"]
+cuda = ["tessera-engine/cuda"]
+rocm = ["tessera-engine/rocm"]
 
 [dependencies]
-sensai-engine = { workspace = true }
-sensai-bundle = { workspace = true }
-sensai-checkpoint = { workspace = true }
+tessera-engine = { workspace = true }
+tessera-bundle = { workspace = true }
+tessera-checkpoint = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sensai-tasks = { workspace = true }
-sensai-frontend-settings = { workspace = true }
+tessera-tasks = { workspace = true }
+tessera-frontend-settings = { workspace = true }

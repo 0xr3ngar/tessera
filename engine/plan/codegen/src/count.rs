@@ -3,8 +3,8 @@
 use crate::LANES;
 use crate::form::Load;
 use crate::ir::{BinOp, Body, Expr, Intrinsic, Param, Stmt, Ty};
-use sensai_work::Ops;
 use std::collections::HashMap;
+use tessera_work::Ops;
 
 /// Bytes in a cache line.
 const LINE: f64 = 64.0;

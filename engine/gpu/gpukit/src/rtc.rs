@@ -2,9 +2,9 @@
 
 use crate::Error;
 use crate::dl::once;
-use sensai_dl::Library;
 use std::ffi::{CString, c_char, c_int, c_void};
 use std::sync::OnceLock;
+use tessera_dl::Library;
 
 type Program = *mut c_void;
 type Create = unsafe extern "C" fn(

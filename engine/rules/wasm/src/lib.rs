@@ -7,9 +7,9 @@ mod text;
 
 use abi::{ABI, Ask, Entry, Kind, Manifest, Site};
 use guest::{BUILD_FUEL, FUEL, Guest};
-use sensai_graph::Graph;
-use sensai_lower::{Draft, Propose, Rule, T, Tree};
 use std::sync::Arc;
+use tessera_graph::Graph;
+use tessera_lower::{Draft, Propose, Rule, T, Tree};
 use text::Fixed;
 
 #[derive(Debug, thiserror::Error)]
@@ -25,7 +25,7 @@ pub enum Error {
     #[error("an earlier call panicked")]
     Poisoned,
     #[error(transparent)]
-    Kernel(#[from] sensai_device::Error),
+    Kernel(#[from] tessera_device::Error),
 }
 
 impl Error {
@@ -147,7 +147,7 @@ impl Module {
         let Some(out) = self.build("tables", config, 1)? else {
             return Ok(Vec::new());
         };
-        sensai_guest::decode(&out).ok_or_else(|| Error::wasm("tables: a short or bad buffer"))
+        tessera_guest::decode(&out).ok_or_else(|| Error::wasm("tables: a short or bad buffer"))
     }
 }
 

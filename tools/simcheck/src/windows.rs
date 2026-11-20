@@ -1,6 +1,6 @@
 //! Cutting source files into windows that start at content anchors.
 
-use sensai_shape::shape;
+use tessera_shape::shape;
 
 /// Lines `line..line + window` of `path`, trimmed and joined.
 #[derive(Clone)]

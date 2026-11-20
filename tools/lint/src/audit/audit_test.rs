@@ -1,6 +1,6 @@
 use super::{clashes, level};
 use crate::files::Source;
-use sensai_findings::Level;
+use tessera_findings::Level;
 
 #[test]
 fn listed_rules_advise() {

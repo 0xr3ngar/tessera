@@ -1,15 +1,15 @@
 //! EmbeddingGemma 2: the exlr8 release and the device.
 
 use super::{GOLDEN, release};
-use sensai_checkpoint::exlr8::Release;
-use sensai_interp::Tensor;
-use sensai_lower::{Device, Settings, lower};
-use sensai_parity::{Case, interpreted, loaded, pulled, unit};
-use sensai_run::Run;
-use sensai_run::testing::runs;
-use sensai_testkit::cosine_f32;
-use sensai_trace::Graph;
 use std::path::Path;
+use tessera_checkpoint::exlr8::Release;
+use tessera_interp::Tensor;
+use tessera_lower::{Device, Settings, lower};
+use tessera_parity::{Case, interpreted, loaded, pulled, unit};
+use tessera_run::Run;
+use tessera_run::testing::runs;
+use tessera_testkit::cosine_f32;
+use tessera_trace::Graph;
 
 /// The exlr8 release: its embeddings against the reference.
 fn check_exlr8(dir: &Path, g: &Graph, cases: &[Case]) {
@@ -65,7 +65,7 @@ fn reference_checks() {
     let Some(reference) = GOLDEN.reference("eg2", &g) else {
         return eprintln!("no eg2 reference here; skipped");
     };
-    let dir = sensai_testkit::reference("eg2").unwrap();
+    let dir = tessera_testkit::reference("eg2").unwrap();
     let cases = &reference.cases;
     if dir.join("exlr8").is_dir() || dir.join("exlr8.repo").is_file() {
         check_exlr8(&dir, &g, &cases[..1]);

@@ -1,10 +1,10 @@
 //! Slices, repeats, swaps and joins, copied into a new buffer.
 
-use sensai_codegen::prelude::*;
-use sensai_graph::{Op, View};
-use sensai_lower::form::F32_FORM;
-use sensai_lower::kernels::Join;
-use sensai_lower::{Draft, Extent, Home, Kernel, T, Term, Tree};
+use tessera_codegen::prelude::*;
+use tessera_graph::{Op, View};
+use tessera_lower::form::F32_FORM;
+use tessera_lower::kernels::Join;
+use tessera_lower::{Draft, Extent, Home, Kernel, T, Term, Tree};
 
 /// One thread per output `[outer, upper, mid, inner]`, strided reads.
 #[kernel]
@@ -154,4 +154,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(kernel, [x], len)])
 }
 
-sensai_lower::rule!("view", propose);
+tessera_lower::rule!("view", propose);

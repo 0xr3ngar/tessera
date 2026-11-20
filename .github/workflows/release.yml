@@ -1,6 +1,6 @@
 name: release
 
-# A `v*` tag builds the binary, then publishes crates, npm and PyPI.
+# A `v*` tag builds the binary, then publishes crates and npm.
 # A manual run builds and dry-runs unless `publish` is set.
 on:
   push:
@@ -61,7 +61,7 @@ jobs:
       - run: cargo run -q -p tessera-publish -- --version "$VERSION"
       - uses: PyO3/maturin-action@v1
         with:
-          working-directory: target/publish/sensaix
+          working-directory: target/publish/tessera-cli
           target: ${{ matrix.target }}
           manylinux: "2_28"
           rust-toolchain: 1.99.1
@@ -69,18 +69,17 @@ jobs:
       - name: Take the binary out of the wheel
         run: |
           mkdir -p bin
-          unzip -j -o target/publish/sensaix/dist/*.whl '*.data/scripts/sensai*' -d bin
-          chmod +x bin/sensai bin/sensaix
-          ./bin/sensai 2>&1 | grep -q usage
-          ./bin/sensaix 2>&1 | grep -q usage
+          unzip -j -o target/publish/tessera-cli/dist/*.whl '*.data/scripts/tesserax' -d bin
+          chmod +x bin/tesserax
+          ./bin/tesserax 2>&1 | grep -q usage
       - uses: actions/upload-artifact@v4
         with:
           name: wheel-${{ matrix.npm }}
-          path: target/publish/sensaix/dist/*.whl
+          path: target/publish/tessera-cli/dist/*.whl
       - uses: actions/upload-artifact@v4
         with:
           name: bin-${{ matrix.npm }}
-          path: bin/sensaix
+          path: bin/tesserax
 
   crates:
     needs: [version, build]
@@ -136,24 +135,8 @@ jobs:
           dry=()
           [ "$PUBLISH" = true ] || dry=(--dry-run)
           for p in linux-x64 linux-arm64 darwin-arm64; do
-            dir="target/publish/npm/sensaix-$p"
-            install -D -m 755 "bins/bin-$p/sensaix" "$dir/bin/sensaix"
+            dir="target/publish/npm/@kindlingai/tessera-$p"
+            install -D -m 755 "bins/bin-$p/tesserax" "$dir/bin/tesserax"
             (cd "$dir" && npm publish --access public --provenance "${dry[@]}")
           done
-          (cd target/publish/npm/sensaix && npm publish --access public --provenance "${dry[@]}")
-
-  pypi:
-    needs: [version, crates]
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: wheel-*
-          merge-multiple: true
-          path: dist
-      - run: ls -l dist
-      - if: needs.version.outputs.publish == 'true'
-        uses: pypa/gh-action-pypi-publish@release/v1
+          (cd target/publish/npm/@kindlingai/tessera && npm publish --access public --provenance "${dry[@]}")

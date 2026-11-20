@@ -1,23 +1,23 @@
 //! Lane and picked kernels against the CPU interpreter.
 
 // The other matmul rules come from here.
-use sensai_kernels as _;
-use sensai_linear as _;
+use tessera_kernels as _;
+use tessera_linear as _;
 
-use sensai_graph::Dim;
-use sensai_graph::DimName::{self, Rows, Seqs};
-use sensai_interp::run;
+use tessera_graph::Dim;
+use tessera_graph::DimName::{self, Rows, Seqs};
+use tessera_interp::run;
 
 mod common;
 use common::{Finish, finished, linear, noise, terms};
-use sensai_interp::Tensor;
-use sensai_lower::Pins;
-use sensai_lower::form::named;
-use sensai_lower::{Device, Dialect, Source, lower};
-use sensai_run::open;
-use sensai_run::testing::{emulations as runs, host};
-use sensai_testkit::{Noise, cosine_f32, fill, graphs, max_abs_diff, weights};
-use sensai_trace::Act;
+use tessera_interp::Tensor;
+use tessera_lower::Pins;
+use tessera_lower::form::named;
+use tessera_lower::{Device, Dialect, Source, lower};
+use tessera_run::open;
+use tessera_run::testing::{emulations as runs, host};
+use tessera_testkit::{Noise, cosine_f32, fill, graphs, max_abs_diff, weights};
+use tessera_trace::Act;
 
 #[test]
 fn rule_registers() {

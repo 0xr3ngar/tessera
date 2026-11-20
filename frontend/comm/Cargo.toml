@@ -1,5 +1,5 @@
 [package]
-name = "sensai-frontend-comm"
+name = "tessera-frontend-comm"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,16 +7,16 @@ publish.workspace = true
 description = "Joins ranks over TCP or a shared file for the engine"
 
 [dependencies]
-sensai-engine = { workspace = true }
+tessera-engine = { workspace = true }
 
 [dev-dependencies]
-sensai-frontend-settings = { workspace = true }
-sensai-graph = { workspace = true }
-sensai-interp = { workspace = true }
-sensai-lower = { workspace = true }
-sensai-mem = { workspace = true }
-sensai-models = { workspace = true }
-sensai-rules = { workspace = true }
-sensai-run = { workspace = true }
-sensai-testkit = { workspace = true }
-sensai-trace = { workspace = true }
+tessera-frontend-settings = { workspace = true }
+tessera-graph = { workspace = true }
+tessera-interp = { workspace = true }
+tessera-lower = { workspace = true }
+tessera-mem = { workspace = true }
+tessera-models = { workspace = true }
+tessera-rules = { workspace = true }
+tessera-run = { workspace = true }
+tessera-testkit = { workspace = true }
+tessera-trace = { workspace = true }

@@ -1,8 +1,8 @@
 //! Ranks by their command-line names, with devices.
 
-use sensai_lower::{Cluster, Device, Limits, Link, Pins, Platform, Zone, ZoneKind};
-use sensai_platform::platform::Asked;
-use sensai_sim::Tag;
+use tessera_lower::{Cluster, Device, Limits, Link, Pins, Platform, Zone, ZoneKind};
+use tessera_platform::platform::Asked;
+use tessera_sim::Tag;
 
 /// One rank: its hardware and its weight of split axes.
 #[derive(Clone, Debug, PartialEq)]
@@ -79,10 +79,10 @@ impl Spec {
     }
 
     /// Which text its kernels compile from.
-    pub fn dialect(&self) -> Option<sensai_lower::Dialect> {
+    pub fn dialect(&self) -> Option<tessera_lower::Dialect> {
         match self.backend {
-            "metal" => Some(sensai_lower::Dialect::Metal),
-            "cuda" | "rocm" => Some(sensai_lower::Dialect::Cuda),
+            "metal" => Some(tessera_lower::Dialect::Metal),
+            "cuda" | "rocm" => Some(tessera_lower::Dialect::Cuda),
             _ => None,
         }
     }

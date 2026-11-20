@@ -1,8 +1,8 @@
 //! Answers for `/v1/completions` and `/v1/chat/completions`.
 
-use sensai_tasks::Error;
-use sensai_tasks::api::{Finish, Format, Generator, Params, Refused, Sink, Step};
 use std::sync::Mutex;
+use tessera_tasks::Error;
+use tessera_tasks::api::{Finish, Format, Generator, Params, Refused, Sink, Step};
 
 /// Answers "hello" in two tokens. Keeps what it was asked.
 #[derive(Default)]

@@ -1,5 +1,5 @@
 use crate::tests::report;
-use sensai_findings::Level;
+use tessera_findings::Level;
 
 const XML: &str = r#"<testsuites><testsuite name="linear">
 <testcase name="quick" classname="linear" time="0.1"><system-out>ok</system-out></testcase>

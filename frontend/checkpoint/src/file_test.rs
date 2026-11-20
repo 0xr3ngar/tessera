@@ -6,7 +6,7 @@ fn write(name: &str, header: &str, data: &[u8]) -> PathBuf {
     let mut bytes = (header.len() as u64).to_le_bytes().to_vec();
     bytes.extend_from_slice(header.as_bytes());
     bytes.extend_from_slice(data);
-    sensai_testkit::stage(&format!("{name}.safetensors"), &bytes)
+    tessera_testkit::stage(&format!("{name}.safetensors"), &bytes)
 }
 
 const HEADER: &str = r#"{"__metadata__":{"format":"pt"},

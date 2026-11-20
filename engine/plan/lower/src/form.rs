@@ -1,10 +1,10 @@
 //! Pins: the registered form for each weight.
 
-use sensai_graph::PathSeg;
-use sensai_mem::Tensor;
 use serde::{Deserialize, Serialize};
+use tessera_graph::PathSeg;
+use tessera_mem::Tensor;
 
-pub use sensai_codegen::form::{BF16_FORM, F32_FORM, LOADS, Load, U32_FORM, named};
+pub use tessera_codegen::form::{BF16_FORM, F32_FORM, LOADS, Load, U32_FORM, named};
 
 /// A weight in a file's layout.
 pub enum Weight {

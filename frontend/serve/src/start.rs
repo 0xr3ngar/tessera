@@ -1,17 +1,17 @@
 //! Loads one model on a thread and serves HTTP.
 
 use crate::{Model, Slot};
-use sensai_bundle::Overrides;
-use sensai_engine::wasm::Module;
-use sensai_engine::{Batch, Fair, Pins, Recipe, Settings};
-use sensai_tasks::api::{Embed, GenerateImage, Info, Tokens};
-use sensai_tasks::klein::Klein;
-use sensai_tasks::paint::Painter;
-use sensai_tasks::{Generate, Job, Queued, Threaded, Worker};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::Instant;
+use tessera_bundle::Overrides;
+use tessera_engine::wasm::Module;
+use tessera_engine::{Batch, Fair, Pins, Recipe, Settings};
+use tessera_tasks::api::{Embed, GenerateImage, Info, Tokens};
+use tessera_tasks::klein::Klein;
+use tessera_tasks::paint::Painter;
+use tessera_tasks::{Generate, Job, Queued, Threaded, Worker};
 
 /// The flags for `Options::flag` and `Options::switch`.
 pub const FLAGS: &str = "[--host <addr>] [--port <n>] [--max-model-len <tokens>] [--slots <n>] \
@@ -158,7 +158,7 @@ pub fn run(options: Options) -> Result<(), String> {
 fn lowering(options: &Options, pins: Option<Pins>) -> Recipe {
     let mut recipe = options.lower.clone().unwrap_or_default();
     if recipe.pins == Pins::default() {
-        recipe.pins = pins.unwrap_or_else(|| Pins::all(sensai_engine::form::BF16_FORM));
+        recipe.pins = pins.unwrap_or_else(|| Pins::all(tessera_engine::form::BF16_FORM));
     }
     recipe
 }
@@ -170,11 +170,11 @@ fn engine_thread(o: &Options, settings: &Settings, info: Info, slot: &Slot) -> R
     let rules = match &settings.names {
         Some(path) => std::fs::read_to_string(path)
             .map_err(|e| e.to_string())
-            .and_then(|text| sensai_bundle::names::rules(&text).map_err(|e| e.to_string()))?,
+            .and_then(|text| tessera_bundle::names::rules(&text).map_err(|e| e.to_string()))?,
         None => Vec::new(),
     };
     let (slots, context) = (o.slots as u64, o.max_model_len as u64);
-    let loaded = sensai_bundle::load_named(&o.model, slots, context, &rules, o.guided)
+    let loaded = tessera_bundle::load_named(&o.model, slots, context, &rules, o.guided)
         .map_err(|e| e.to_string())?;
     let recipe = lowering(o, loaded.pins);
     let at = (&recipe, settings);
@@ -193,7 +193,7 @@ fn engine_thread(o: &Options, settings: &Settings, info: Info, slot: &Slot) -> R
         (false, _) => None,
         (true, None) => return Err("the model has no mask port".into()),
         (true, Some(words)) => Some(
-            sensai_tasks::guides(&loaded.tokenizer, &loaded.stop, words)
+            tessera_tasks::guides(&loaded.tokenizer, &loaded.stop, words)
                 .map_err(|e| e.to_string())?,
         ),
     };
@@ -241,7 +241,7 @@ fn engine_thread(o: &Options, settings: &Settings, info: Info, slot: &Slot) -> R
 
 /// Loads the model into `slot`. A failure ends the process.
 fn load(options: Options, slot: Slot) {
-    let mut settings = sensai_frontend_settings::read();
+    let mut settings = tessera_frontend_settings::read();
     settings.names = options.names.clone().or(settings.names);
     let info = Info {
         name: options
@@ -291,7 +291,7 @@ fn load(options: Options, slot: Slot) {
         .map_err(|e| e.to_string()),
     };
     if let Err(e) = failed {
-        eprintln!("sensai: {e}");
+        eprintln!("tesserax: {e}");
         std::process::exit(1);
     }
 }

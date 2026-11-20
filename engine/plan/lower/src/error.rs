@@ -1,5 +1,5 @@
 use crate::Term;
-use sensai_graph::{Parts, Shape};
+use tessera_graph::{Parts, Shape};
 
 /// Ops with no lowering rule.
 #[derive(Debug, thiserror::Error)]

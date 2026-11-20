@@ -1,22 +1,22 @@
 //! One rank of Qwen3-0.6B, sharded over TCP, against the fixture.
 
 // Linking these registers their lowering rules.
-use sensai_rules as _;
+use tessera_rules as _;
 
-use sensai_bundle::Weights;
-use sensai_engine_comm::{Fabric, Transport};
-use sensai_frontend_comm::{CAPACITY, meet, ports, shm};
-use sensai_graph::DimName::{Context, Seqs};
-use sensai_graph::shard;
-use sensai_interp::Tensor;
-use sensai_lower::{Cluster, Device, Pick, ZoneKind, lower};
-use sensai_models::decoder::{Config, Moe, Swiglu, program};
-use sensai_run::{Rank, Run};
-use sensai_trace::Norm;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
+use tessera_bundle::Weights;
+use tessera_engine_comm::{Fabric, Transport};
+use tessera_frontend_comm::{CAPACITY, meet, ports, shm};
+use tessera_graph::DimName::{Context, Seqs};
+use tessera_graph::shard;
+use tessera_interp::Tensor;
+use tessera_lower::{Cluster, Device, Pick, ZoneKind, lower};
+use tessera_models::decoder::{Config, Moe, Swiglu, program};
+use tessera_run::{Rank, Run};
+use tessera_trace::Norm;
 
 const USAGE: &str = "tessera-ranks --rank N (--addrs HOST:PORT,... | --shm PATH --ranks N)
   [--model qwen3|granite|eg2|deepseek|glm53] [--fixture DIR] [--listen ADDR] [--backend host|gpu] [--parts 3,1]
@@ -116,8 +116,8 @@ fn main() -> ExitCode {
 
 /// `ranks` linked zones on the host or the GPU.
 fn device(
-    settings: &sensai_lower::Settings,
-    pins: sensai_lower::Pins,
+    settings: &tessera_lower::Settings,
+    pins: tessera_lower::Pins,
     ranks: usize,
     host: bool,
 ) -> Device {
@@ -131,7 +131,7 @@ fn device(
     device.ranked((0..ranks as u32).collect())
 }
 
-type Loaded = (sensai_graph::Graph, Weights, sensai_lower::Pins);
+type Loaded = (tessera_graph::Graph, Weights, tessera_lower::Pins);
 
 /// One sequence's graph for `n` tokens, its weights and forms.
 fn model(name: &str, fixture: &Path, n: u64) -> Result<Loaded, Box<dyn std::error::Error>> {
@@ -139,49 +139,49 @@ fn model(name: &str, fixture: &Path, n: u64) -> Result<Loaded, Box<dyn std::erro
         "qwen3" => program::<Norm, Swiglu>(&Config::qwen3(1, n)),
         "granite" => program::<(), Moe>(&Config::granite(1, n)),
         "deepseek" | "glm53" => {
-            let r = sensai_bundle::mla::release(fixture, 1, n, 3).map_err(|e| e.to_string())?;
+            let r = tessera_bundle::mla::release(fixture, 1, n, 3).map_err(|e| e.to_string())?;
             let (graph, pins) = (r.graph.clone(), r.pins.clone());
             return Ok((graph, Weights::Streamed(Box::new(r)), pins));
         }
         "eg2" => {
-            let e = sensai_bundle::encoder::encoder(
+            let e = tessera_bundle::encoder::encoder(
                 &fixture.join("exlr8"),
                 [1, n],
                 false,
                 &Default::default(),
             )
             .map_err(|e| e.to_string())?;
-            let pins = sensai_lower::Pins::default();
+            let pins = tessera_lower::Pins::default();
             return Ok((e.graph, Weights::Held(e.weights), pins));
         }
         _ => return Err("a model this tool knows".into()),
     };
-    let file = sensai_checkpoint::File::open(&fixture.join("model.safetensors"))?;
-    let (weights, pins) = sensai_bundle::pull(&g, &file, 0, &[]).map_err(|e| e.to_string())?;
+    let file = tessera_checkpoint::File::open(&fixture.join("model.safetensors"))?;
+    let (weights, pins) = tessera_bundle::pull(&g, &file, 0, &[]).map_err(|e| e.to_string())?;
     Ok((g, Weights::Held(weights), pins))
 }
 
 /// The sums' transport: RDMA when ports are given.
 fn join(
     args: &Args,
-    settings: &sensai_lower::Settings,
+    settings: &tessera_lower::Settings,
 ) -> Result<Box<dyn Transport>, Box<dyn std::error::Error>> {
     let met: Box<dyn Transport> = match &args.shm {
         Some(path) => Box::new(shm(path, args.rank, args.ranks as u32, CAPACITY)?),
         None => Box::new(meet(args.rank, &args.addrs, args.listen)?),
     };
-    let [sums, _] = sensai_frontend_comm::join(met, args.fabric.as_ref(), settings)?;
+    let [sums, _] = tessera_frontend_comm::join(met, args.fabric.as_ref(), settings)?;
     Ok(sums)
 }
 
 fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
-    let mut settings = sensai_frontend_settings::read();
+    let mut settings = tessera_frontend_settings::read();
     if args.host {
         settings.backend = Pick::Cpu;
     }
     let fixture = match &args.fixture {
         Some(dir) => dir.clone(),
-        None => sensai_testkit::reference(&args.model)
+        None => tessera_testkit::reference(&args.model)
             .ok_or_else(|| format!("no fixture: {} has no reference here", args.model))?,
     };
     let case = ["", "cases/prompt", "cases/words"]
@@ -202,10 +202,10 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let ranks = args.ranks;
     let (g, weights, mut pins) = model(&args.model, &fixture, n as u64)?;
     let parts = match args.parts.is_empty() {
-        true => sensai_graph::Parts::even(ranks),
-        false => sensai_graph::Parts(args.parts.clone()),
+        true => tessera_graph::Parts::even(ranks),
+        false => tessera_graph::Parts(args.parts.clone()),
     };
-    let sensai_graph::Sharded {
+    let tessera_graph::Sharded {
         graph: sharded,
         whole,
     } = shard(&g, &parts)?;
@@ -216,7 +216,7 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     let split = sharded
         .weights
         .iter()
-        .filter(|w| w.ty.placement != sensai_graph::Placement::Replicated);
+        .filter(|w| w.ty.placement != tessera_graph::Placement::Replicated);
     eprintln!(
         "rank {}: {} of {} weights split over {ranks} ranks",
         args.rank,
@@ -225,8 +225,8 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     );
 
     if let Some(form) = &args.form {
-        let form = sensai_lower::form::named(form).ok_or_else(|| format!("no form `{form}`"))?;
-        pins = sensai_lower::Pins::all(form);
+        let form = tessera_lower::form::named(form).ok_or_else(|| format!("no form `{form}`"))?;
+        pins = tessera_lower::Pins::all(form);
     }
     let device = device(&settings, pins, ranks, args.host).as_rank(args.rank);
     let device = device.uneven(parts.0);
@@ -291,7 +291,7 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(bytes) = std::fs::read(case.join("embedding.f32")) {
         let (words, _) = bytes.as_chunks::<4>();
         let want: Vec<f32> = words.iter().map(|b| f32::from_le_bytes(*b)).collect();
-        let cos = sensai_testkit::cosine_f32(logits, &want);
+        let cos = tessera_testkit::cosine_f32(logits, &want);
         eprintln!("rank {}: embedding cos {cos:.5}", args.rank);
     }
     if let Ok(bytes) = std::fs::read(case.join("logits.f32")) {

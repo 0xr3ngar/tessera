@@ -15,7 +15,7 @@ fn rank_order() {
 
 /// A sized scratch file, open for reading and writing.
 fn sized(name: &str, len: usize) -> File {
-    let path = sensai_testkit::scratch(&format!("{name}-{}", std::process::id()));
+    let path = tessera_testkit::scratch(&format!("{name}-{}", std::process::id()));
     let file = OpenOptions::new()
         .read(true)
         .write(true)

@@ -1,4 +1,4 @@
-use crate::{self as sensai_trace, *};
+use crate::{self as tessera_trace, *};
 use DimName::*;
 
 #[derive(Weights)]
@@ -42,7 +42,7 @@ fn field(name: &str) -> PathSeg {
 #[test]
 fn weights_follow_fields() {
     let m = model();
-    let net: Net = sensai_trace::declare(&m);
+    let net: Net = tessera_trace::declare(&m);
     let mut x = m.embed(&traced_ids(&m), &net.embed);
     for b in &net.blocks {
         x = x.rms_norm(&b.norm, 1e-5).matmul(&b.qkv).slice(1, 0, Hidden);
@@ -60,7 +60,7 @@ fn weights_follow_fields() {
 #[should_panic(expected = "matmul K differs")]
 fn type_errors_panic() {
     let m = model();
-    let net: Net = sensai_trace::declare(&m);
+    let net: Net = tessera_trace::declare(&m);
     let x = m
         .embed(&traced_ids(&m), &net.embed)
         .matmul(&net.blocks[0].qkv);
@@ -81,7 +81,7 @@ fn traced_ids(m: &Model) -> Tensor {
 #[test]
 fn composites_record_regions() {
     let m = model();
-    let net: Net = sensai_trace::declare(&m);
+    let net: Net = tessera_trace::declare(&m);
     let x = m.embed(&traced_ids(&m), &net.embed);
     let b = &net.blocks[0];
     let [y] = m.composite(Composite::Mlp, || {
@@ -101,10 +101,10 @@ fn composites_record_regions() {
     assert_eq!(outer.inputs, g.reads(outer.start, outer.end));
     assert!(outer.start < inner.start && inner.end < outer.end);
     let matmul = g.node(inner.outputs[0]);
-    assert_eq!(matmul.numerics, Some(sensai_graph::Numerics::default()));
+    assert_eq!(matmul.numerics, Some(tessera_graph::Numerics::default()));
     assert_eq!(
         g.node(outer.start).numerics,
-        Some(sensai_graph::Numerics::default())
+        Some(tessera_graph::Numerics::default())
     );
 }
 
@@ -112,7 +112,7 @@ fn composites_record_regions() {
 #[should_panic(expected = "must return values it computed")]
 fn composites_own_outputs() {
     let m = model();
-    let net: Net = sensai_trace::declare(&m);
+    let net: Net = tessera_trace::declare(&m);
     let x = m.embed(&traced_ids(&m), &net.embed);
     m.composite(Composite::Mlp, || {
         [x.rms_norm(&net.blocks[0].norm, 1e-5), x.clone()]
@@ -131,7 +131,7 @@ struct Grouped {
 fn weights_reach_groups() {
     let m = model();
     let given = |_| vec![Vocab.into(), Layers.into()];
-    let all: Vec<Grouped> = sensai_trace::each(&m, "g", Layers, given);
+    let all: Vec<Grouped> = tessera_trace::each(&m, "g", Layers, given);
     let g = &all[1];
     assert_eq!(
         g.up.0.ty().shape,

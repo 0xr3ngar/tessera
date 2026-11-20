@@ -2,13 +2,13 @@
 
 use crate::file::{Error, File};
 use crate::offer::{Offer, Slice, Stored};
-use sensai_engine::storage::Form;
-use sensai_engine::trellis::Codebook;
-pub use sensai_engine::trellis::rotated;
-use sensai_engine::{E4M3, F16, block, trellis};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use tessera_engine::storage::Form;
+use tessera_engine::trellis::Codebook;
+pub use tessera_engine::trellis::rotated;
+use tessera_engine::{E4M3, F16, block, trellis};
 
 /// Record field 0: how the matrix is stored.
 const TRELLIS: i64 = 1;

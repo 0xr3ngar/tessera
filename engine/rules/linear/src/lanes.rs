@@ -1,11 +1,11 @@
 //! A matmul for few rows, a SIMD group per column.
 
 use crate::product::{Product, Variant};
-use sensai_codegen::ir::{Body, Expr};
-use sensai_codegen::prelude::*;
-use sensai_graph::Order;
-use sensai_lower::form::Load as Stored;
-use sensai_lower::{Draft, Kernel, Launch, Load, Needs, Shape, Step, T, Tree};
+use tessera_codegen::ir::{Body, Expr};
+use tessera_codegen::prelude::*;
+use tessera_graph::Order;
+use tessera_lower::form::Load as Stored;
+use tessera_lower::{Draft, Kernel, Launch, Load, Needs, Shape, Step, T, Tree};
 
 /// Elements one wide load brings a lane.
 const WIDE: u32 = 4;
@@ -140,4 +140,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(Lanes { product }, reads, len)])
 }
 
-sensai_lower::rule!("lanes", propose);
+tessera_lower::rule!("lanes", propose);

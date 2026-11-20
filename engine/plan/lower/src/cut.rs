@@ -1,6 +1,6 @@
 //! Cuts nodes out of a graph, to check one rule.
 
-use sensai_graph::{Entry, EntryKind, Graph, Node, NodeId, Op, Output, Port, Role};
+use tessera_graph::{Entry, EntryKind, Graph, Node, NodeId, Op, Output, Port, Role};
 
 /// A graph of `nodes` alone. Their reads become its inputs.
 pub fn cut(g: &Graph, nodes: &[NodeId]) -> Graph {

@@ -1,18 +1,18 @@
 //! The EG2 exlr8 release over two ranks on one box.
 
 use super::{device, model};
-use sensai_graph::DimName::{Context, Seqs};
-use sensai_graph::shard;
-use sensai_interp::Tensor;
-use sensai_lower::lower;
-use sensai_run::Loopback;
-use sensai_run::testing::runs;
-use sensai_testkit::cosine_f32;
+use tessera_graph::DimName::{Context, Seqs};
+use tessera_graph::shard;
+use tessera_interp::Tensor;
+use tessera_lower::lower;
+use tessera_run::Loopback;
+use tessera_run::testing::runs;
+use tessera_testkit::cosine_f32;
 
 /// Each rank loads its part of the packed weights.
 #[test]
 fn eg2_run() {
-    let dir = sensai_testkit::reference("eg2");
+    let dir = tessera_testkit::reference("eg2");
     let Some(dir) = dir.filter(|d| d.join("exlr8/tokenizer.json").is_file()) else {
         return eprintln!("no eg2 reference with its exlr8 release: skipped");
     };
@@ -24,7 +24,7 @@ fn eg2_run() {
         .collect();
     let n = ids.len();
     let (g, weights, _) = model("eg2", &dir, n as u64).unwrap();
-    let sharded = shard(&g, &sensai_graph::Parts::even(2)).unwrap().graph;
+    let sharded = shard(&g, &tessera_graph::Parts::even(2)).unwrap().graph;
     let settings = runs().pop().unwrap();
     let device = device(&settings, Default::default(), 2, settings.gpu().is_none());
     let sizes = [(Seqs, 1), (Context, n as u64)];

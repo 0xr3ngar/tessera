@@ -52,7 +52,7 @@ fn sample(alignment: u64) -> Vec<u8> {
 }
 
 fn open(bytes: &[u8]) -> Result<Gguf, Error> {
-    let path = sensai_testkit::stage("checkpoint.gguf", bytes);
+    let path = tessera_testkit::stage("checkpoint.gguf", bytes);
     let result = Gguf::open(&path);
     std::fs::remove_file(path).unwrap();
     result
@@ -104,7 +104,7 @@ fn reads_gguf() {
         let q8 = &slices[3];
         assert_eq!(
             (q8.elements(), q8.stored),
-            (32, Stored::Form(&sensai_engine::block::Q8_0))
+            (32, Stored::Form(&tessera_engine::block::Q8_0))
         );
         assert_eq!(Offer::packed(&g, "q8").unwrap(), vec![23; 34]);
         assert!(matches!(Offer::packed(&g, "f"), Err(Error::DType(_))));

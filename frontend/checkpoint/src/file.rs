@@ -1,13 +1,13 @@
 //! One safetensors file: a JSON header, then tensor bytes.
 
 use crate::offer::{Offer, Slice, Stored};
-use sensai_engine::{Bf16, F16};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
+use tessera_engine::{Bf16, F16};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

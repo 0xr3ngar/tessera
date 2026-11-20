@@ -2,9 +2,9 @@
 
 use crate::Error;
 use crate::api::Format;
-use sensai_bundle::tokenize::hf::Hf;
-use sensai_engine::Guide;
 use std::sync::Arc;
+use tessera_bundle::tokenize::hf::Hf;
+use tessera_engine::Guide;
 
 /// Makes one guide per answer, for one loaded model.
 pub trait Guides: Send + Sync {
@@ -13,7 +13,7 @@ pub trait Guides: Send + Sync {
 }
 
 #[cfg(feature = "guided")]
-impl Guides for sensai_grammar::Vocab {
+impl Guides for tessera_grammar::Vocab {
     fn guide(&self, format: &Format) -> Result<Box<dyn Guide>, Error> {
         let made = match format {
             Format::Object => self.object(),
@@ -30,7 +30,7 @@ impl Guides for sensai_grammar::Vocab {
 #[cfg(feature = "guided")]
 pub fn guides(tokenizer: &Hf, stop: &[u32], words: usize) -> Result<Arc<dyn Guides>, Error> {
     let json = tokenizer.json()?;
-    let vocab = sensai_grammar::Vocab::new(json.as_bytes(), stop, words * 32)?;
+    let vocab = tessera_grammar::Vocab::new(json.as_bytes(), stop, words * 32)?;
     Ok(Arc::new(vocab))
 }
 

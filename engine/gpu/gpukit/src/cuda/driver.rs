@@ -4,9 +4,9 @@ use crate::Error;
 use crate::api::{LaunchFn, entry};
 use crate::dl::once;
 use crate::rtc::Rtc;
-use sensai_dl::message;
 use std::ffi::{c_char, c_int, c_void};
 use std::sync::OnceLock;
+use tessera_dl::message;
 
 pub type CUresult = c_int;
 pub(crate) type CUdevice = c_int;
@@ -71,7 +71,7 @@ type CuGraphInstantiate = unsafe extern "C" fn(*mut CUgraphExec, CUgraph, u64) -
 type CuGetErrorName = unsafe extern "C" fn(CUresult, *mut *const c_char) -> CUresult;
 type CuGetErrorString = unsafe extern "C" fn(CUresult, *mut *const c_char) -> CUresult;
 
-sensai_dl::library! {
+tessera_dl::library! {
     /// Resolved driver entry points. The dlopen handle stays open.
     pub struct Driver as "CUDA driver" in ["libcuda.so.1"] {
         pub(crate) cu_init: entry::Init = "cuInit",

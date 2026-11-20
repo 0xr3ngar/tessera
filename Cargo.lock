@@ -1559,590 +1559,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
-name = "sensai-attention"
-version = "0.1.0"
-dependencies = [
- "sensai-codegen",
- "sensai-graph",
- "sensai-interp",
- "sensai-kernels",
- "sensai-lower",
- "sensai-run",
- "sensai-testkit",
- "sensai-trace",
-]
-
-[[package]]
-name = "sensai-bundle"
-version = "0.1.0"
-dependencies = [
- "fancy-regex",
- "jiff",
- "minijinja",
- "minijinja-contrib",
- "rmp-serde",
- "rmpv",
- "sensai-checkpoint",
- "sensai-engine",
- "sensai-testkit",
- "serde",
- "serde_json",
- "thiserror",
- "tokenizers",
-]
-
-[[package]]
-name = "sensai-calibrate"
-version = "0.1.0"
-dependencies = [
- "naga",
- "sensai-bundle",
- "sensai-codegen",
- "sensai-engine",
- "sensai-frontend-settings",
- "sensai-graph",
- "sensai-lower",
- "sensai-models",
- "sensai-rules",
- "sensai-run",
- "sensai-sim",
- "sensai-testkit",
- "sensai-trace",
-]
-
-[[package]]
-name = "sensai-checkpoint"
-version = "0.1.0"
-dependencies = [
- "sensai-engine",
- "sensai-frontend-settings",
- "sensai-testkit",
- "serde",
- "serde_json",
- "thiserror",
- "ureq",
-]
-
-[[package]]
-name = "sensai-cli"
-version = "0.1.0"
-dependencies = [
- "sensai-bundle",
- "sensai-engine",
- "sensai-frontend-settings",
- "sensai-recipe",
- "sensai-serve",
- "sensai-tasks",
- "sensai-testkit",
- "serde_json",
-]
-
-[[package]]
-name = "sensai-codegen"
-version = "0.1.0"
-dependencies = [
- "scattered-collect",
- "sensai-graph",
- "sensai-kernel-macro",
- "sensai-mem",
- "sensai-work",
-]
-
-[[package]]
-name = "sensai-cpu"
-version = "0.1.0"
-dependencies = [
- "sensai-codegen",
- "sensai-lower",
-]
-
-[[package]]
-name = "sensai-device"
-version = "0.1.0"
-dependencies = [
- "sensai-engine-comm",
- "thiserror",
-]
-
-[[package]]
-name = "sensai-dl"
-version = "0.1.0"
-
-[[package]]
-name = "sensai-engine"
-version = "0.1.0"
-dependencies = [
- "scattered-collect",
- "sensai-engine-comm",
- "sensai-engine-settings",
- "sensai-graph",
- "sensai-interp",
- "sensai-kv",
- "sensai-lower",
- "sensai-mem",
- "sensai-models",
- "sensai-rules",
- "sensai-run",
- "sensai-testkit",
- "sensai-trace",
- "sensai-wasm",
- "serde",
- "thiserror",
-]
-
-[[package]]
-name = "sensai-engine-comm"
-version = "0.1.0"
-dependencies = [
- "sensai-dl",
- "sensai-testkit",
- "thiserror",
-]
-
-[[package]]
-name = "sensai-engine-settings"
-version = "0.1.0"
-dependencies = [
- "derive_more",
- "serde",
-]
-
-[[package]]
-name = "sensai-eval"
-version = "0.1.0"
-dependencies = [
- "sensai-bundle",
- "sensai-checkpoint",
- "sensai-engine",
- "sensai-frontend-settings",
- "sensai-tasks",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sensai-findings"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sensai-frontend-comm"
-version = "0.1.0"
-dependencies = [
- "sensai-engine",
- "sensai-frontend-settings",
- "sensai-graph",
- "sensai-interp",
- "sensai-lower",
- "sensai-mem",
- "sensai-models",
- "sensai-rules",
- "sensai-run",
- "sensai-testkit",
- "sensai-trace",
-]
-
-[[package]]
-name = "sensai-frontend-settings"
-version = "0.1.0"
-dependencies = [
- "envy",
- "sensai-engine",
- "serde",
-]
-
-[[package]]
-name = "sensai-glm53-moe-module"
-version = "0.1.0"
-dependencies = [
- "sensai-guest",
- "serde_json",
-]
-
-[[package]]
-name = "sensai-gpukit"
-version = "0.1.0"
-dependencies = [
- "objc2",
- "objc2-foundation",
- "objc2-metal",
- "sensai-dl",
- "sensai-engine-settings",
- "sensai-mem",
- "sensai-platform",
- "thiserror",
-]
-
-[[package]]
-name = "sensai-grammar"
-version = "0.1.0"
-dependencies = [
- "llguidance",
- "sensai-bundle",
- "sensai-engine",
- "serde_json",
- "toktrie",
-]
-
-[[package]]
-name = "sensai-graph"
-version = "0.1.0"
-dependencies = [
- "derive_more",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "sensai-guest"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sensai-host"
-version = "0.1.0"
-dependencies = [
- "sensai-codegen",
- "sensai-graph",
-]
-
-[[package]]
-name = "sensai-inspect"
-version = "0.1.0"
-dependencies = [
- "sensai-graph",
- "sensai-lower",
- "sensai-models",
- "sensai-platform",
- "sensai-rules",
- "sensai-sim",
- "sensai-trace",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sensai-interp"
-version = "0.1.0"
-dependencies = [
- "sensai-graph",
- "sensai-mem",
- "sensai-trace",
- "thiserror",
-]
-
-[[package]]
-name = "sensai-jit"
-version = "0.1.0"
-dependencies = [
- "cranelift-codegen",
- "cranelift-frontend",
- "cranelift-jit",
- "cranelift-module",
- "cranelift-native",
- "sensai-codegen",
- "sensai-host",
-]
-
-[[package]]
-name = "sensai-kernel-macro"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "sensai-kernels"
-version = "0.1.0"
-dependencies = [
- "sensai-attention",
- "sensai-codegen",
- "sensai-graph",
- "sensai-interp",
- "sensai-linear",
- "sensai-lower",
- "sensai-run",
- "sensai-testkit",
- "sensai-trace",
- "sensai-work",
-]
-
-[[package]]
-name = "sensai-kv"
-version = "0.1.0"
-dependencies = [
- "thiserror",
-]
-
-[[package]]
-name = "sensai-linear"
-version = "0.1.0"
-dependencies = [
- "sensai-codegen",
- "sensai-gpukit",
- "sensai-graph",
- "sensai-interp",
- "sensai-kernels",
- "sensai-lower",
- "sensai-run",
- "sensai-testkit",
- "sensai-trace",
-]
-
-[[package]]
-name = "sensai-load"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "ureq",
-]
-
-[[package]]
-name = "sensai-lower"
-version = "0.1.0"
-dependencies = [
- "derive_more",
- "scattered-collect",
- "sensai-codegen",
- "sensai-engine-settings",
- "sensai-graph",
- "sensai-kernel-macro",
- "sensai-mem",
- "sensai-platform",
- "sensai-sim",
- "sensai-work",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "sensai-mem"
-version = "0.1.0"
-dependencies = [
- "scattered-collect",
- "sensai-graph",
- "thiserror",
-]
-
-[[package]]
-name = "sensai-models"
-version = "0.1.0"
-dependencies = [
- "sensai-graph",
- "sensai-trace",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sensai-parity"
-version = "0.1.0"
-dependencies = [
- "sensai-bundle",
- "sensai-checkpoint",
- "sensai-codegen",
- "sensai-engine",
- "sensai-engine-settings",
- "sensai-graph",
- "sensai-interp",
- "sensai-lower",
- "sensai-models",
- "sensai-recipe",
- "sensai-rules",
- "sensai-run",
- "sensai-testkit",
- "sensai-trace",
- "serde_json",
-]
-
-[[package]]
-name = "sensai-platform"
-version = "0.1.0"
-dependencies = [
- "include_dir",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sensai-ranks"
-version = "0.1.0"
-dependencies = [
- "sensai-bundle",
- "sensai-checkpoint",
- "sensai-engine-comm",
- "sensai-frontend-comm",
- "sensai-frontend-settings",
- "sensai-graph",
- "sensai-interp",
- "sensai-lower",
- "sensai-models",
- "sensai-rules",
- "sensai-run",
- "sensai-testkit",
- "sensai-trace",
-]
-
-[[package]]
-name = "sensai-recipe"
-version = "0.1.0"
-dependencies = [
- "sensai-engine",
- "sensai-testkit",
- "serde",
- "serde_json",
- "thiserror",
- "toml",
- "ureq",
-]
-
-[[package]]
-name = "sensai-rules"
-version = "0.1.0"
-dependencies = [
- "sensai-attention",
- "sensai-cpu",
- "sensai-kernels",
- "sensai-linear",
-]
-
-[[package]]
-name = "sensai-run"
-version = "0.1.0"
-dependencies = [
- "rayon",
- "sensai-codegen",
- "sensai-engine-comm",
- "sensai-engine-settings",
- "sensai-gpukit",
- "sensai-graph",
- "sensai-host",
- "sensai-interp",
- "sensai-jit",
- "sensai-lower",
- "sensai-mem",
- "sensai-sim",
- "sensai-testkit",
- "sensai-trace",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "sensai-serve"
-version = "0.1.0"
-dependencies = [
- "httparse",
- "sensai-bundle",
- "sensai-engine",
- "sensai-frontend-comm",
- "sensai-frontend-settings",
- "sensai-models",
- "sensai-tasks",
- "sensai-testkit",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sensai-shape"
-version = "0.1.0"
-
-[[package]]
-name = "sensai-sim"
-version = "0.1.0"
-dependencies = [
- "sensai-work",
- "serde",
-]
-
-[[package]]
-name = "sensai-sprite-module"
-version = "0.1.0"
-dependencies = [
- "sensai-guest",
- "sensai-models",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "sensai-tasks"
-version = "0.1.0"
-dependencies = [
- "sensai-bundle",
- "sensai-checkpoint",
- "sensai-engine",
- "sensai-frontend-settings",
- "sensai-grammar",
- "sensai-recipe",
- "sensai-testkit",
- "serde_json",
-]
-
-[[package]]
-name = "sensai-testkit"
-version = "0.1.0"
-dependencies = [
- "sensai-graph",
- "sensai-mem",
- "sensai-trace",
-]
-
-[[package]]
-name = "sensai-trace"
-version = "0.1.0"
-dependencies = [
- "sensai-graph",
- "sensai-trace-derive",
-]
-
-[[package]]
-name = "sensai-trace-derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "sensai-wasm"
-version = "0.1.0"
-dependencies = [
- "sensai-device",
- "sensai-graph",
- "sensai-guest",
- "sensai-interp",
- "sensai-kernels",
- "sensai-linear",
- "sensai-lower",
- "sensai-run",
- "sensai-testkit",
- "sensai-trace",
- "serde",
- "serde_json",
- "thiserror",
- "wasmi",
- "wat",
-]
-
-[[package]]
-name = "sensai-work"
-version = "0.1.0"
-
-[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2327,12 +1743,352 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c447be3a2abfa84b2d91680c56600bd6b2873866de27b36ec911be705e291da"
 
 [[package]]
+name = "tessera-attention"
+version = "0.1.0"
+dependencies = [
+ "tessera-codegen",
+ "tessera-graph",
+ "tessera-interp",
+ "tessera-kernels",
+ "tessera-lower",
+ "tessera-run",
+ "tessera-testkit",
+ "tessera-trace",
+]
+
+[[package]]
+name = "tessera-bundle"
+version = "0.1.0"
+dependencies = [
+ "fancy-regex",
+ "jiff",
+ "minijinja",
+ "minijinja-contrib",
+ "rmp-serde",
+ "rmpv",
+ "serde",
+ "serde_json",
+ "tessera-checkpoint",
+ "tessera-engine",
+ "tessera-testkit",
+ "thiserror",
+ "tokenizers",
+]
+
+[[package]]
+name = "tessera-calibrate"
+version = "0.1.0"
+dependencies = [
+ "naga",
+ "tessera-bundle",
+ "tessera-codegen",
+ "tessera-engine",
+ "tessera-frontend-settings",
+ "tessera-graph",
+ "tessera-lower",
+ "tessera-models",
+ "tessera-rules",
+ "tessera-run",
+ "tessera-sim",
+ "tessera-testkit",
+ "tessera-trace",
+]
+
+[[package]]
 name = "tessera-check"
 version = "0.1.0"
 dependencies = [
  "roxmltree",
- "sensai-findings",
- "sensai-frontend-settings",
+ "tessera-findings",
+ "tessera-frontend-settings",
+]
+
+[[package]]
+name = "tessera-checkpoint"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tessera-engine",
+ "tessera-frontend-settings",
+ "tessera-testkit",
+ "thiserror",
+ "ureq",
+]
+
+[[package]]
+name = "tessera-cli"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tessera-bundle",
+ "tessera-engine",
+ "tessera-frontend-settings",
+ "tessera-recipe",
+ "tessera-serve",
+ "tessera-tasks",
+ "tessera-testkit",
+]
+
+[[package]]
+name = "tessera-codegen"
+version = "0.1.0"
+dependencies = [
+ "scattered-collect",
+ "tessera-graph",
+ "tessera-kernel-macro",
+ "tessera-mem",
+ "tessera-work",
+]
+
+[[package]]
+name = "tessera-cpu"
+version = "0.1.0"
+dependencies = [
+ "tessera-codegen",
+ "tessera-lower",
+]
+
+[[package]]
+name = "tessera-device"
+version = "0.1.0"
+dependencies = [
+ "tessera-engine-comm",
+ "thiserror",
+]
+
+[[package]]
+name = "tessera-dl"
+version = "0.1.0"
+
+[[package]]
+name = "tessera-engine"
+version = "0.1.0"
+dependencies = [
+ "scattered-collect",
+ "serde",
+ "tessera-engine-comm",
+ "tessera-engine-settings",
+ "tessera-graph",
+ "tessera-interp",
+ "tessera-kv",
+ "tessera-lower",
+ "tessera-mem",
+ "tessera-models",
+ "tessera-rules",
+ "tessera-run",
+ "tessera-testkit",
+ "tessera-trace",
+ "tessera-wasm",
+ "thiserror",
+]
+
+[[package]]
+name = "tessera-engine-comm"
+version = "0.1.0"
+dependencies = [
+ "tessera-dl",
+ "tessera-testkit",
+ "thiserror",
+]
+
+[[package]]
+name = "tessera-engine-settings"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "serde",
+]
+
+[[package]]
+name = "tessera-eval"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tessera-bundle",
+ "tessera-checkpoint",
+ "tessera-engine",
+ "tessera-frontend-settings",
+ "tessera-tasks",
+]
+
+[[package]]
+name = "tessera-findings"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "tessera-frontend-comm"
+version = "0.1.0"
+dependencies = [
+ "tessera-engine",
+ "tessera-frontend-settings",
+ "tessera-graph",
+ "tessera-interp",
+ "tessera-lower",
+ "tessera-mem",
+ "tessera-models",
+ "tessera-rules",
+ "tessera-run",
+ "tessera-testkit",
+ "tessera-trace",
+]
+
+[[package]]
+name = "tessera-frontend-settings"
+version = "0.1.0"
+dependencies = [
+ "envy",
+ "serde",
+ "tessera-engine",
+]
+
+[[package]]
+name = "tessera-glm53-moe-module"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tessera-guest",
+]
+
+[[package]]
+name = "tessera-gpukit"
+version = "0.1.0"
+dependencies = [
+ "objc2",
+ "objc2-foundation",
+ "objc2-metal",
+ "tessera-dl",
+ "tessera-engine-settings",
+ "tessera-mem",
+ "tessera-platform",
+ "thiserror",
+]
+
+[[package]]
+name = "tessera-grammar"
+version = "0.1.0"
+dependencies = [
+ "llguidance",
+ "serde_json",
+ "tessera-bundle",
+ "tessera-engine",
+ "toktrie",
+]
+
+[[package]]
+name = "tessera-graph"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "tessera-guest"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "tessera-host"
+version = "0.1.0"
+dependencies = [
+ "tessera-codegen",
+ "tessera-graph",
+]
+
+[[package]]
+name = "tessera-inspect"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tessera-graph",
+ "tessera-lower",
+ "tessera-models",
+ "tessera-platform",
+ "tessera-rules",
+ "tessera-sim",
+ "tessera-trace",
+]
+
+[[package]]
+name = "tessera-interp"
+version = "0.1.0"
+dependencies = [
+ "tessera-graph",
+ "tessera-mem",
+ "tessera-trace",
+ "thiserror",
+]
+
+[[package]]
+name = "tessera-jit"
+version = "0.1.0"
+dependencies = [
+ "cranelift-codegen",
+ "cranelift-frontend",
+ "cranelift-jit",
+ "cranelift-module",
+ "cranelift-native",
+ "tessera-codegen",
+ "tessera-host",
+]
+
+[[package]]
+name = "tessera-kernel-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "tessera-kernels"
+version = "0.1.0"
+dependencies = [
+ "tessera-attention",
+ "tessera-codegen",
+ "tessera-graph",
+ "tessera-interp",
+ "tessera-linear",
+ "tessera-lower",
+ "tessera-run",
+ "tessera-testkit",
+ "tessera-trace",
+ "tessera-work",
+]
+
+[[package]]
+name = "tessera-kv"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "tessera-linear"
+version = "0.1.0"
+dependencies = [
+ "tessera-codegen",
+ "tessera-gpukit",
+ "tessera-graph",
+ "tessera-interp",
+ "tessera-kernels",
+ "tessera-lower",
+ "tessera-run",
+ "tessera-testkit",
+ "tessera-trace",
 ]
 
 [[package]]
@@ -2341,13 +2097,90 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
- "sensai-findings",
- "sensai-shape",
  "serde",
  "serde_json",
  "syn 2.0.119",
+ "tessera-findings",
  "tessera-publish",
+ "tessera-shape",
  "toml",
+]
+
+[[package]]
+name = "tessera-load"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
+name = "tessera-lower"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "scattered-collect",
+ "serde",
+ "serde_json",
+ "tessera-codegen",
+ "tessera-engine-settings",
+ "tessera-graph",
+ "tessera-kernel-macro",
+ "tessera-mem",
+ "tessera-platform",
+ "tessera-sim",
+ "tessera-work",
+ "thiserror",
+]
+
+[[package]]
+name = "tessera-mem"
+version = "0.1.0"
+dependencies = [
+ "scattered-collect",
+ "tessera-graph",
+ "thiserror",
+]
+
+[[package]]
+name = "tessera-models"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tessera-graph",
+ "tessera-trace",
+]
+
+[[package]]
+name = "tessera-parity"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tessera-bundle",
+ "tessera-checkpoint",
+ "tessera-codegen",
+ "tessera-engine",
+ "tessera-engine-settings",
+ "tessera-graph",
+ "tessera-interp",
+ "tessera-lower",
+ "tessera-models",
+ "tessera-recipe",
+ "tessera-rules",
+ "tessera-run",
+ "tessera-testkit",
+ "tessera-trace",
+]
+
+[[package]]
+name = "tessera-platform"
+version = "0.1.0"
+dependencies = [
+ "include_dir",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2362,16 +2195,183 @@ dependencies = [
 ]
 
 [[package]]
+name = "tessera-ranks"
+version = "0.1.0"
+dependencies = [
+ "tessera-bundle",
+ "tessera-checkpoint",
+ "tessera-engine-comm",
+ "tessera-frontend-comm",
+ "tessera-frontend-settings",
+ "tessera-graph",
+ "tessera-interp",
+ "tessera-lower",
+ "tessera-models",
+ "tessera-rules",
+ "tessera-run",
+ "tessera-testkit",
+ "tessera-trace",
+]
+
+[[package]]
+name = "tessera-recipe"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tessera-engine",
+ "tessera-testkit",
+ "thiserror",
+ "toml",
+ "ureq",
+]
+
+[[package]]
+name = "tessera-rules"
+version = "0.1.0"
+dependencies = [
+ "tessera-attention",
+ "tessera-cpu",
+ "tessera-kernels",
+ "tessera-linear",
+]
+
+[[package]]
+name = "tessera-run"
+version = "0.1.0"
+dependencies = [
+ "rayon",
+ "serde_json",
+ "tessera-codegen",
+ "tessera-engine-comm",
+ "tessera-engine-settings",
+ "tessera-gpukit",
+ "tessera-graph",
+ "tessera-host",
+ "tessera-interp",
+ "tessera-jit",
+ "tessera-lower",
+ "tessera-mem",
+ "tessera-sim",
+ "tessera-testkit",
+ "tessera-trace",
+ "thiserror",
+]
+
+[[package]]
+name = "tessera-serve"
+version = "0.1.0"
+dependencies = [
+ "httparse",
+ "serde",
+ "serde_json",
+ "tessera-bundle",
+ "tessera-engine",
+ "tessera-frontend-comm",
+ "tessera-frontend-settings",
+ "tessera-models",
+ "tessera-tasks",
+ "tessera-testkit",
+]
+
+[[package]]
+name = "tessera-shape"
+version = "0.1.0"
+
+[[package]]
+name = "tessera-sim"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tessera-work",
+]
+
+[[package]]
+name = "tessera-sprite-module"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tessera-guest",
+ "tessera-models",
+]
+
+[[package]]
 name = "tessera-style"
 version = "0.1.0"
 dependencies = [
  "fancy-regex",
- "sensai-findings",
- "sensai-frontend-settings",
- "sensai-tasks",
- "sensai-testkit",
+ "tessera-findings",
+ "tessera-frontend-settings",
+ "tessera-tasks",
+ "tessera-testkit",
  "ureq",
 ]
+
+[[package]]
+name = "tessera-tasks"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tessera-bundle",
+ "tessera-checkpoint",
+ "tessera-engine",
+ "tessera-frontend-settings",
+ "tessera-grammar",
+ "tessera-recipe",
+ "tessera-testkit",
+]
+
+[[package]]
+name = "tessera-testkit"
+version = "0.1.0"
+dependencies = [
+ "tessera-graph",
+ "tessera-mem",
+ "tessera-trace",
+]
+
+[[package]]
+name = "tessera-trace"
+version = "0.1.0"
+dependencies = [
+ "tessera-graph",
+ "tessera-trace-derive",
+]
+
+[[package]]
+name = "tessera-trace-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "tessera-wasm"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tessera-device",
+ "tessera-graph",
+ "tessera-guest",
+ "tessera-interp",
+ "tessera-kernels",
+ "tessera-linear",
+ "tessera-lower",
+ "tessera-run",
+ "tessera-testkit",
+ "tessera-trace",
+ "thiserror",
+ "wasmi",
+ "wat",
+]
+
+[[package]]
+name = "tessera-work"
+version = "0.1.0"
 
 [[package]]
 name = "thiserror"

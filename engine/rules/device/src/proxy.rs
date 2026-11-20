@@ -1,8 +1,8 @@
 //! The host proxy: reads the doorbell, moves parts, frees slots.
 
 use crate::layout::MAX_GROUP;
-use sensai_engine_comm::Error as CommError;
 use std::collections::{BTreeMap, BTreeSet};
+use tessera_engine_comm::Error as CommError;
 
 #[cfg(test)]
 pub(crate) mod sim;

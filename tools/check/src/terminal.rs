@@ -1,7 +1,7 @@
 //! Findings as colored text, for the hook and local runs.
 
-use sensai_findings::{Level, Report};
 use std::fmt::Write;
+use tessera_findings::{Level, Report};
 
 /// ANSI styles, or plain text off a terminal.
 struct Paint(bool);

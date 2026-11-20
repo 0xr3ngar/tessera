@@ -1,7 +1,7 @@
 use crate::{Error, Recipe};
-use sensai_engine::sprite;
-use sensai_engine::wasm::Module;
 use std::path::{Path, PathBuf};
+use tessera_engine::sprite;
+use tessera_engine::wasm::Module;
 
 const TEXT: &str = r#"
 name = "small"
@@ -56,7 +56,7 @@ const SMALL: &str = r#"{"vocab_size": 512, "grid_size": 16, "dim": 512, "n_heads
 fn module_graph_matches() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/recipes/tessera-small");
     let recipe = Recipe::read(&dir).unwrap();
-    let cache = sensai_testkit::scratch("recipes");
+    let cache = tessera_testkit::scratch("recipes");
     let bytes = recipe.module_bytes(Some(&cache)).unwrap().unwrap();
     let module = Module::open(&bytes).unwrap();
     // The module builds exactly the graph the engine would.

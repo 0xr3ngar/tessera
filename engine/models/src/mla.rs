@@ -1,8 +1,8 @@
 //! DeepSeek-style decoders: low-rank attention, MoE, indexed keys.
 
 use crate::shared::{Attend, Stack, pick, rows, step_ports, swiglu, tokens};
-use sensai_trace::DimName::*;
-use sensai_trace::{
+use tessera_trace::DimName::*;
+use tessera_trace::{
     Act, Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Linears, Mask, Model,
     Norm, Pairs, Role, Size, Tensor, TensorType, Vector, Weights,
 };
@@ -530,7 +530,7 @@ impl Routed for RotatedMoe {
 /// One forward entry: tokens and positions in, logits out.
 pub fn program<R: Routed>(c: &Config) -> Graph {
     let m = Model::new(c.dims());
-    let w: Mla<R> = sensai_trace::declare(&m);
+    let w: Mla<R> = tessera_trace::declare(&m);
     let [tokens, positions] = tokens(&m);
     let logits = forward(&m, c, &w, &tokens, &positions);
     m.finish([(Role::Logits, &logits)])
@@ -542,7 +542,7 @@ pub fn stepper<R: Routed>(c: &Config) -> Graph {
     let size = Size::Bounded(c.stack.max_context);
     dims.push(Dim { name: Rows, size });
     let m = Model::new(dims);
-    let w: Mla<R> = sensai_trace::declare(&m);
+    let w: Mla<R> = tessera_trace::declare(&m);
     let ([tokens, positions, slots], allowed) = step_ports(&m, c.stack.masked);
     let kept = |width: DimName| m.kept(TensorType::new(rows([width.into()]), DType::F32));
     let cache = |l| Cache {

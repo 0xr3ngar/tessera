@@ -1,22 +1,22 @@
 //! The glm53-moe recipe's kernel: its plan, and its numbers.
 
-use sensai_codegen::trellis::packed;
-use sensai_engine::Engine;
-use sensai_engine::wasm::Module;
-use sensai_engine_settings::{Backend, Pick, Settings};
-use sensai_graph::DimName::{Context, Hidden, Picks, Rows, Segments, Seqs};
-use sensai_graph::{Composite, F16};
-use sensai_graph::{Parts, shard};
-use sensai_interp::{Tensor, run};
-use sensai_lower::form::{Load, named};
-use sensai_lower::{Cluster, Device, Limits, Pins, Platform, Rule, Weight, lower};
-use sensai_models::mla::{Config, RotatedMoe, Routed, stepper};
-use sensai_recipe::Recipe;
-use sensai_run::open;
-use sensai_run::testing::{host, runs};
-use sensai_testkit::{Noise, cosine_f32, max_abs_diff, weights};
-use sensai_trace::{DType, Dim, EntryKind, Graph, Model, Port, Role, TensorType, Weights};
 use std::path::Path;
+use tessera_codegen::trellis::packed;
+use tessera_engine::Engine;
+use tessera_engine::wasm::Module;
+use tessera_engine_settings::{Backend, Pick, Settings};
+use tessera_graph::DimName::{Context, Hidden, Picks, Rows, Segments, Seqs};
+use tessera_graph::{Composite, F16};
+use tessera_graph::{Parts, shard};
+use tessera_interp::{Tensor, run};
+use tessera_lower::form::{Load, named};
+use tessera_lower::{Cluster, Device, Limits, Pins, Platform, Rule, Weight, lower};
+use tessera_models::mla::{Config, RotatedMoe, Routed, stepper};
+use tessera_recipe::Recipe;
+use tessera_run::open;
+use tessera_run::testing::{host, runs};
+use tessera_testkit::{Noise, cosine_f32, max_abs_diff, weights};
+use tessera_trace::{DType, Dim, EntryKind, Graph, Model, Port, Role, TensorType, Weights};
 
 const NAME: &str = "glm53_moe";
 const KERNELS: [&str; 3] = ["glm53_route", "glm53_experts", "glm53_finish"];
@@ -24,7 +24,7 @@ const TEXT: &str = include_str!("../../../../examples/recipes/glm53-moe/model/sr
 const ROWS: usize = 3;
 
 fn small() -> Config {
-    sensai_models::small::glm53()
+    tessera_models::small::glm53()
 }
 
 fn recipe() -> Recipe {
@@ -35,7 +35,7 @@ fn recipe() -> Recipe {
 /// The recipe's rule, from its module built to wasm.
 fn rule() -> &'static Rule {
     let recipe = recipe();
-    let cache = sensai_testkit::scratch("recipes");
+    let cache = tessera_testkit::scratch("recipes");
     let bytes = recipe.module_bytes(Some(&cache)).unwrap().unwrap();
     let module = Module::open(&bytes).unwrap();
     assert_eq!(module.rules.len(), 1);
@@ -53,7 +53,7 @@ fn pins(book: &str) -> Pins {
 }
 
 /// The lowering choices serve hands a generate engine.
-fn choices() -> sensai_lower::Recipe {
+fn choices() -> tessera_lower::Recipe {
     let mut lower = recipe().lower.unwrap();
     lower.rules.push(rule());
     lower.pins = pins("");
@@ -74,7 +74,7 @@ fn block() -> Graph {
 fn block_of(c: &Config) -> Graph {
     let rows = Dim::bounded(Rows, 16);
     let m = Model::new(c.dims().into_iter().chain([rows]).collect());
-    let w: Block = sensai_trace::declare(&m);
+    let w: Block = tessera_trace::declare(&m);
     let ty = TensorType::new([Rows, Hidden], DType::F32);
     let role = Role::Logits;
     let [x] = m.entry(EntryKind::Forward, [Port { role, ty }]);
@@ -211,7 +211,7 @@ fn module_reaches_engine() {
         ..host()
     };
     let device = Device::guess(&cuda).with(&choices);
-    let trimmed = sensai_graph::trim(&step, 0).unwrap();
+    let trimmed = tessera_graph::trim(&step, 0).unwrap();
     let slots = trimmed.dims.iter().find(|d| d.name == Seqs).unwrap();
     let slots = slots.size.max();
     let sizes = [
@@ -222,7 +222,7 @@ fn module_reaches_engine() {
         (Picks, 1),
     ];
     let plan = lower(&trimmed, 0, &sizes, &device).unwrap();
-    let named = |s: &&sensai_lower::Step| s.kernel.name() == KERNELS[1];
+    let named = |s: &&tessera_lower::Step| s.kernel.name() == KERNELS[1];
     assert_eq!(plan.steps.iter().filter(named).count(), routed);
     // The host plans without it: the kernel is CUDA text.
     for settings in runs() {

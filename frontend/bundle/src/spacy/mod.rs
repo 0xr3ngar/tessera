@@ -12,9 +12,9 @@ mod thinc;
 use crate::tokenize::Error;
 use crate::tokenize::spacy::{Spacy, Word};
 use features::{Features, thinc_hash};
-use sensai_engine::tagger::{Config, KEYS, PIECES, path, piece, program};
-use sensai_engine::{Graph, PathSeg, Tensor, Weight, bind};
 use std::path::Path;
+use tessera_engine::tagger::{Config, KEYS, PIECES, path, piece, program};
+use tessera_engine::{Graph, PathSeg, Tensor, Weight, bind};
 use thinc::{Array, Node};
 
 /// Tokens past this need a longer graph.

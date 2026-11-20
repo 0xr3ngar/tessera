@@ -1,11 +1,11 @@
 //! The JSON a module and the host exchange.
 
-use sensai_graph::DimName;
-pub(crate) use sensai_guest::site::{Ask, Input, Kept, Kind, Place, Shape, Site};
 use serde::Deserialize;
+use tessera_graph::DimName;
+pub(crate) use tessera_guest::site::{Ask, Input, Kept, Kind, Place, Shape, Site};
 
 /// The version of this exchange the host reads.
-pub(crate) use sensai_guest::ABI;
+pub(crate) use tessera_guest::ABI;
 
 /// The return value of `manifest()`.
 #[derive(Debug, Deserialize)]
@@ -89,4 +89,4 @@ pub(crate) struct Sum {
 }
 
 /// One launch, in the host's form.
-pub(crate) type Offer = sensai_guest::site::Offer<String, Count>;
+pub(crate) type Offer = tessera_guest::site::Offer<String, Count>;

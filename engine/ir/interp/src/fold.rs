@@ -2,10 +2,10 @@
 
 use crate::run::run;
 use crate::tensor::Error;
-use sensai_graph::{
+use tessera_graph::{
     DType, Entry, EntryKind, Graph, NodeId, Op, Output, PathSeg, Role, View, Weight, verify,
 };
-use sensai_mem::Tensor;
+use tessera_mem::Tensor;
 
 /// Whether each node is fixed-size floats from weights.
 fn fixed(g: &Graph) -> Vec<bool> {

@@ -1,10 +1,10 @@
 use crate::features::Features;
-use sensai_checkpoint::File;
-use sensai_engine::{Pick, Settings};
+use tessera_checkpoint::File;
+use tessera_engine::{Pick, Settings};
 
 #[test]
 fn matches_torch() {
-    let Some(dir) = sensai_testkit::reference("qwen3-taps") else {
+    let Some(dir) = tessera_testkit::reference("qwen3-taps") else {
         return eprintln!("no qwen3-taps reference here; skipped");
     };
     let r = File::open(&dir.join("ref.safetensors")).unwrap();

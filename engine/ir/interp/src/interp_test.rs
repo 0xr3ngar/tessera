@@ -1,7 +1,7 @@
 use crate::cpu_test::{close, eval, port as typed};
 use crate::*;
-use sensai_trace::DimName::*;
-use sensai_trace::{DType, Dim, EntryKind, Graph, Mask, Model, Port, Role, TensorType};
+use tessera_trace::DimName::*;
+use tessera_trace::{DType, Dim, EntryKind, Graph, Mask, Model, Port, Role, TensorType};
 
 fn model() -> Model {
     Model::new(vec![
@@ -13,7 +13,7 @@ fn model() -> Model {
     ])
 }
 
-fn port(shape: impl Into<sensai_trace::Shape>) -> Port {
+fn port(shape: impl Into<tessera_trace::Shape>) -> Port {
     Port {
         role: Role::Tokens,
         ty: TensorType::new(shape, DType::F32),
@@ -105,7 +105,7 @@ fn narrow_values() {
 fn bind_checks_weights() {
     let m = model();
     let w = m.weight(
-        &[sensai_trace::PathSeg::Index(0)],
+        &[tessera_trace::PathSeg::Index(0)],
         TensorType::new([Heads], DType::F32),
     );
     let [] = m.entry(EntryKind::Forward, []);
@@ -160,21 +160,21 @@ fn entries_run_alone() {
     assert_eq!(out[0].floats().unwrap(), [3.0, 6.0]);
 }
 
-#[derive(sensai_trace::Weights)]
+#[derive(tessera_trace::Weights)]
 struct Proj {
     #[shape(HeadDim, Heads)]
-    w: sensai_trace::Linear,
+    w: tessera_trace::Linear,
 }
 
 /// A matmul summing in `acc`, the form a pass derives.
 fn summing(acc: DType) -> Graph {
     let m = model();
-    let p: Proj = sensai_trace::declare(&m);
+    let p: Proj = tessera_trace::declare(&m);
     let [x] = m.entry(EntryKind::Forward, [port([Rows, HeadDim])]);
     let mut g = m.finish([(Role::Logits, &x.matmul(&p.w))]);
     let n = g.nodes.last_mut().unwrap().numerics.as_mut().unwrap();
     n.accumulate = acc;
-    sensai_graph::verify(&g).unwrap();
+    tessera_graph::verify(&g).unwrap();
     g
 }
 
@@ -222,7 +222,7 @@ fn join_center_sum() {
 }
 
 /// Keys and values `[Seqs, Context, heads, HeadDim]`, as one port.
-fn kv_port(heads: sensai_trace::DimName) -> Port {
+fn kv_port(heads: tessera_trace::DimName) -> Port {
     typed([Seqs, Context, heads, HeadDim], DType::F32)
 }
 

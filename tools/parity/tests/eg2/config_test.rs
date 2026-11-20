@@ -1,12 +1,12 @@
 use super::release;
-use sensai_bundle::Overrides;
-use sensai_models::eg2::{Config, program};
-use sensai_models::keys::{Keys, Offered};
-use sensai_trace::Linear;
+use tessera_bundle::Overrides;
+use tessera_models::eg2::{Config, program};
+use tessera_models::keys::{Keys, Offered};
+use tessera_trace::Linear;
 
 #[test]
 fn read_matches_release() {
-    let Some(dir) = sensai_testkit::reference("eg2") else {
+    let Some(dir) = tessera_testkit::reference("eg2") else {
         return;
     };
     let text = std::fs::read_to_string(dir.join("config.json")).unwrap();
@@ -34,7 +34,7 @@ fn reports_each_failure() {
 
 #[test]
 fn recipe_beats_file() {
-    let path = sensai_testkit::stage("config.json", br#"{"window": 512, "eps": 1e-6}"#);
+    let path = tessera_testkit::stage("config.json", br#"{"window": 512, "eps": 1e-6}"#);
     let table = serde_json::json!({"config.json": {"window": 64}});
     let config = Overrides::new(table.as_object().unwrap().clone());
     let read = |k: &mut Keys| [k.need::<f32>(&["window"]), k.need(&["eps"])];

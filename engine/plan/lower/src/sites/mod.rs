@@ -19,7 +19,7 @@ pub use top::Top;
 use crate::rule::Read;
 use crate::select::Home;
 use crate::tree::{T, Term, Tree};
-use sensai_graph::{Composite, Op, Stage as Step};
+use tessera_graph::{Composite, Op, Stage as Step};
 
 /// A pattern a rule asks for at a node.
 pub trait Pattern: Sized {
@@ -73,7 +73,7 @@ impl Region {
 
     /// The innermost region met at `at`, of `kind` if given.
     pub fn of(tree: &Tree, at: T, kind: Option<Composite>) -> Option<Self> {
-        let met = |r: &&sensai_graph::Region| {
+        let met = |r: &&tessera_graph::Region| {
             kind.is_none_or(|k| r.kind == k) && tree.anchor(r) == Some(at)
         };
         let region = tree.g.regions.iter().find(met)?;

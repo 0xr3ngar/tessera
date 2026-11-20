@@ -2,7 +2,7 @@
 
 use crate::model::{Kept, Shared, push};
 use crate::weights::{Embed, Linear, Norm, Scalar, Vector};
-use sensai_graph::{
+use tessera_graph::{
     Act, DType, DimExpr, Mask, NodeId, Op, Pairs, Row, Select, Shape, Stage, TensorType, View,
 };
 

@@ -65,7 +65,7 @@ fn archive(name: &str, files: &[(&str, Vec<u8>)]) -> PathBuf {
     end.extend([0u8; 2]);
     out.extend(dir);
     out.extend(end);
-    sensai_testkit::stage(&format!("{name}.pt"), &out)
+    tessera_testkit::stage(&format!("{name}.pt"), &out)
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn reads_strides_within_bounds() {
 
 /// The cached snapshot `refs/main` names for `repo`.
 fn snapshot(repo: &str) -> Option<PathBuf> {
-    let hub = sensai_frontend_settings::read().hub?;
+    let hub = tessera_frontend_settings::read().hub?;
     let dir = hub.join(format!("models--{}", repo.replace('/', "--")));
     let main = std::fs::read_to_string(dir.join("refs/main")).ok()?;
     Some(dir.join("snapshots").join(main.trim()))
@@ -124,7 +124,7 @@ fn same(got: &Torch, want: &File) {
 #[test]
 fn clip_matches_safetensors() {
     let (Some(dir), Some(clip)) = (
-        sensai_testkit::reference("sprite"),
+        tessera_testkit::reference("sprite"),
         snapshot("openai/clip-vit-base-patch32"),
     ) else {
         return eprintln!("no CLIP checkpoints here; skipped");

@@ -1,5 +1,5 @@
 use crate::{port, ports};
-use sensai_engine::comm::Error;
+use tessera_engine::comm::Error;
 
 #[test]
 fn specs_name_a_gid() {

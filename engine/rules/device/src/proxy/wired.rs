@@ -2,7 +2,7 @@
 
 use super::{Link, Part, Pool, Sent};
 use crate::layout::MAX_GROUP;
-use sensai_engine_comm::{Error, Link as Comm, Put, Span};
+use tessera_engine_comm::{Error, Link as Comm, Put, Span};
 
 /// The regions, in order: send, receive, flags, credits.
 pub(crate) const SEND: usize = 0;

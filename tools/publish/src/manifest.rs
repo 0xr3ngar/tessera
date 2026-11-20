@@ -41,7 +41,7 @@ pub(crate) fn manifest(meta: &Meta, out: &Out, owners: &Owners, rel: &Release) -
     doc.insert("package".into(), package.into());
     let mut target = Table::new();
     if out.kind == Kind::Bin {
-        let bins = [crate::plan::CLI_ALIAS, out.name.as_str()].map(|name| {
+        let bins = [crate::plan::BIN].map(|name| {
             let mut target = Table::new();
             target.insert("name".into(), name.into());
             target.insert("path".into(), "src/main.rs".into());

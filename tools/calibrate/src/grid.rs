@@ -1,17 +1,17 @@
 //! Small graphs that reach every rule, at many sizes.
 
 use crate::{choices, measure};
-use sensai_engine::Error;
-use sensai_graph::DimName::{self, *};
-use sensai_lower::form::BF16_FORM;
-use sensai_lower::{Device, Pins, Settings, Step, Tensor, View, lower};
-use sensai_run::{Run, open};
-use sensai_testkit::Noise;
-use sensai_testkit::graphs::{
+use tessera_engine::Error;
+use tessera_graph::DimName::{self, *};
+use tessera_lower::form::BF16_FORM;
+use tessera_lower::{Device, Pins, Settings, Step, Tensor, View, lower};
+use tessera_run::{Run, open};
+use tessera_testkit::Noise;
+use tessera_testkit::graphs::{
     attention, blocks, indexed, indexed_rows, linear, neighbours, rotation, routed, rows, table,
     turned,
 };
-use sensai_trace::{Dim, Graph, TensorType};
+use tessera_trace::{Dim, Graph, TensorType};
 
 /// A timed plan holds at most this many elements.
 const ROOM: usize = 750_000_000;
@@ -52,11 +52,11 @@ pub(crate) fn fill(
     noise: &mut Noise,
 ) -> Result<Tensor, Error> {
     let unsized_shape = || {
-        Error::from(sensai_lower::Error::from(sensai_lower::Size::Shape(
+        Error::from(tessera_lower::Error::from(tessera_lower::Size::Shape(
             ty.shape.clone(),
         )))
     };
-    sensai_testkit::fill(g, ty, sizes, noise).ok_or_else(unsized_shape)
+    tessera_testkit::fill(g, ty, sizes, noise).ok_or_else(unsized_shape)
 }
 
 impl Case {
@@ -102,7 +102,7 @@ impl Case {
 /// A runner for `plan` with noise for weights.
 pub(crate) fn opened(
     g: &Graph,
-    plan: sensai_lower::Plan,
+    plan: tessera_lower::Plan,
     noise: &mut Noise,
     settings: &Settings,
 ) -> Result<Box<dyn Run>, Error> {
@@ -202,7 +202,7 @@ impl Grid {
     }
 
     /// Each plan `run` times from `guess`, per competing rule.
-    pub fn plans(&self, guess: &dyn Fn() -> Device) -> Result<Vec<sensai_lower::Plan>, Error> {
+    pub fn plans(&self, guess: &dyn Fn() -> Device) -> Result<Vec<tessera_lower::Plan>, Error> {
         let mut plans = Vec::new();
         for case in self.cases() {
             let guess = || guess().pinned(case.pins.clone());

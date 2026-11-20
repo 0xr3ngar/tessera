@@ -1,9 +1,9 @@
 use crate::cpu_test::{model, port};
 use crate::fold::frontier;
 use crate::*;
-use sensai_trace::DType::F32;
-use sensai_trace::DimName::Hidden;
-use sensai_trace::{EntryKind, PathSeg, Role, TensorType};
+use tessera_trace::DType::F32;
+use tessera_trace::DimName::Hidden;
+use tessera_trace::{EntryKind, PathSeg, Role, TensorType};
 
 #[test]
 fn folds_weights() {

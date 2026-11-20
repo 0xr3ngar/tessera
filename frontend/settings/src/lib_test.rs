@@ -10,9 +10,9 @@ fn reads_variables() {
     }
     let s = crate::read();
     assert_eq!(s.host_lanes, 8);
-    assert_eq!(s.emulate, Some(sensai_engine::Backend::Cuda));
+    assert_eq!(s.emulate, Some(tessera_engine::Backend::Cuda));
     assert_eq!(s.gpu(), None);
-    assert_eq!(s.memory, sensai_engine::Memory::Bytes(24 << 30));
+    assert_eq!(s.memory, tessera_engine::Memory::Bytes(24 << 30));
     assert_eq!(s.check, Some(std::path::PathBuf::from("/shared/check")));
 }
 

@@ -4,9 +4,9 @@ use crate::Error;
 use crate::api::{LaunchFn, entry};
 use crate::dl::once;
 use crate::rtc::Rtc;
-use sensai_dl::message;
 use std::ffi::{c_char, c_int, c_void};
 use std::sync::OnceLock;
+use tessera_dl::message;
 
 pub type HipError = c_int;
 pub(crate) type HipDeviceptr = u64;
@@ -44,7 +44,7 @@ type HipGraphInstantiate = unsafe extern "C" fn(
 type HipGetErrorName = unsafe extern "C" fn(HipError) -> *const c_char;
 type HipGetErrorString = unsafe extern "C" fn(HipError) -> *const c_char;
 
-sensai_dl::library! {
+tessera_dl::library! {
     /// Resolved runtime entry points. The dlopen handle stays open.
     pub struct Runtime as "HIP runtime" in [
         "libamdhip64.so",

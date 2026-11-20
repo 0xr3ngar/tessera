@@ -1,9 +1,9 @@
 use crate::ranks::Ranks;
-use sensai_engine::decoder::{Swiglu, stepper};
-use sensai_engine::{Engine, Norm, Pick, Recipe, Row, Settings, Weight};
-use sensai_models::small;
-use sensai_testkit::{Noise, weights};
 use std::net::TcpListener;
+use tessera_engine::decoder::{Swiglu, stepper};
+use tessera_engine::{Engine, Norm, Pick, Recipe, Row, Settings, Weight};
+use tessera_models::small;
+use tessera_testkit::{Noise, weights};
 
 /// A faux-weight engine as `rank` of `peers`, or alone.
 fn engine(place: Option<(u32, &str)>) -> Engine {

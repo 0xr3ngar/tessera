@@ -1,5 +1,5 @@
 [package]
-name = "sensai-lower"
+name = "tessera-lower"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -9,15 +9,15 @@ description = "Lowers a graph to a plan of kernel launches"
 [dependencies]
 thiserror = "2"
 derive_more = { version = "2.1", features = ["from", "eq", "deref", "debug"] }
-sensai-graph = { workspace = true }
-sensai-platform = { workspace = true }
-sensai-sim = { workspace = true }
-sensai-work = { workspace = true }
+tessera-graph = { workspace = true }
+tessera-platform = { workspace = true }
+tessera-sim = { workspace = true }
+tessera-work = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 scattered-collect = "0.22"
-sensai-codegen = { workspace = true }
-sensai-kernel-macro = { workspace = true }
-sensai-engine-settings = { workspace = true }
-sensai-mem = { workspace = true }
+tessera-codegen = { workspace = true }
+tessera-kernel-macro = { workspace = true }
+tessera-engine-settings = { workspace = true }
+tessera-mem = { workspace = true }
 

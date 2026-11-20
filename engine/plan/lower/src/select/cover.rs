@@ -6,10 +6,10 @@ use crate::form::F32_FORM;
 use crate::kernels::{AllReduce, Scatter, Widen};
 use crate::rule::{Draft, Read, Rule, ways};
 use crate::tree::{T, Term, Tree};
-use sensai_graph::{Op, Stage, View};
-use sensai_sim::ZoneKind;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+use tessera_graph::{Op, Stage, View};
+use tessera_sim::ZoneKind;
 
 /// The cheapest cover found at one node, in one zone.
 pub(crate) struct Choice {

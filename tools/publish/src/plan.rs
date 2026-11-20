@@ -6,12 +6,14 @@ use std::path::PathBuf;
 use crate::Result;
 use crate::meta::{Meta, Package};
 
-pub(crate) const ENGINE: &str = "sensai-engine";
-pub(crate) const FRONTEND: &str = "sensai";
-pub(crate) const CLI: &str = "sensaix";
-/// The second name the binary answers to.
-pub(crate) const CLI_ALIAS: &str = "sensai";
-const CLI_SOURCE: &str = "sensai-cli";
+pub(crate) const ENGINE: &str = "tessera-engine";
+pub(crate) const FRONTEND: &str = "tessera-frontend";
+pub(crate) const CLI: &str = "tessera-cli";
+/// The command the CLI crate installs.
+pub(crate) const BIN: &str = "tesserax";
+/// The npm launcher. Platform packages add `-<os>-<cpu>`.
+pub(crate) const NPM: &str = "@kindlingai/tessera";
+const CLI_SOURCE: &str = "tessera-cli";
 
 #[derive(PartialEq)]
 pub(crate) enum Kind {
@@ -43,8 +45,8 @@ pub(crate) struct Member {
 
 pub(crate) fn plan(meta: &Meta) -> Result<Vec<Out>> {
     let find = |name: &str| meta.packages.iter().position(|p| p.name == name);
-    let engine = find(ENGINE).ok_or("no sensai-engine package")?;
-    let cli = find(CLI_SOURCE).ok_or("no sensai-cli package")?;
+    let engine = find(ENGINE).ok_or("no tessera-engine package")?;
+    let cli = find(CLI_SOURCE).ok_or("no tessera-cli package")?;
     let below = closure(meta, engine);
     let macros: Vec<usize> = below
         .iter()
@@ -61,7 +63,7 @@ pub(crate) fn plan(meta: &Meta) -> Result<Vec<Out>> {
         .collect();
     let mut outs = Vec::new();
     for &m in &macros {
-        let names = paths(meta, &core, |module| format!("sensai_engine::{module}"));
+        let names = paths(meta, &core, |module| format!("tessera_engine::{module}"));
         outs.push(single(meta, m, Kind::Macro, names));
     }
     outs.push(merged(meta, ENGINE, &core, "engine")?);
@@ -70,7 +72,9 @@ pub(crate) fn plan(meta: &Meta) -> Result<Vec<Out>> {
         meta,
         cli,
         Kind::Bin,
-        paths(meta, &front, |m| format!("sensai::{m}")),
+        paths(meta, &front, |m| {
+            format!("{}::{m}", FRONTEND.replace('-', "_"))
+        }),
     );
     bin.name = CLI.into();
     outs.push(bin);
@@ -105,7 +109,7 @@ fn lib_name(pkg: &Package) -> String {
 
 fn module(pkg: &Package) -> String {
     let lib = lib_name(pkg);
-    lib.strip_prefix("sensai_").unwrap_or(&lib).to_string()
+    lib.strip_prefix("tessera_").unwrap_or(&lib).to_string()
 }
 
 fn paths(meta: &Meta, pkgs: &[usize], to: impl Fn(&str) -> String) -> BTreeMap<String, String> {
@@ -163,7 +167,7 @@ fn merged(meta: &Meta, name: &str, pkgs: &[usize], top: &str) -> Result<Out> {
     }
     let description = match root {
         Some(&p) => meta.packages[p].description.clone().unwrap_or_default(),
-        None => "Model files, tasks and serving over sensai-engine".into(),
+        None => "Model files, tasks and serving over tessera-engine".into(),
     };
     let glob = root.map(|&p| module(&meta.packages[p]));
     Ok(Out {

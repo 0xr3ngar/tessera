@@ -1,12 +1,12 @@
 //! Shared graphs and inputs for the matmul tests.
 
-use sensai_codegen::ir::Param;
-use sensai_graph::DimName::{Ffn, Hidden, Rows};
-use sensai_interp::Tensor;
-use sensai_lower::{Plan, Source, Terms};
-use sensai_testkit::Noise;
-use sensai_trace::{DType, Dim, EntryKind, Graph, Linear, Model, Port, Role, TensorType, Weights};
 use std::collections::HashMap;
+use tessera_codegen::ir::Param;
+use tessera_graph::DimName::{Ffn, Hidden, Rows};
+use tessera_interp::Tensor;
+use tessera_lower::{Plan, Source, Terms};
+use tessera_testkit::Noise;
+use tessera_trace::{DType, Dim, EntryKind, Graph, Linear, Model, Port, Role, TensorType, Weights};
 
 #[derive(Weights)]
 struct Layer {
@@ -15,7 +15,7 @@ struct Layer {
 }
 
 /// A graph's work on its input and the product.
-pub type Finish = fn(&sensai_trace::Tensor, sensai_trace::Tensor) -> sensai_trace::Tensor;
+pub type Finish = fn(&tessera_trace::Tensor, tessera_trace::Tensor) -> tessera_trace::Tensor;
 
 /// `k` inputs to `n` outputs, over any number of rows.
 pub fn linear(k: u64, n: u64) -> Graph {
@@ -26,7 +26,7 @@ pub fn linear(k: u64, n: u64) -> Graph {
 pub fn finished(k: u64, n: u64, finish: Finish) -> Graph {
     let rows = Dim::bounded(Rows, 256);
     let m = Model::new(vec![rows, Dim::fixed(Hidden, k), Dim::fixed(Ffn, n)]);
-    let w: Layer = sensai_trace::declare(&m);
+    let w: Layer = tessera_trace::declare(&m);
     let ty = TensorType::new([Rows, Hidden], DType::F32);
     let role = Role::Logits;
     let [x] = m.entry(EntryKind::Forward, [Port { role, ty }]);
@@ -54,19 +54,19 @@ pub fn terms(plan: &Plan) -> Terms {
             unreachable!()
         };
         let value = match ty {
-            sensai_codegen::ir::Ty::F32 => arg.f32().map(f64::from),
+            tessera_codegen::ir::Ty::F32 => arg.f32().map(f64::from),
             _ => arg.u32().map(f64::from),
         };
         let value = value.unwrap_or_else(|| panic!("{arg:?} is not a scalar"));
         params.insert(name.clone(), value);
     }
-    sensai_lower::terms(&body, &params).expect("every loop bound is a parameter")
+    tessera_lower::terms(&body, &params).expect("every loop bound is a parameter")
 }
 
 /// Every weight form whose blocks fit rows of `k`.
-pub fn forms(k: usize) -> Vec<&'static dyn sensai_lower::form::Load> {
-    let fits = |f: &&&dyn sensai_lower::form::Load| k.is_multiple_of(f.align());
-    sensai_lower::form::LOADS
+pub fn forms(k: usize) -> Vec<&'static dyn tessera_lower::form::Load> {
+    let fits = |f: &&&dyn tessera_lower::form::Load| k.is_multiple_of(f.align());
+    tessera_lower::form::LOADS
         .iter()
         .filter(fits)
         .copied()

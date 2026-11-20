@@ -1,9 +1,9 @@
 //! Pairs the graph's weights with the slices a checkpoint offers.
 
-use sensai_checkpoint::Slice;
-use sensai_engine::{Graph, PathSeg};
 use std::collections::BTreeMap;
 use std::fmt;
+use tessera_checkpoint::Slice;
+use tessera_engine::{Graph, PathSeg};
 
 /// A weight path to a slice stem, `*` the layer index.
 pub type Rule = (String, String);
@@ -191,8 +191,8 @@ fn holds(ending: Option<&str>, part: Option<&str>) -> bool {
 }
 
 /// The weight's shape, where every axis is a constant.
-fn wanted(g: &Graph, shape: &sensai_engine::Shape) -> Option<Vec<usize>> {
-    let axis = |e: &sensai_engine::DimExpr| e.value(&g.dims, &|_| None).map(|n| n as usize);
+fn wanted(g: &Graph, shape: &tessera_engine::Shape) -> Option<Vec<usize>> {
+    let axis = |e: &tessera_engine::DimExpr| e.value(&g.dims, &|_| None).map(|n| n as usize);
     shape.0.iter().map(axis).collect()
 }
 

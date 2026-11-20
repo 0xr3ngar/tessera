@@ -2,12 +2,12 @@
 
 use crate::keys::Keys;
 use crate::shared::{join, spread};
-use sensai_trace::DimName::*;
-use sensai_trace::{
+use serde_json::json;
+use tessera_trace::DimName::*;
+use tessera_trace::{
     Act, DType, Dim, DimExpr, EntryKind, Graph, Linear, Mask, Model, Norm, Pairs, PathSeg, Port,
     Role, Tensor, TensorType, Weights,
 };
-use serde_json::json;
 
 /// Channels per latent token.
 pub const LATENT: u64 = 128;
@@ -170,7 +170,7 @@ pub fn declare(m: &Model, c: &Config) -> (Flux2, Vec<Double>, Vec<Single>) {
         };
         (0..n).map(one).collect()
     }
-    let w: Flux2 = sensai_trace::declare(m);
+    let w: Flux2 = tessera_trace::declare(m);
     (w, each(m, "double", c.double), each(m, "single", c.single))
 }
 

@@ -4,8 +4,8 @@ use crate::Kernel;
 use crate::abi::{Arg, Launch, Shape, Source};
 use crate::plan::Step;
 use crate::tree::{T, Tree};
-use sensai_codegen::kept::{self, Layout};
-use sensai_codegen::prelude::*;
+use tessera_codegen::kept::{self, Layout};
+use tessera_codegen::prelude::*;
 
 /// Row `r` lands in its slot's kept row.
 #[kernel]

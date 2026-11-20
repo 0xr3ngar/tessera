@@ -8,16 +8,16 @@ pub mod probe;
 pub mod watch;
 
 // Linking the crates registers their rules.
-use sensai_rules as _;
+use tessera_rules as _;
 
 pub use grid::Grid;
 
-use sensai_engine::Error;
-use sensai_graph::{DimName, Graph};
-use sensai_lower::{Device, Settings, Step, View, ZoneKind, lower, select};
-use sensai_run::Run;
-use sensai_sim::Chip;
 use std::collections::BTreeMap;
+use tessera_engine::Error;
+use tessera_graph::{DimName, Graph};
+use tessera_lower::{Device, Settings, Step, View, ZoneKind, lower, select};
+use tessera_run::Run;
+use tessera_sim::Chip;
 
 /// Whole passes over a plan, each step timed once.
 const PASSES: usize = 3;

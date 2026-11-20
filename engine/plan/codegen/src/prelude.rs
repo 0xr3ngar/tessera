@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::ops::{Add, Index, IndexMut};
 
 pub use crate::LANES;
-pub use sensai_kernel_macro::{Group, helper, kernel};
+pub use tessera_kernel_macro::{Group, helper, kernel};
 
 /// The register type one element reads into.
 pub trait Elems {

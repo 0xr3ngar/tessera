@@ -2,7 +2,7 @@
 
 use super::Talk;
 use crate::source::Stop;
-use sensai_bundle::Message;
+use tessera_bundle::Message;
 
 pub fn run(talk: Talk, words: &[String]) -> Result<(), Stop> {
     let prompt = super::text(words)?;

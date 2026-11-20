@@ -2,12 +2,12 @@
 
 use crate::abi::{Launch, Source};
 use crate::plan::Step;
-use sensai_graph::Order;
-use sensai_platform::Platform;
-use sensai_sim::ZoneKind;
-use sensai_work::Load;
 use std::fmt;
 use std::sync::Arc;
+use tessera_graph::Order;
+use tessera_platform::Platform;
+use tessera_sim::ZoneKind;
+use tessera_work::Load;
 
 /// Seconds per unit of work for an unmeasured kernel.
 pub const UNPROVEN: f64 = 1e-9;
@@ -81,7 +81,7 @@ impl Needs {
     /// A SIMD group per row, in groups of 256 threads.
     pub fn lanes() -> Self {
         Needs {
-            lanes: sensai_codegen::LANES,
+            lanes: tessera_codegen::LANES,
             group_threads: 256,
             ..Needs::default()
         }

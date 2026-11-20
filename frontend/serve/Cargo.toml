@@ -1,5 +1,5 @@
 [package]
-name = "sensai-serve"
+name = "tessera-serve"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -15,21 +15,21 @@ path = "src/main.rs"
 
 [features]
 default = []
-cuda = ["sensai-engine/cuda", "sensai-tasks/cuda"]
-rocm = ["sensai-engine/rocm", "sensai-tasks/rocm"]
+cuda = ["tessera-engine/cuda", "tessera-tasks/cuda"]
+rocm = ["tessera-engine/rocm", "tessera-tasks/rocm"]
 # `response_format` through llguidance. Needs `--guided` at start.
-guided = ["sensai-tasks/guided"]
+guided = ["tessera-tasks/guided"]
 
 [dependencies]
-sensai-engine = { workspace = true }
-sensai-bundle = { workspace = true }
+tessera-engine = { workspace = true }
+tessera-bundle = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sensai-frontend-comm = { workspace = true }
-sensai-frontend-settings = { workspace = true }
+tessera-frontend-comm = { workspace = true }
+tessera-frontend-settings = { workspace = true }
 httparse = "1"
-sensai-tasks = { workspace = true }
+tessera-tasks = { workspace = true }
 
 [dev-dependencies]
-sensai-models = { workspace = true }
-sensai-testkit = { workspace = true }
+tessera-models = { workspace = true }
+tessera-testkit = { workspace = true }

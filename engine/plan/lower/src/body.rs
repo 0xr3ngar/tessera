@@ -1,8 +1,8 @@
 //! Helpers for rules that build a source from a body.
 
 use crate::{Shape, Source};
-use sensai_codegen::hash;
-use sensai_codegen::ir::Body;
+use tessera_codegen::hash;
+use tessera_codegen::ir::Body;
 
 /// Guessed seconds per unit of work, under lockstep trees.
 pub const GUESS: f64 = 1e-12;

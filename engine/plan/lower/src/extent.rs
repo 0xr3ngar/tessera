@@ -1,6 +1,6 @@
 //! A size fixed at lowering, or read at launch.
 
-use sensai_graph::DimName;
+use tessera_graph::DimName;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Extent {

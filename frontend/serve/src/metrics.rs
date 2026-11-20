@@ -7,7 +7,7 @@ pub(crate) fn metrics() -> Response {
         status: 200,
         body: Body::Full {
             content_type: "text/plain; version=0.0.4",
-            bytes: sensai_engine::metrics::text().into_bytes(),
+            bytes: tessera_engine::metrics::text().into_bytes(),
         },
     }
 }

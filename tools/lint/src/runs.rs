@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::files::Source;
 use crate::{LIMITS, Violation};
-use sensai_shape::shape;
+use tessera_shape::shape;
 
 /// Shapes longer than this count as code.
 const SUBSTANTIVE: usize = 3;
@@ -83,7 +83,7 @@ pub fn check(sources: &[Source], out: &mut Vec<Violation>) {
     // Both sides of a merge conflict match.
     let resolved = sources
         .iter()
-        .filter(|s| sensai_shape::conflict(&s.text).is_none());
+        .filter(|s| tessera_shape::conflict(&s.text).is_none());
     let files: Vec<Shaped> = resolved.map(shaped).collect();
     let mut steps = LIMITS.shape_steps.clone();
     steps.sort_by(|a, b| b.cmp(a));

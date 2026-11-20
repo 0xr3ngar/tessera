@@ -8,8 +8,8 @@ pub use tables::{Constant, constants};
 pub use weights::declare;
 
 use crate::shared::{Attend, Side, join, spread};
-use sensai_trace::DimName::*;
-use sensai_trace::{
+use tessera_trace::DimName::*;
+use tessera_trace::{
     Act, DType, Dim, DimExpr, EntryKind, Graph, Linear, Mask, Model, Norm, Port, Role, Tensor,
     TensorType, Vector,
 };

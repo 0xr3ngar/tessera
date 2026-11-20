@@ -1,5 +1,5 @@
 [package]
-name = "sensai-cpu"
+name = "tessera-cpu"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,5 +7,5 @@ publish.workspace = true
 description = "CPU kernels for matmuls: short bodies over a dot primitive"
 
 [dependencies]
-sensai-codegen = { workspace = true }
-sensai-lower = { workspace = true }
+tessera-codegen = { workspace = true }
+tessera-lower = { workspace = true }

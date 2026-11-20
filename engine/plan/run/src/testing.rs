@@ -1,7 +1,7 @@
 //! The settings tests run under: host, then a ready GPU.
 
 use crate::gpu;
-use sensai_engine_settings::{Backend, Pick, Settings};
+use tessera_engine_settings::{Backend, Pick, Settings};
 
 /// Settings for plans on the host.
 pub fn host() -> Settings {
@@ -10,7 +10,7 @@ pub fn host() -> Settings {
 
 /// The host, then this build's GPU when one is ready.
 pub fn runs() -> Vec<Settings> {
-    sensai_gpukit::testing::require_gpu();
+    tessera_gpukit::testing::require_gpu();
     let mut runs = vec![host()];
     if let Some(b) = gpu() {
         runs.push(Settings {

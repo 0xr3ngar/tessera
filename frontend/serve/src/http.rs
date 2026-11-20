@@ -7,13 +7,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
-sensai_engine::metric_registry!(HTTP = "http");
-sensai_engine::metric!(OPEN in HTTP = Gauge "tessera:http_connections_open", "Connections open now.");
-sensai_engine::metric!(REFUSED in HTTP = Counter "tessera:http_refused_total", "Connections refused past the limit.");
-sensai_engine::metric!(REQUESTS in HTTP = Counter "tessera:http_requests_total", "Requests read and routed.");
-sensai_engine::metric!(MALFORMED in HTTP = Counter "tessera:http_malformed_total", "Requests refused before routing.");
-sensai_engine::metric!(CLIENT in HTTP = Counter "tessera:http_client_errors_total", "Responses with a 4xx status.");
-sensai_engine::metric!(SERVER in HTTP = Counter "tessera:http_server_errors_total", "Responses with a 5xx status.");
+tessera_engine::metric_registry!(HTTP = "http");
+tessera_engine::metric!(OPEN in HTTP = Gauge "tessera:http_connections_open", "Connections open now.");
+tessera_engine::metric!(REFUSED in HTTP = Counter "tessera:http_refused_total", "Connections refused past the limit.");
+tessera_engine::metric!(REQUESTS in HTTP = Counter "tessera:http_requests_total", "Requests read and routed.");
+tessera_engine::metric!(MALFORMED in HTTP = Counter "tessera:http_malformed_total", "Requests refused before routing.");
+tessera_engine::metric!(CLIENT in HTTP = Counter "tessera:http_client_errors_total", "Responses with a 4xx status.");
+tessera_engine::metric!(SERVER in HTTP = Counter "tessera:http_server_errors_total", "Responses with a 5xx status.");
 
 /// A request, in the routes' form.
 pub struct Request {

@@ -1,15 +1,15 @@
 //! Small kernels that expose one hardware limit each.
 
-use sensai_codegen::prelude::*;
-use sensai_lower::form::U32_FORM;
-use sensai_lower::{
+use std::time::Instant;
+use tessera_codegen::prelude::*;
+use tessera_lower::form::U32_FORM;
+use tessera_lower::{
     Arg, Cluster, DType, Kernel, KernelRef, Launch, Link, Plan, Settings, Shape, Slot, Source,
     Step, Tensor, Zone, ZoneKind,
 };
-use sensai_run::Error;
-use sensai_run::{Run, open};
-use sensai_sim::{Fit, Tag};
-use std::time::Instant;
+use tessera_run::Error;
+use tessera_run::{Run, open};
+use tessera_sim::{Fit, Tag};
 
 /// The work a probe's threads repeat `trips` times.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

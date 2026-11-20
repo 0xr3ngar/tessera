@@ -3,8 +3,8 @@
 use crate::layout::Layout;
 use crate::view::{View, ViewMut};
 use crate::{Error, mismatch};
-use sensai_graph::DType;
 use std::any::Any;
+use tessera_graph::DType;
 
 /// Memory of one zone, however the backend holds it.
 pub trait Backing: Any {

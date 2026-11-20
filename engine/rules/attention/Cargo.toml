@@ -1,5 +1,5 @@
 [package]
-name = "sensai-attention"
+name = "tessera-attention"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,13 +7,13 @@ publish.workspace = true
 description = "Attention kernels for the CPU and the GPU, registered as lowering rules"
 
 [dependencies]
-sensai-codegen = { workspace = true }
-sensai-graph = { workspace = true }
-sensai-lower = { workspace = true }
+tessera-codegen = { workspace = true }
+tessera-graph = { workspace = true }
+tessera-lower = { workspace = true }
 
 [dev-dependencies]
-sensai-interp = { workspace = true }
-sensai-kernels = { workspace = true }
-sensai-run = { workspace = true }
-sensai-testkit = { workspace = true }
-sensai-trace = { workspace = true }
+tessera-interp = { workspace = true }
+tessera-kernels = { workspace = true }
+tessera-run = { workspace = true }
+tessera-testkit = { workspace = true }
+tessera-trace = { workspace = true }

@@ -1,11 +1,11 @@
 //! FLUX.2's VAE decoder from a diffusers directory.
 
 use crate::Overrides;
-use sensai_checkpoint::File;
-use sensai_engine::vae::{Config, program};
-use sensai_engine::{Graph, PathSeg, Tensor, Weight, bind};
 use std::error::Error;
 use std::path::Path;
+use tessera_checkpoint::File;
+use tessera_engine::vae::{Config, program};
+use tessera_engine::{Graph, PathSeg, Tensor, Weight, bind};
 
 pub struct Decoder {
     pub graph: Graph,

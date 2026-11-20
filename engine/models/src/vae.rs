@@ -1,12 +1,12 @@
 //! FLUX.2's VAE decoder: transformer latents to RGB.
 
 use crate::keys::Keys;
-use sensai_trace::DimName::*;
-use sensai_trace::{
+use serde_json::json;
+use tessera_trace::DimName::*;
+use tessera_trace::{
     Act, DType, Dim, DimExpr, EntryKind, Graph, Linear, Mask, Model, PathSeg, Port, Role, Tensor,
     TensorType, Vector, Weights,
 };
-use serde_json::json;
 
 /// Channels per transformer token: 32 latent channels in 2x2 patches.
 pub const TOKEN: u64 = 128;

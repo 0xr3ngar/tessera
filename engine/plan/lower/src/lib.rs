@@ -34,17 +34,17 @@ pub use recipe::{Launching, Recipe};
 pub use rule::{Attn, Draft, Propose, RULES, Read, Rule, linked, rules};
 pub use schedule::{peak, schedule};
 pub use select::{Home, Op, Selected, Val, Value, select};
-pub use sensai_codegen::kept;
-pub use sensai_codegen::{Dialect, Terms, hip_tiles, terms};
-pub use sensai_engine_settings::{Pick, Settings};
-pub use sensai_kernel_macro::Kernel;
-pub use sensai_mem::{Buffer, DType, Tensor, View};
-pub use sensai_platform::{Limits, Platform};
-pub use sensai_sim::{Cluster, Fit, Link, Zone, ZoneKind};
-pub use sensai_work::Load;
+pub use tessera_codegen::kept;
+pub use tessera_codegen::{Dialect, Terms, hip_tiles, terms};
+pub use tessera_engine_settings::{Pick, Settings};
+pub use tessera_kernel_macro::Kernel;
+pub use tessera_mem::{Buffer, DType, Tensor, View};
+pub use tessera_platform::{Limits, Platform};
+pub use tessera_sim::{Cluster, Fit, Link, Zone, ZoneKind};
+pub use tessera_work::Load;
 pub use tree::{Node, T, Term, Tree};
 
-use sensai_graph::{DimName, Graph};
+use tessera_graph::{DimName, Graph};
 
 /// Selects kernels, orders them, then assigns buffers.
 pub fn lower(
@@ -78,7 +78,7 @@ pub enum Error {
     Size(#[from] Size),
     /// A view did not fit its buffer or its use.
     #[error("memory: {0}")]
-    Memory(#[from] sensai_mem::Error),
+    Memory(#[from] tessera_mem::Error),
     /// A runtime dimension was never bound.
     #[error("a runtime dimension has no value")]
     Unbound,

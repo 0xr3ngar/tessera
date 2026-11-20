@@ -1,5 +1,5 @@
 use crate::markdown::{MARKER, render};
-use sensai_findings::{Finding, Level, Report, Rule};
+use tessera_findings::{Finding, Level, Report, Rule};
 
 fn finding(level: Level) -> Finding {
     Finding {

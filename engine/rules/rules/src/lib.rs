@@ -1,6 +1,6 @@
 //! Links every rule crate. Use `use rules as _;`.
 
-use sensai_attention as _;
-use sensai_cpu as _;
-use sensai_kernels as _;
-use sensai_linear as _;
+use tessera_attention as _;
+use tessera_cpu as _;
+use tessera_kernels as _;
+use tessera_linear as _;

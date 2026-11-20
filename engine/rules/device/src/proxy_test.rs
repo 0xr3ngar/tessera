@@ -81,7 +81,7 @@ fn broken_rule_caught() {
 fn wired_puts_and_credits() {
     use crate::proxy::wired::{CREDITS, FLAGS, RECV, SEND, Wired};
     use crate::proxy::{Link, Part, Sent};
-    use sensai_engine_comm::{Link as _, Memory, Span};
+    use tessera_engine_comm::{Link as _, Memory, Span};
     let pools = [pool(2, false, 2), pool(2, true, 2)];
     let bytes = [(32, 32), (32, 32)];
     let regions = Wired::<Memory>::regions(&pools, &bytes);

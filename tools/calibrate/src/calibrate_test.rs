@@ -2,15 +2,15 @@ use crate::bench::{Mark, slower, text};
 use crate::probe::{Kind, Probe, Reading, fit, links, read, suite};
 use crate::{Grid, headroom, judge};
 use naga::valid::{Capabilities, ValidationFlags, Validator};
-use sensai_lower::form::BF16_FORM;
-use sensai_lower::{Cluster, Device, Pick, Pins, Settings, Source, Zone, ZoneKind, rules};
-use sensai_sim::Chip;
-use sensai_testkit::scratch;
 use std::collections::{BTreeMap, BTreeSet};
+use tessera_lower::form::BF16_FORM;
+use tessera_lower::{Cluster, Device, Pick, Pins, Settings, Source, Zone, ZoneKind, rules};
+use tessera_sim::Chip;
+use tessera_testkit::scratch;
 
 /// This build's GPU when ready, else the host.
 fn settings() -> Settings {
-    sensai_run::testing::runs().pop().unwrap()
+    tessera_run::testing::runs().pop().unwrap()
 }
 
 /// A crate's rules register once this one links it.
@@ -26,7 +26,7 @@ fn grid_reaches_rules() {
     let timed = Grid::tiny().run(&mut device, &settings).unwrap();
     assert!(device.samples() > 0 && !device.name.is_empty());
     // CPU rules need a CPU zone.
-    let skipped = |r: &&&sensai_lower::Rule| r.name.starts_with("cpu_");
+    let skipped = |r: &&&tessera_lower::Rule| r.name.starts_with("cpu_");
     for rule in rules().iter().filter(|r| !skipped(r)) {
         let ran = timed.iter().any(|(step, _)| step.rule == rule.name);
         assert!(ran, "the grid never ran {}", rule.name);
@@ -50,7 +50,7 @@ fn grid_reaches_rules() {
 fn cpu_matmuls_compete() {
     let cpu = Settings {
         backend: Pick::Cpu,
-        ..sensai_run::testing::host()
+        ..tessera_run::testing::host()
     };
     let grid = Grid {
         rows: vec![1, 8],
@@ -73,7 +73,7 @@ fn cpu_matmuls_compete() {
         kind,
         parent,
     });
-    let gpu = Device::guess(&sensai_run::testing::host())
+    let gpu = Device::guess(&tessera_run::testing::host())
         .zoned(cluster)
         .hosted(&host);
     let (step, _) = &timed[0];
@@ -133,7 +133,7 @@ fn judge_skips_unmodelled_kernels() {
     let settings = settings();
     let mut device = Device::guess(&settings);
     let timed = Grid::tiny().run(&mut device, &settings).unwrap();
-    let verdicts = judge(&sensai_sim::m3_pro(), &timed, &settings);
+    let verdicts = judge(&tessera_sim::m3_pro(), &timed, &settings);
     let names: Vec<&str> = verdicts.iter().map(|v| v.kernel).collect();
     assert!(names.contains(&"lanes") && names.contains(&"map"));
     // Attention states its load later, so judging skips it.
@@ -143,7 +143,7 @@ fn judge_skips_unmodelled_kernels() {
         assert!(0.0 < low && low <= median && median <= high, "{v:?}");
     }
     // A kernel has a bound when it states a load.
-    for h in headroom(&sensai_sim::m3_pro(), &timed) {
+    for h in headroom(&tessera_sim::m3_pro(), &timed) {
         assert_eq!(h.bound.is_some(), names.contains(&h.kernel), "{h:?}");
     }
 }
@@ -177,7 +177,7 @@ fn validated(text: &str) -> Result<(), String> {
 /// Grid kernels print as WGSL naga accepts, or refuse.
 #[test]
 fn grid_prints_wgsl() {
-    let settings = sensai_run::testing::host();
+    let settings = tessera_run::testing::host();
     let mut plans = Vec::new();
     for pins in [Pins::default(), Pins::all(BF16_FORM)] {
         let guess = || Device::guess(&settings).pinned(pins.clone());

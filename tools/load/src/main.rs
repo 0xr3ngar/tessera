@@ -1,12 +1,12 @@
-use sensai_load::{Config, USAGE};
 use std::process::ExitCode;
+use tessera_load::{Config, USAGE};
 
 fn main() -> ExitCode {
     let Some(config) = Config::parse(std::env::args().skip(1)) else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
-    match sensai_load::run(&config) {
+    match tessera_load::run(&config) {
         Ok(report) => {
             println!(
                 "{}",

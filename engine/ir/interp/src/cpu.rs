@@ -2,8 +2,8 @@
 
 use crate::round::Acc;
 use crate::tensor::Error;
-use sensai_graph::{Act, Attend, Mask, Numerics, Pairs, Stage};
-use sensai_mem::Tensor;
+use tessera_graph::{Act, Attend, Mask, Numerics, Pairs, Stage};
+use tessera_mem::Tensor;
 
 /// The tanh approximation the GPU kernels use.
 fn gelu(x: f32) -> f32 {

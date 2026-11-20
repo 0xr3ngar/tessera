@@ -5,8 +5,8 @@ mod cpu;
 mod flash;
 mod listed;
 
-use sensai_lower::kernels::{Map, MapStage};
-use sensai_lower::{Draft, T, Tree, sites};
+use tessera_lower::kernels::{Map, MapStage};
+use tessera_lower::{Draft, T, Tree, sites};
 
 /// A listed site with all keys present, and its picks.
 fn fixed_list(tree: &Tree, (site, ids): (sites::Attend, T)) -> Option<(sites::Attend, T, usize)> {

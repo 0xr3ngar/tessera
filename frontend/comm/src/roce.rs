@@ -1,8 +1,8 @@
 //! RoCE ports by device name, with GID indexes from sysfs.
 
-use sensai_engine::comm::{Error, Port};
 use std::fs;
 use std::path::PathBuf;
+use tessera_engine::comm::{Error, Port};
 
 /// `device` or `device:gid`. Without a GID, the IPv4 one.
 pub fn port(spec: &str) -> Result<Port, Error> {

@@ -1,5 +1,5 @@
 [package]
-name = "sensai-findings"
+name = "tessera-findings"
 version = "0.1.0"
 description = "The JSON each check writes, for tessera-check to render"
 edition.workspace = true

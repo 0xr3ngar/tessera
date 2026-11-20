@@ -1,5 +1,5 @@
 [package]
-name = "sensai-wasm"
+name = "tessera-wasm"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,20 +7,20 @@ publish.workspace = true
 description = "Lowering rules a sandboxed wasm module proposes, over JSON"
 
 [dependencies]
-sensai-device = { workspace = true }
-sensai-graph = { workspace = true }
-sensai-guest = { workspace = true }
-sensai-lower = { workspace = true }
+tessera-device = { workspace = true }
+tessera-graph = { workspace = true }
+tessera-guest = { workspace = true }
+tessera-lower = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 thiserror = "2"
 wasmi = "0.51"
 
 [dev-dependencies]
-sensai-interp = { workspace = true }
-sensai-kernels = { workspace = true }
-sensai-linear = { workspace = true }
-sensai-run = { workspace = true }
-sensai-testkit = { workspace = true }
-sensai-trace = { workspace = true }
+tessera-interp = { workspace = true }
+tessera-kernels = { workspace = true }
+tessera-linear = { workspace = true }
+tessera-run = { workspace = true }
+tessera-testkit = { workspace = true }
+tessera-trace = { workspace = true }
 wat = "1"

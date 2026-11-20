@@ -1,10 +1,10 @@
 //! Compiled kernels, shared by the GPU runners.
 
 use crate::Error;
-use sensai_codegen::Dialect;
-use sensai_gpukit::backend::Backend;
-use sensai_lower::{Source, Step};
 use std::collections::HashMap;
+use tessera_codegen::Dialect;
+use tessera_gpukit::backend::Backend;
+use tessera_lower::{Source, Step};
 
 /// The kernel text a backend compiles.
 pub(crate) fn dialect(backend: Backend) -> Dialect {

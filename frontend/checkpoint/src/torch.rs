@@ -4,10 +4,10 @@ use crate::Error;
 use crate::offer::{Offer, Slice, Stored};
 use crate::pickle::{self, DType, MAX_PICKLE, Value, View};
 use crate::zip::{self, Entry};
-use sensai_engine::{Bf16, F16};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+use tessera_engine::{Bf16, F16};
 
 /// A `torch.save` file. Nested dict keys join with `.`.
 pub struct Torch {

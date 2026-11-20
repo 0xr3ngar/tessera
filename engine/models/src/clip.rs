@@ -2,11 +2,11 @@
 
 use crate::keys::Keys;
 use crate::shared::{Attend, Dense, Stack, tokens};
-use sensai_trace::DimName::*;
-use sensai_trace::{
+use serde_json::json;
+use tessera_trace::DimName::*;
+use tessera_trace::{
     Act, Dim, Embed, Graph, Linear, Mask, Model, Norm, Role, Tensor, Vector, Weights,
 };
-use serde_json::json;
 
 pub struct Config {
     /// Its context bound is also the position table's length.
@@ -145,7 +145,7 @@ pub fn forward(m: &Model, c: &Config, w: &Clip, [tokens, positions]: [&Tensor; 2
 /// One forward entry: tokens and positions in, states out.
 pub fn program(c: &Config) -> Graph {
     let m = Model::new(c.dims());
-    let w: Clip = sensai_trace::declare(&m);
+    let w: Clip = tessera_trace::declare(&m);
     let [tokens, positions] = tokens(&m);
     let states = forward(&m, c, &w, [&tokens, &positions]);
     m.finish([(Role::Logits, &states)])

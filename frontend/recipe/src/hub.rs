@@ -36,7 +36,7 @@ pub fn fetch(spec: &str, cache: &Path, token: Option<&str>) -> Result<PathBuf, E
     }
     let info = lookup(repo, revision, token)?;
     let pinned = format!("{repo}@{}", info.sha);
-    eprintln!("sensai: model {pinned}");
+    eprintln!("tesserax: model {pinned}");
     snapshot(&pinned, cache, token, None)
 }
 

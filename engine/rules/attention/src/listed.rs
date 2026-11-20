@@ -1,9 +1,9 @@
 //! Masked attention over listed keys, or computed keys by row.
 
-use sensai_codegen::prelude::*;
-use sensai_graph::Op;
-use sensai_lower::sites::Attend;
-use sensai_lower::{Attn, Draft, Extent, Kernel, Launch, Read, Shape, Step, T, Term, Tree};
+use tessera_codegen::prelude::*;
+use tessera_graph::Op;
+use tessera_lower::sites::Attend;
+use tessera_lower::{Attn, Draft, Extent, Kernel, Launch, Read, Shape, Step, T, Term, Tree};
 
 /// One thread per pick: its scaled score, or -inf.
 #[kernel]
@@ -186,10 +186,10 @@ impl Sizes {
         let mut launch = Launch::plain(step, &[len], Shape::Line(len));
         if let Some(scale) = scale {
             let at = launch.args.len() - 1;
-            launch.args.insert(at, sensai_lower::Arg::value(&scale));
+            launch.args.insert(at, tessera_lower::Arg::value(&scale));
         }
-        launch.args.push(sensai_lower::Arg::count(self.queries));
-        launch.args.push(sensai_lower::Arg::size(self.keys));
+        launch.args.push(tessera_lower::Arg::count(self.queries));
+        launch.args.push(tessera_lower::Arg::size(self.keys));
         let counts = [self.heads, self.kv_heads, self.width, self.picks];
         let (ragged, listed) = (usize::from(self.ragged), usize::from(self.from_list));
         let flags = match scale {
@@ -199,7 +199,7 @@ impl Sizes {
         let args = counts
             .into_iter()
             .chain(flags)
-            .map(sensai_lower::Arg::count);
+            .map(tessera_lower::Arg::count);
         launch.args.extend(args);
         vec![launch]
     }
@@ -337,4 +337,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     }
 }
 
-sensai_lower::rule!("listed", propose);
+tessera_lower::rule!("listed", propose);

@@ -10,8 +10,8 @@ mod view;
 
 pub use buffer::{Backing, Buffer, Host};
 pub use layout::Layout;
-pub use sensai_graph::DType;
 pub use tensor::Tensor;
+pub use tessera_graph::DType;
 pub use view::{View, ViewMut, copy};
 
 use std::fmt;

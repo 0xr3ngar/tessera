@@ -1,14 +1,14 @@
 //! Two engines as ranks against one engine alone.
 
-use sensai_engine::comm::{Sockets, Transport};
-use sensai_engine::{Batch, Engine, Event, Fair, Place, Request, Row};
-use sensai_graph::{Graph, Parts};
-use sensai_lower::{Cluster, Pick, Recipe, Settings, Weight, kept};
-use sensai_models::decoder::{Config, Swiglu, stepper};
-use sensai_models::{mla, small};
-use sensai_testkit::{Noise, weights};
-use sensai_trace::Norm;
 use std::net::{TcpListener, TcpStream};
+use tessera_engine::comm::{Sockets, Transport};
+use tessera_engine::{Batch, Engine, Event, Fair, Place, Request, Row};
+use tessera_graph::{Graph, Parts};
+use tessera_lower::{Cluster, Pick, Recipe, Settings, Weight, kept};
+use tessera_models::decoder::{Config, Swiglu, stepper};
+use tessera_models::{mla, small};
+use tessera_testkit::{Noise, weights};
+use tessera_trace::Norm;
 
 /// Both ends of one loopback stream, as two ranks.
 fn pair() -> [Sockets; 2] {

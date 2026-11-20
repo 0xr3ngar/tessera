@@ -2,9 +2,9 @@
 
 use crate::abi::{Count, Entry, Input, Kept, Kind, Offer, Place, Site};
 use crate::text::{Fixed, Text};
-use sensai_graph::{Composite, DimName, PathSeg};
-use sensai_lower::kernels::AllReduce;
-use sensai_lower::{Arg, Draft, Extent, Home, Read, T, Term, Tree, sites};
+use tessera_graph::{Composite, DimName, PathSeg};
+use tessera_lower::kernels::AllReduce;
+use tessera_lower::{Arg, Draft, Extent, Home, Read, T, Term, Tree, sites};
 
 /// Data a site's offers may read.
 pub(crate) struct Reads {

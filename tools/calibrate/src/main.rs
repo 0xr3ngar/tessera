@@ -1,13 +1,13 @@
 //! Probes this GPU, times the grid, plans or shapes.
 
-use sensai_calibrate::probe::{fit, links, read, suite};
-use sensai_calibrate::{Grid, headroom, judge};
-use sensai_calibrate::{bench, guided, plans};
-use sensai_lower::{Cluster, Device, Pick, Settings, Step};
-use sensai_sim::{Chip, known};
 use std::error::Error;
 use std::process::ExitCode;
 use std::time::Instant;
+use tessera_calibrate::probe::{fit, links, read, suite};
+use tessera_calibrate::{Grid, headroom, judge};
+use tessera_calibrate::{bench, guided, plans};
+use tessera_lower::{Cluster, Device, Pick, Settings, Step};
+use tessera_sim::{Chip, known};
 
 /// Prints, per kernel, the model against the clock.
 fn report(chip: &dyn Chip, timed: &[(Step, f64)], settings: &Settings) {
@@ -144,13 +144,13 @@ fn marks(settings: &Settings, args: &[String]) -> Result<(), Box<dyn Error>> {
 }
 
 fn main() -> ExitCode {
-    let settings = sensai_frontend_settings::read();
+    let settings = tessera_frontend_settings::read();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match match args.first().map(String::as_str) {
         Some("bench") => marks(&settings, &args[1..]),
         Some("probe") => probe(&settings),
         Some("plans") => plans(&settings),
-        Some("watch") => sensai_calibrate::watch::watch(&settings, &args[1..]),
+        Some("watch") => tessera_calibrate::watch::watch(&settings, &args[1..]),
         Some("guided") => guided::report(
             &settings,
             args.get(1)

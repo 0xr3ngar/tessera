@@ -1,9 +1,9 @@
 //! One served model over several ranks.
 
-use sensai_engine::comm::{Fabric, Transport};
-use sensai_engine::{Engine, Graph, Place, Recipe, Settings};
-use sensai_frontend_comm::{join, meet, ports};
 use std::net::SocketAddr;
+use tessera_engine::comm::{Fabric, Transport};
+use tessera_engine::{Engine, Graph, Place, Recipe, Settings};
+use tessera_frontend_comm::{join, meet, ports};
 
 /// The flags for `Ranks::flag`.
 pub const FLAGS: &str = "[--rank <n> --peers <ip:port>,... [--parts <a>,<b>,...] \

@@ -1,13 +1,13 @@
 //! The GLM step graph over ranks matches one rank.
 
-use sensai_graph::{Parts, PathSeg, Placement};
-use sensai_models::mla::{RotatedMoe, stepper};
-use sensai_parity::step_ranks;
+use tessera_graph::{Parts, PathSeg, Placement};
+use tessera_models::mla::{RotatedMoe, stepper};
+use tessera_parity::step_ranks;
 
 /// Expert sets split. Attention and the indexer stay whole.
 #[test]
 fn step_over_ranks() {
-    let g = stepper::<RotatedMoe>(&sensai_models::small::glm53());
+    let g = stepper::<RotatedMoe>(&tessera_models::small::glm53());
     for ranks in [2, 4] {
         let sharded = step_ranks(&g, &Parts::even(ranks));
         let weights = &sharded.graph.weights;

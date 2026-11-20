@@ -6,12 +6,12 @@ use crate::features::Features;
 use crate::flow::Flow;
 use crate::pictures::Pictures;
 use crate::worker::Worker;
-use sensai_bundle::Overrides;
-use sensai_bundle::tokenize::hf::Hf;
-use sensai_engine::Settings;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::path::PathBuf;
+use tessera_bundle::Overrides;
+use tessera_bundle::tokenize::hf::Hf;
+use tessera_engine::Settings;
 
 /// Channels per latent token.
 const LATENT: usize = 128;

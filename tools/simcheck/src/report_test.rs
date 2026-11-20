@@ -2,7 +2,7 @@ use crate::far::Lean;
 use crate::pairs::Hit;
 use crate::report::report;
 use crate::windows::cut;
-use sensai_findings::Level;
+use tessera_findings::Level;
 use std::path::Path;
 
 #[test]

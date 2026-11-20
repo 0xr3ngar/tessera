@@ -14,8 +14,8 @@ use crate::plan::Share;
 use crate::rule::{Read, Rule, linked};
 use crate::tree::{T, Term, Tree};
 use crate::{Error, Unsupported};
-use sensai_graph::{DimName, Graph, NodeId, View};
 use std::collections::{BTreeMap, BTreeSet};
+use tessera_graph::{DimName, Graph, NodeId, View};
 
 /// A value some op writes, or the plan is given.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -180,7 +180,7 @@ pub(crate) fn select_upto(
             len,
             Home::Input(port as u32),
             EDGE,
-            sensai_codegen::form::of(dtype),
+            tessera_codegen::form::of(dtype),
         );
         e.out.inputs.push(val);
     }
@@ -197,8 +197,8 @@ pub(crate) fn select_upto(
                 val
             }
             (_, None) => continue,
-            (Term::Op(sensai_graph::Op::View(View::Reshape(_))), _) => val(n.args[0]),
-            (Term::Op(sensai_graph::Op::Append(index)), _) => {
+            (Term::Op(tessera_graph::Op::View(View::Reshape(_))), _) => val(n.args[0]),
+            (Term::Op(tessera_graph::Op::Append(index)), _) => {
                 let args = [n.args[0], n.args[1], n.args[2]].map(val);
                 e.append(&tree, t, *index, args)?
             }

@@ -2,10 +2,10 @@
 
 use crate::model::Model;
 use crate::ranks::{Spec, Wire, device};
-use sensai_lower::{Device, Pins, Plan, Source, Step, Tree, assign, peak, schedule, select};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::error::Error;
+use tessera_lower::{Device, Pins, Plan, Source, Step, Tree, assign, peak, schedule, select};
 
 /// One step of a rank's plan, for views.
 #[derive(Clone, Debug, Serialize)]
@@ -79,10 +79,10 @@ pub struct Setup<'a> {
 
 /// The text a backend compiles, or the host's tree.
 fn text_of(step: &Step, spec: &Spec) -> (&'static str, String) {
-    let dialect = spec.dialect().unwrap_or(sensai_lower::Dialect::Cuda);
+    let dialect = spec.dialect().unwrap_or(tessera_lower::Dialect::Cuda);
     let name = match (spec.dialect(), dialect) {
         (None, _) => "tree",
-        (_, sensai_lower::Dialect::Metal) => "metal",
+        (_, tessera_lower::Dialect::Metal) => "metal",
         _ if spec.backend == "rocm" => "hip",
         _ => "cuda",
     };
@@ -115,7 +115,7 @@ fn seconds(device: &Device, plan: &Plan, step: &Step) -> f64 {
 fn shapes(
     model: &Model,
     device: &Device,
-    sizes: &[(sensai_graph::DimName, u64)],
+    sizes: &[(tessera_graph::DimName, u64)],
 ) -> Result<Vec<Option<Vec<usize>>>, Box<dyn Error>> {
     let (g, parts) = (&model.sharded, device.division());
     let tree = Tree::upto(
@@ -130,7 +130,7 @@ fn shapes(
     )?;
     let mut out = vec![None; g.nodes.len()];
     for t in 0..tree.len() {
-        let node = tree.node(sensai_lower::T(t as u32));
+        let node = tree.node(tessera_lower::T(t as u32));
         out[node.from.0 as usize] = Some(node.shape.clone());
     }
     Ok(out)

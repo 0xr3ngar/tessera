@@ -1,19 +1,19 @@
 //! Times whole model plans against the cost model.
 
 use crate::{headroom, measure};
-use sensai_engine::Error;
-use sensai_engine::{Engine, Request};
-use sensai_graph::DimName::{self, Context, Rows, Segments, Seqs};
-use sensai_graph::{Graph, Role};
-use sensai_lower::form::BF16_FORM;
-use sensai_lower::{Device, Pins, Plan, Recipe, Settings, Tensor, View, Weight, lower, select};
-use sensai_models::decoder::Swiglu;
-use sensai_models::{decoder, eg2};
-use sensai_run::{Run, open};
-use sensai_testkit::{Noise, fill, weights};
-use sensai_trace::{Linear, Norm};
 use std::collections::BTreeMap;
 use std::time::Instant;
+use tessera_engine::Error;
+use tessera_engine::{Engine, Request};
+use tessera_graph::DimName::{self, Context, Rows, Segments, Seqs};
+use tessera_graph::{Graph, Role};
+use tessera_lower::form::BF16_FORM;
+use tessera_lower::{Device, Pins, Plan, Recipe, Settings, Tensor, View, Weight, lower, select};
+use tessera_models::decoder::Swiglu;
+use tessera_models::{decoder, eg2};
+use tessera_run::{Run, open};
+use tessera_testkit::{Noise, fill, weights};
+use tessera_trace::{Linear, Norm};
 
 /// Rows in each forward launch, short to long.
 const LENGTHS: [u64; 3] = [16, 64, 256];
@@ -81,7 +81,7 @@ pub(crate) fn feeds(
     let ports = g.entries[0].inputs.iter();
     let fed = ports.map(|p| {
         let unsized_shape = || {
-            Error::from(sensai_lower::Error::from(sensai_lower::Size::Shape(
+            Error::from(tessera_lower::Error::from(tessera_lower::Size::Shape(
                 p.ty.shape.clone(),
             )))
         };
@@ -119,7 +119,7 @@ impl<'a> Bench<'a> {
             runner.load(at as u32, w.view())?;
         }
         let device =
-            Device::stored(runner.platform(), settings).map_err(sensai_lower::Error::from)?;
+            Device::stored(runner.platform(), settings).map_err(tessera_lower::Error::from)?;
         let device = device.pinned(s.pins.clone());
         Ok(Self {
             s,
@@ -171,7 +171,9 @@ impl<'a> Bench<'a> {
         let (learned, all) = (self.learned, self.device.samples());
         println!("  timed {learned} launches; {all} samples known");
         if learned > 0 {
-            self.device.save(&file).map_err(sensai_lower::Error::from)?;
+            self.device
+                .save(&file)
+                .map_err(tessera_lower::Error::from)?;
             println!("  stored in {}", file.display());
         }
         Ok(())

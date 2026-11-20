@@ -1,5 +1,5 @@
 use crate::round::Acc;
-use sensai_graph::DType;
+use tessera_graph::DType;
 
 /// An accumulator's sum of 2048 and three ones.
 const SUMS: [(DType, f32); 3] = [

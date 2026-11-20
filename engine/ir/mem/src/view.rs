@@ -4,8 +4,8 @@ use crate::buffer::Buffer;
 use crate::layout::Layout;
 use crate::tensor::Tensor;
 use crate::{Error, mismatch};
-use sensai_graph::{Bf16, DType};
 use std::borrow::Cow;
+use tessera_graph::{Bf16, DType};
 
 /// A window `at` bytes into a buffer, with a layout.
 #[derive(Clone)]

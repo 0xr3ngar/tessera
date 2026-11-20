@@ -1,11 +1,11 @@
 //! Causal attention that walks the keys one at a time.
 
-use sensai_codegen::kept;
-use sensai_codegen::prelude::*;
-use sensai_graph::Order;
-use sensai_lower::kernels::Join;
-use sensai_lower::sites;
-use sensai_lower::{Arg, Attn, Draft, Kernel, Launch, Needs, Read, Shape, Source, Step, T, Tree};
+use tessera_codegen::kept;
+use tessera_codegen::prelude::*;
+use tessera_graph::Order;
+use tessera_lower::kernels::Join;
+use tessera_lower::sites;
+use tessera_lower::{Arg, Attn, Draft, Kernel, Launch, Needs, Read, Shape, Source, Step, T, Tree};
 
 /// Threads in a group: one group per query and head.
 const THREADS: u32 = 256;
@@ -265,4 +265,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     ])
 }
 
-sensai_lower::rule!("attend", propose);
+tessera_lower::rule!("attend", propose);

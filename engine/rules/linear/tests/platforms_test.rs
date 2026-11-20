@@ -1,15 +1,15 @@
 //! Each toolkit compiles the tile text to check the table.
 
 // The other matmul rules come from here.
-use sensai_kernels as _;
+use tessera_kernels as _;
 
-use sensai_gpukit::platform::{backend_of, rows};
-use sensai_linear::{Product, SCHEDULES, Tiled};
-use sensai_lower::sites::After;
-use sensai_lower::{Dialect, Kernel, Source};
-use sensai_testkit::scratch;
 use std::path::Path;
 use std::process::Command;
+use tessera_gpukit::platform::{backend_of, rows};
+use tessera_linear::{Product, SCHEDULES, Tiled};
+use tessera_lower::sites::After;
+use tessera_lower::{Dialect, Kernel, Source};
+use tessera_testkit::scratch;
 
 /// The tiled kernel's text and entry name.
 fn tiled_text(dialect: Dialect) -> (String, String) {
@@ -18,7 +18,7 @@ fn tiled_text(dialect: Dialect) -> (String, String) {
             m: 64,
             n: 64,
             k: 64,
-            form: sensai_lower::form::F32_FORM,
+            form: tessera_lower::form::F32_FORM,
             after: After::default(),
             picked: None,
             near: None,
@@ -45,7 +45,7 @@ fn hip_probe() -> String {
     format!(
         "typedef unsigned u32;\n#define __device__\n#define __forceinline__ inline\n{}\n\
          void probe(tile_acc *c, tile_a a, tile_b b) {{ TILE_MMA(*c, a, b); }}\n",
-        sensai_lower::hip_tiles()
+        tessera_lower::hip_tiles()
     )
 }
 

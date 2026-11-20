@@ -1,6 +1,6 @@
 //! Which GPU backend this build dispatches to.
 
-pub use sensai_engine_settings::Backend;
+pub use tessera_engine_settings::Backend;
 
 /// The backend this build uses, if any.
 pub fn available() -> Option<Backend> {

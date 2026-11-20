@@ -1,8 +1,8 @@
 use crate::{Arg, Ctx, compile, failure};
-use sensai_codegen::Precision;
-use sensai_codegen::form::F32_FORM;
-use sensai_codegen::prelude::*;
-use sensai_host::exec::{self, ArgVal, Grid};
+use tessera_codegen::Precision;
+use tessera_codegen::form::F32_FORM;
+use tessera_codegen::prelude::*;
+use tessera_host::exec::{self, ArgVal, Grid};
 
 /// Threads past `n` read nothing: each guard decides first.
 #[kernel]

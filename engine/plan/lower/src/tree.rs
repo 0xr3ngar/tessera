@@ -8,8 +8,8 @@ use crate::rule::Rule;
 use crate::select::Home;
 use crate::sites::Pattern;
 use crate::{Error, Size, Unsupported};
-use sensai_codegen::kept::Layout;
-use sensai_graph::{
+use tessera_codegen::kept::Layout;
+use tessera_graph::{
     DType, DimExpr, DimName, Graph, NodeId, Op, Parts, Placement, Region, Shape, Stage,
 };
 
@@ -101,18 +101,18 @@ fn sized(
     s: &Shape,
 ) -> Result<Vec<Extent>, Error> {
     // `e` with `vary` at `value`, other sizes as given.
-    let at = |e: &sensai_graph::DimExpr, vary: DimName, value: u64| {
+    let at = |e: &tessera_graph::DimExpr, vary: DimName, value: u64| {
         let size = |name| match name == vary {
             true => Some(value),
             false => sizes.iter().find(|(n, _)| *n == name).map(|(_, n)| *n),
         };
         e.value(&g.dims, &size).map(|v| v as i64)
     };
-    let most = |e: &sensai_graph::DimExpr| {
+    let most = |e: &tessera_graph::DimExpr| {
         let size = |name| sizes.iter().find(|(n, _)| *n == name).map(|(_, n)| *n);
         e.value(&g.dims, &size).map(|n| n as usize)
     };
-    let dim = |e: &sensai_graph::DimExpr| -> Option<Extent> {
+    let dim = |e: &tessera_graph::DimExpr| -> Option<Extent> {
         let most = most(e)?;
         let mut runtime = None;
         for name in upto {
@@ -229,7 +229,7 @@ impl<'a> Tree<'a> {
             let args = args?;
             let form = match &n.op {
                 Op::Weight(w) => pins.form(&g.weights[*w as usize].path),
-                _ => sensai_codegen::form::of(n.ty.dtype),
+                _ => tessera_codegen::form::of(n.ty.dtype),
             };
             // Kernels read whole blocks, so a row holds whole ones.
             if !shape.last().is_none_or(|k| k.is_multiple_of(form.align())) {

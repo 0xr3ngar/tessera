@@ -1,5 +1,5 @@
 [package]
-name = "sensai-shape"
+name = "tessera-shape"
 version = "0.1.0"
 description = "Line shapes, with names, numbers and strings collapsed, and merge conflicts"
 edition.workspace = true

@@ -1,9 +1,9 @@
 //! Attention on the CPU, a thread per query and head.
 
-use sensai_codegen::kept;
-use sensai_codegen::prelude::*;
-use sensai_lower::{Arg, Attn, Draft, Kernel, Launch, Step, T, Tree, ZoneKind, sites};
-use sensai_lower::{GUESS, small, source};
+use tessera_codegen::kept;
+use tessera_codegen::prelude::*;
+use tessera_lower::{Arg, Attn, Draft, Kernel, Launch, Step, T, Tree, ZoneKind, sites};
+use tessera_lower::{GUESS, small, source};
 
 /// One pass per query, over its keys or listed `ids`.
 #[kernel]
@@ -55,7 +55,7 @@ fn cpu_attend<const LISTED: bool>(
 /// Softmax attention over `[seqs, rows, heads, width]` tensors.
 #[derive(Clone, Debug, Kernel)]
 #[launch(
-    crate = sensai_lower,
+    crate = tessera_lower,
     name = "cpu_attend",
     sizes = self.sizes.sizes(),
     work = self.sizes.seqs * self.sizes.heads * self.sizes.queries * self.sizes.keys.most() * self.sizes.width,
@@ -82,7 +82,7 @@ impl Attend {
         self.sizes.seqs * self.sizes.heads * self.sizes.queries
     }
 
-    fn body(&self) -> sensai_codegen::ir::Body {
+    fn body(&self) -> tessera_codegen::ir::Body {
         let a = &self.sizes;
         let (before, after) = self.window();
         let sizes = (a.queries as u32, a.keys.most() as u32, a.heads as u32);
@@ -151,7 +151,7 @@ fn cpu_attend_rows(
 /// Scaled query rows over kept keys, by slot and position.
 #[derive(Clone, Copy, Debug, Kernel)]
 #[launch(
-    crate = sensai_lower,
+    crate = tessera_lower,
     name = "cpu_attend_rows",
     sizes = self.0.sizes(),
     work = self.0.heads * self.0.queries * self.0.keys.most() * self.0.width,
@@ -204,5 +204,5 @@ fn listed(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(whole(&site, ids, picks))
 }
 
-sensai_lower::rule!("cpu_attend", propose);
-sensai_lower::rule!("cpu_listed", listed);
+tessera_lower::rule!("cpu_attend", propose);
+tessera_lower::rule!("cpu_listed", listed);

@@ -1,9 +1,9 @@
 //! Rotary positions: a table of angles, then the rotation.
 
-use sensai_codegen::prelude::*;
-use sensai_graph::{Pairs, Stage};
-use sensai_lower::sites;
-use sensai_lower::{Draft, Kernel, Read, T, Tree};
+use tessera_codegen::prelude::*;
+use tessera_graph::{Pairs, Stage};
+use tessera_lower::sites;
+use tessera_lower::{Draft, Kernel, Read, T, Tree};
 
 /// One thread per position, head and pair, rotating in place.
 #[kernel]
@@ -104,4 +104,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     ])
 }
 
-sensai_lower::rule!("rope", propose);
+tessera_lower::rule!("rope", propose);

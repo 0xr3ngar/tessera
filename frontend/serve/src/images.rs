@@ -3,10 +3,10 @@
 use crate::http::Response;
 use crate::wire::{self, Images, Refusal, bad, refuse};
 use crate::{Slot, reply};
-use sensai_tasks::api::Sizes;
-use sensai_tasks::png;
 use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tessera_tasks::api::Sizes;
+use tessera_tasks::png;
 
 /// The most pictures one request may ask for.
 const MOST: usize = 10;

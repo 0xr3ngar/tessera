@@ -1,15 +1,15 @@
 //! Attention on tiles, the keys streamed in blocks.
 
-use sensai_codegen::ir::Body;
-use sensai_codegen::kept;
-use sensai_codegen::prelude::*;
-use sensai_graph::{Mask, Order};
-use sensai_lower::sites;
-use sensai_lower::{
-    Arg, Attn, Draft, Kernel, Launch, Load, Needs, Read, Shape, Source, Step, T, Tree,
-};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use tessera_codegen::ir::Body;
+use tessera_codegen::kept;
+use tessera_codegen::prelude::*;
+use tessera_graph::{Mask, Order};
+use tessera_lower::sites;
+use tessera_lower::{
+    Arg, Attn, Draft, Kernel, Launch, Load, Needs, Read, Shape, Source, Step, T, Tree,
+};
 
 /// Queries one group handles.
 const BQ: u32 = 32;
@@ -658,4 +658,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![scaled, Draft::new(Flash(site.sizes), reads, out)])
 }
 
-sensai_lower::rule!("flash", propose);
+tessera_lower::rule!("flash", propose);

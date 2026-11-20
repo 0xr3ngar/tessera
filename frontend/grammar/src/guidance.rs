@@ -3,8 +3,8 @@
 use crate::Error;
 use llguidance::api::TopLevelGrammar;
 use llguidance::{ParserFactory, token_bytes_from_tokenizer_json};
-use sensai_bundle::tokenize::hf::Hf;
 use std::sync::Arc;
+use tessera_bundle::tokenize::hf::Hf;
 use toktrie::{TokEnv, TokRxInfo, TokTrie, TokenId, TokenizerEnv};
 
 /// The token tree and the tokenizer, in llguidance's types.
@@ -157,18 +157,18 @@ impl Matcher {
     }
 }
 
-impl sensai_engine::Guide for Matcher {
-    fn allowed(&mut self) -> Result<sensai_engine::Allowed, sensai_engine::Fault> {
+impl tessera_engine::Guide for Matcher {
+    fn allowed(&mut self) -> Result<tessera_engine::Allowed, tessera_engine::Fault> {
         let mut bits = vec![0; self.words];
         Matcher::mask(self, &mut bits)?;
-        Ok(sensai_engine::Allowed::from_bits(bits))
+        Ok(tessera_engine::Allowed::from_bits(bits))
     }
 
     fn forced(&mut self) -> Vec<u32> {
         Matcher::forced(self)
     }
 
-    fn accept(&mut self, id: u32) -> Result<(), sensai_engine::Fault> {
+    fn accept(&mut self, id: u32) -> Result<(), tessera_engine::Fault> {
         Matcher::accept(self, id)
     }
 

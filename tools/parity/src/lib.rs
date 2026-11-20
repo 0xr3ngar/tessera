@@ -1,7 +1,7 @@
 //! The per-model suite: what every model test runs alike.
 
 // Linking these registers their lowering rules.
-use sensai_rules as _;
+use tessera_rules as _;
 
 mod golden;
 mod gpu;
@@ -14,16 +14,16 @@ pub use gpu::gpu;
 pub use shard::{pair, shards, step_ranks};
 pub use step::steps;
 
-use sensai_bundle::names::{repo, resolve};
-use sensai_checkpoint::{Slice, Stored};
-use sensai_interp::{Tensor, run};
-use sensai_lower::form::named;
-use sensai_lower::{Device, Pick, Pins, Plan, Settings, View, lower, rules};
-use sensai_run::testing::{host, runs};
-use sensai_run::{Run, open};
-use sensai_testkit::{Noise, cosine_f32, fill, max_abs_diff};
-use sensai_trace::DimName::{Context, Seqs};
-use sensai_trace::{Composite, DimName, Graph, TensorType};
+use tessera_bundle::names::{repo, resolve};
+use tessera_checkpoint::{Slice, Stored};
+use tessera_interp::{Tensor, run};
+use tessera_lower::form::named;
+use tessera_lower::{Device, Pick, Pins, Plan, Settings, View, lower, rules};
+use tessera_run::testing::{host, runs};
+use tessera_run::{Run, open};
+use tessera_testkit::{Noise, cosine_f32, fill, max_abs_diff};
+use tessera_trace::DimName::{Context, Seqs};
+use tessera_trace::{Composite, DimName, Graph, TensorType};
 
 /// One model, from the suite's side.
 pub struct Spec {
@@ -161,7 +161,7 @@ pub fn traces(spec: &Spec) {
     let g = (spec.release)();
     let back = Graph::from_json(&g.to_json()).unwrap();
     assert_eq!(back, g);
-    sensai_graph::verify(&back).unwrap();
+    tessera_graph::verify(&back).unwrap();
     let marked = |kind| g.regions.iter().filter(|r| r.kind == kind).count();
     for &(kind, n) in spec.regions {
         assert_eq!(marked(kind), n, "{} {kind:?} regions", spec.name);
@@ -169,7 +169,7 @@ pub fn traces(spec: &Spec) {
     let all: usize = spec.regions.iter().map(|(_, n)| n).sum();
     assert_eq!(g.regions.len(), all, "{} regions", spec.name);
     let count =
-        |w: &sensai_graph::Weight| w.ty.shape.elements(&g.dims).unwrap().as_const().unwrap();
+        |w: &tessera_graph::Weight| w.ty.shape.elements(&g.dims).unwrap().as_const().unwrap();
     let parameters: u64 = g.weights.iter().map(count).sum();
     assert_eq!(parameters, spec.parameters, "{} parameters", spec.name);
 }

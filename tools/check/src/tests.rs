@@ -1,6 +1,6 @@
 //! Failed and slow tests, from the JUnit file nextest writes.
 
-use sensai_findings::{Finding, Level, Report, Rule, Snippet};
+use tessera_findings::{Finding, Level, Report, Rule, Snippet};
 
 /// The same limit as the `ci` profile in .config/nextest.toml.
 const SLOW_SECS: f64 = 30.0;

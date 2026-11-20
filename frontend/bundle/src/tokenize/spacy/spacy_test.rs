@@ -66,7 +66,7 @@ type Case = (String, Vec<(String, bool)>);
 /// Matches spaCy on the spacy reference's `tokens.json`.
 #[test]
 fn spacy_parity() {
-    let Some(dir) = sensai_testkit::reference("spacy") else {
+    let Some(dir) = tessera_testkit::reference("spacy") else {
         eprintln!("no spacy reference here: skipped");
         return;
     };

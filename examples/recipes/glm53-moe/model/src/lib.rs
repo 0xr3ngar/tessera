@@ -1,7 +1,7 @@
 //! GLM-5.3's routed block as one CUDA kernel.
 
-use sensai_guest::site::{self, Ask, Count, Input, Kind, Manifest, Offer, Place, Shape, Site};
-use sensai_guest::{input, output};
+use tessera_guest::site::{self, Ask, Count, Input, Kind, Manifest, Offer, Place, Shape, Site};
+use tessera_guest::{input, output};
 
 const NAME: &str = "glm53_moe";
 const ROUTE: &str = "glm53_route";
@@ -236,13 +236,13 @@ fn offer(site: &Site) -> Option<Vec<Offer>> {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn alloc(len: i32) -> i32 {
-    sensai_guest::alloc(len)
+    tessera_guest::alloc(len)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn manifest() -> i64 {
     let manifest = Manifest {
-        abi: sensai_guest::ABI,
+        abi: tessera_guest::ABI,
         kernels: [ROUTE, EXPERTS, FINISH]
             .map(|k| site::kernel(k, k, include_str!("moe.cu")))
             .into(),

@@ -11,9 +11,9 @@ use cranelift_codegen::isa::TargetFrontendConfig;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_jit::JITModule;
 use cranelift_module::{Linkage, Module};
-use sensai_codegen::ir::{Body, Expr, Intrinsic, Param, Stmt, Ty};
-use sensai_host::lockstep::THREADS;
 use std::collections::HashMap;
+use tessera_codegen::ir::{Body, Expr, Intrinsic, Param, Stmt, Ty};
+use tessera_host::lockstep::THREADS;
 
 pub(crate) type Res<T = ()> = Result<T, String>;
 
@@ -30,7 +30,7 @@ pub(crate) enum Kind {
     /// One value, the same for every thread.
     One(Ty, Value),
     Buffer {
-        form: &'static dyn sensai_codegen::Load,
+        form: &'static dyn tessera_codegen::Load,
         ptr: Value,
         len: Value,
         skip: Value,
@@ -287,7 +287,7 @@ impl Lowerer<'_, '_> {
     fn store(
         &mut self,
         target: &Expr,
-        op: Option<sensai_codegen::ir::BinOp>,
+        op: Option<tessera_codegen::ir::BinOp>,
         value: &Expr,
         t: Value,
     ) -> Res {

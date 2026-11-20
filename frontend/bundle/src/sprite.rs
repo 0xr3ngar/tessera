@@ -2,12 +2,12 @@
 
 use crate::Overrides;
 use crate::tokenize::hf::Hf;
-use sensai_checkpoint::{File, Offer, Torch};
-use sensai_engine::wasm::Module;
-use sensai_engine::{Graph, PathSeg, Tensor, Weight, bind, clip, fold, sprite};
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use tessera_checkpoint::{File, Offer, Torch};
+use tessera_engine::wasm::Module;
+use tessera_engine::{Graph, PathSeg, Tensor, Weight, bind, clip, fold, sprite};
 
 /// Named tables of floats.
 type Tables = Vec<(String, Vec<f32>)>;

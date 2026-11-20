@@ -1,11 +1,11 @@
 //! Decodes saved FLUX.2 latents to PNG files through the VAE.
 
-use sensai_checkpoint::File;
-use sensai_tasks::pictures::Pictures;
-use sensai_tasks::png;
 use std::time::Instant;
+use tessera_checkpoint::File;
+use tessera_tasks::pictures::Pictures;
+use tessera_tasks::png;
 
-fn main() -> Result<(), sensai_tasks::Error> {
+fn main() -> Result<(), tessera_tasks::Error> {
     let args: Vec<String> = std::env::args().collect();
     let [_, dir, file, name, side, out] = args.as_slice() else {
         return Err(
@@ -16,7 +16,7 @@ fn main() -> Result<(), sensai_tasks::Error> {
     let side: usize = side.parse()?;
     let mut p = Pictures::open(
         dir.as_ref(),
-        &sensai_frontend_settings::read(),
+        &tessera_frontend_settings::read(),
         [side, 1],
         &Default::default(),
     )?;

@@ -6,18 +6,18 @@ use crate::marks;
 use crate::overrides::{self, Overrides};
 use crate::profile::Marks;
 use crate::run::{Base, Reload, Run};
-use sensai_codegen::Dialect;
-use sensai_engine_settings::Settings;
-use sensai_gpukit::device::{Device, DeviceBuffer, cached_context, cached_source};
-use sensai_gpukit::launch::{KernelArgs, Launch, launch_1d, launch_grid};
-use sensai_graph::DimName;
-use sensai_lower::{Arg, Extent, Launch as Call, Launching, Plan, Shape, Slot};
-use sensai_mem::Buffer;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::time::Instant;
+use tessera_codegen::Dialect;
+use tessera_engine_settings::Settings;
+use tessera_gpukit::device::{Device, DeviceBuffer, cached_context, cached_source};
+use tessera_gpukit::launch::{KernelArgs, Launch, launch_1d, launch_grid};
+use tessera_graph::DimName;
+use tessera_lower::{Arg, Extent, Launch as Call, Launching, Plan, Shape, Slot};
+use tessera_mem::Buffer;
 
 pub(crate) struct Runner<D: Device> {
     ctx: &'static D,
@@ -94,7 +94,7 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
                     bound.device_ptr(self.buffer(*slot).device_ptr() + at)
                 }
                 Arg::Value(bytes) => bound.bytes(bytes),
-                Arg::Size(_) | Arg::Buffer(..) => return Err(sensai_lower::Error::Unbound.into()),
+                Arg::Size(_) | Arg::Buffer(..) => return Err(tessera_lower::Error::Unbound.into()),
             };
         }
         Ok(bound)
@@ -116,7 +116,7 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
                 let threads = threads as u32;
                 launch_grid(self.ctx, kernel, across, down, threads, args)?
             }
-            Shape::Runtime(_) => return Err(sensai_lower::Error::Unbound.into()),
+            Shape::Runtime(_) => return Err(tessera_lower::Error::Unbound.into()),
         }
         Ok(())
     }
@@ -310,20 +310,20 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
 pub(crate) struct Pin<D: Device>(pub(crate) &'static D);
 
 #[cfg(any(feature = "cuda", feature = "rocm"))]
-impl<D: Device> sensai_engine_comm::Pinning for Pin<D> {
-    fn pin(&self, len: usize) -> Result<sensai_engine_comm::Pinned, sensai_engine_comm::Error> {
+impl<D: Device> tessera_engine_comm::Pinning for Pin<D> {
+    fn pin(&self, len: usize) -> Result<tessera_engine_comm::Pinned, tessera_engine_comm::Error> {
         let (host, device) = self
             .0
             .pin(len)
-            .map_err(|e| sensai_engine_comm::Error::Link(e.to_string()))?;
-        Ok(sensai_engine_comm::Pinned {
+            .map_err(|e| tessera_engine_comm::Error::Link(e.to_string()))?;
+        Ok(tessera_engine_comm::Pinned {
             host: host as *mut u8,
             device,
             len,
         })
     }
 
-    fn unpin(&self, pinned: sensai_engine_comm::Pinned) {
+    fn unpin(&self, pinned: tessera_engine_comm::Pinned) {
         self.0.unpin(pinned.host as u64);
     }
 }
@@ -489,11 +489,11 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
         format!("{} {}", D::BACKEND, self.ctx.name())
     }
 
-    fn platform(&self) -> sensai_gpukit::Platform {
+    fn platform(&self) -> tessera_gpukit::Platform {
         self.ctx.platform()
     }
 
-    fn precision(&self) -> sensai_codegen::Precision {
+    fn precision(&self) -> tessera_codegen::Precision {
         crate::precision(D::BACKEND)
     }
 

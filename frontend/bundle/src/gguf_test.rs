@@ -1,9 +1,9 @@
 use crate::gguf::pins;
 use crate::names_test::tensor_name;
-use sensai_checkpoint::{GgufTensor, GgufType, Meta, write_gguf};
-use sensai_engine::decoder::{Config, Swiglu, stepper};
-use sensai_engine::form::{F32_FORM, Load, named};
-use sensai_engine::{
+use tessera_checkpoint::{GgufTensor, GgufType, Meta, write_gguf};
+use tessera_engine::decoder::{Config, Swiglu, stepper};
+use tessera_engine::form::{F32_FORM, Load, named};
+use tessera_engine::{
     DimExpr, Engine, Error, Graph, Norm, Pick, Recipe, Row, Settings, Tensor, Weight,
 };
 
@@ -85,7 +85,7 @@ impl Fixture {
     }
 
     fn load(&self) -> Result<crate::Bundle, Box<dyn std::error::Error + Send + Sync>> {
-        let path = sensai_testkit::stage("bundle.gguf", &write_gguf(&self.meta, &self.tensors));
+        let path = tessera_testkit::stage("bundle.gguf", &write_gguf(&self.meta, &self.tensors));
         let loaded = crate::load(&path, 2, 8);
         std::fs::remove_file(path).unwrap();
         loaded

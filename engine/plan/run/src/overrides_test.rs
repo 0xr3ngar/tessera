@@ -1,7 +1,7 @@
 use crate::Error;
 use crate::overrides::Overrides;
 use crate::run::Outcome;
-use sensai_codegen::Dialect;
+use tessera_codegen::Dialect;
 
 fn check(files: &mut Overrides<String>) -> Option<Outcome> {
     let compile = |text: &str| match text.contains("bad") {
@@ -14,7 +14,7 @@ fn check(files: &mut Overrides<String>) -> Option<Outcome> {
 
 #[test]
 fn files_replace_kernels() {
-    let dir = sensai_testkit::scratch(&format!("overrides-{}", std::process::id()));
+    let dir = tessera_testkit::scratch(&format!("overrides-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let mut files = Overrides::new(dir.clone(), Dialect::Cuda);
     assert_eq!(check(&mut files), None);

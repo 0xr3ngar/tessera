@@ -1,14 +1,14 @@
 //! The small graph over two ranks matches one rank.
 
 use super::{Spec, host, runs};
-use sensai_graph::{Graph, Parts, Placement, Sharded, shard};
-use sensai_interp::{Tensor, run, run_parts, run_ranks};
-use sensai_lower::form::BF16_FORM;
-use sensai_lower::{Cluster, Device, Link, View, Weight, lower};
-use sensai_run::Loopback;
-use sensai_testkit::{Noise, fill, max_abs_diff};
-use sensai_trace::DimName::{Context, Rows, Seqs};
-use sensai_trace::{DimName, TensorType};
+use tessera_graph::{Graph, Parts, Placement, Sharded, shard};
+use tessera_interp::{Tensor, run, run_parts, run_ranks};
+use tessera_lower::form::BF16_FORM;
+use tessera_lower::{Cluster, Device, Link, View, Weight, lower};
+use tessera_run::Loopback;
+use tessera_testkit::{Noise, fill, max_abs_diff};
+use tessera_trace::DimName::{Context, Rows, Seqs};
+use tessera_trace::{DimName, TensorType};
 
 const SIZES: [(DimName, u64); 2] = [(Seqs, 1), (Context, 8)];
 const RANKS: usize = 2;

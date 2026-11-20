@@ -1,10 +1,10 @@
 //! Small graphs that reach every rule, for tests and calibrate.
 
-use sensai_graph::DimName::*;
-use sensai_graph::{
+use tessera_graph::DimName::*;
+use tessera_graph::{
     Composite, DType, Dim, DimExpr, DimName, Graph, PathSeg, Port, Role, TensorType,
 };
-use sensai_trace::{
+use tessera_trace::{
     Act, Embed, EntryKind, Linear, Linears, Mask, Model, Norm, Pairs, Vector, Weights, declare,
 };
 

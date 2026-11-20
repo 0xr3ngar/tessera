@@ -7,7 +7,7 @@ use serde_json::{Value as Json, json};
 use toml::{Table, Value};
 
 use crate::Result;
-use crate::plan::Out;
+use crate::plan::{BIN, NPM, Out};
 
 /// Names a release puts in every package it writes.
 pub(crate) struct Release {
@@ -55,14 +55,14 @@ pub(crate) fn pyproject(out: &Out, rel: &Release, dir: &Path) -> Result<()> {
 
 /// npm packages per platform, plus a launcher that picks one.
 pub(crate) fn npm(out: &Out, rel: &Release, launcher: &Path, base: &Path) -> Result<()> {
-    let name = &out.name;
+    let (name, bin) = (NPM, BIN);
     let mut optional = serde_json::Map::new();
     for (os, cpu, libc) in PLATFORMS {
         let pkg = format!("{name}-{os}-{cpu}");
         let mut doc = common(&pkg, out, rel);
         doc["os"] = json!([os]);
         doc["cpu"] = json!([cpu]);
-        doc["files"] = json!([format!("bin/{name}")]);
+        doc["files"] = json!([format!("bin/{bin}")]);
         if let Some(libc) = libc {
             doc["libc"] = json!([libc]);
         }
@@ -70,14 +70,13 @@ pub(crate) fn npm(out: &Out, rel: &Release, launcher: &Path, base: &Path) -> Res
         optional.insert(pkg, rel.version.clone().into());
     }
     let mut doc = common(name, out, rel);
-    let launcher_bin = format!("bin/{name}.js");
-    doc["bin"] = json!({ name.as_str(): launcher_bin, crate::plan::CLI_ALIAS: launcher_bin });
+    doc["bin"] = json!({ bin: format!("bin/{bin}.js") });
     doc["files"] = json!(["bin/"]);
     doc["optionalDependencies"] = optional.into();
     let dir = base.join(name);
     write_json(&dir, &doc)?;
     fs::create_dir_all(dir.join("bin"))?;
-    fs::copy(launcher, dir.join("bin").join(format!("{name}.js")))?;
+    fs::copy(launcher, dir.join("bin").join(format!("{bin}.js")))?;
     Ok(())
 }
 

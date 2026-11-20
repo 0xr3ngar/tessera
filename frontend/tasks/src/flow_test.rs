@@ -1,12 +1,12 @@
 use crate::flow::Flow;
-use sensai_bundle::Overrides;
-use sensai_checkpoint::File;
-use sensai_engine::{Pick, Settings};
-use sensai_testkit::cosine_f32;
+use tessera_bundle::Overrides;
+use tessera_checkpoint::File;
+use tessera_engine::{Pick, Settings};
+use tessera_testkit::cosine_f32;
 
 #[test]
 fn matches_torch() {
-    let Some(dir) = sensai_testkit::reference("flux2-klein") else {
+    let Some(dir) = tessera_testkit::reference("flux2-klein") else {
         return eprintln!("no flux2-klein reference here; skipped");
     };
     let r = File::open(&dir.join("ref.safetensors")).unwrap();

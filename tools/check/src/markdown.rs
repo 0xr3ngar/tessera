@@ -1,7 +1,7 @@
 //! One PR comment for every check's report.
 
-use sensai_findings::{Finding, Level, Report};
 use std::fmt::Write;
+use tessera_findings::{Finding, Level, Report};
 
 /// CI finds the comment to edit by this first line.
 pub const MARKER: &str = "<!-- tessera-checks -->";

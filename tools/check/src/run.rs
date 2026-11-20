@@ -1,8 +1,8 @@
 //! Runs each check as a program, and reads its JSON.
 
-use sensai_findings::Report;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tessera_findings::Report;
 
 /// Which lines style reads: staged, or a commit range.
 pub enum Changes {

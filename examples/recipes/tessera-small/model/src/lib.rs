@@ -1,8 +1,8 @@
 //! tessera-small's graph and tables, built inside the recipe's sandbox.
 
-use sensai_guest::{encode, input, output};
-use sensai_models::sprite::{self, Config};
 use serde::Deserialize;
+use tessera_guest::{encode, input, output};
+use tessera_models::sprite::{self, Config};
 
 /// Inputs the host passes to `graph` and `tables`.
 #[derive(Deserialize)]
@@ -20,12 +20,12 @@ fn config(at: i32, len: i32) -> Result<Config, String> {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn alloc(len: i32) -> i32 {
-    sensai_guest::alloc(len)
+    tessera_guest::alloc(len)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn manifest() -> i64 {
-    let manifest = serde_json::json!({"abi": sensai_guest::ABI, "graph": true});
+    let manifest = serde_json::json!({"abi": tessera_guest::ABI, "graph": true});
     output(manifest.to_string().into_bytes())
 }
 

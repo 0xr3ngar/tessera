@@ -1,8 +1,8 @@
 //! Entries of each row at given indices.
 
-use sensai_codegen::prelude::*;
-use sensai_graph::{Op, Select};
-use sensai_lower::{Draft, Kernel, T, Term, Tree};
+use tessera_codegen::prelude::*;
+use tessera_graph::{Op, Select};
+use tessera_lower::{Draft, Kernel, T, Term, Tree};
 
 /// One thread per output. Ids past the row read zero.
 #[kernel]
@@ -43,4 +43,4 @@ fn propose(tree: &Tree, at: T) -> Option<Vec<Draft>> {
     Some(vec![Draft::new(take, [x, ids], len)])
 }
 
-sensai_lower::rule!("take", propose);
+tessera_lower::rule!("take", propose);

@@ -2,9 +2,9 @@
 
 use crate::form::Pins;
 use crate::rule::Rule;
-use sensai_codegen::kept::{self, Layout};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::Path;
+use tessera_codegen::kept::{self, Layout};
 
 /// Choices to favor, bar and pin when lowering a model.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -5,11 +5,6 @@ use crate::kernel::Kernel;
 use crate::plan::{Plan, Step};
 use crate::recipe::Recipe;
 use crate::rule::{Rule, rules_with};
-use sensai_codegen::kept::Layout;
-use sensai_engine_settings::{Backend, Pick, Settings};
-use sensai_graph::Parts;
-use sensai_platform::{Limits, Platform};
-use sensai_sim::{Chip, Cluster, Cost, FIXED, Fit, Sample, Timings, ZoneKind, known};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -17,6 +12,11 @@ use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use tessera_codegen::kept::Layout;
+use tessera_engine_settings::{Backend, Pick, Settings};
+use tessera_graph::Parts;
+use tessera_platform::{Limits, Platform};
+use tessera_sim::{Chip, Cluster, Cost, FIXED, Fit, Sample, Timings, ZoneKind, known};
 
 /// Bumped whenever a stored device changes meaning.
 const VERSION: u32 = 1;
@@ -102,7 +102,7 @@ fn model(name: &str, fit: Option<Fit>) -> Option<Arc<dyn Chip>> {
 }
 
 fn dense() -> &'static dyn Layout {
-    sensai_codegen::kept::DENSE
+    tessera_codegen::kept::DENSE
 }
 
 impl Default for Device {

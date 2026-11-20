@@ -1,9 +1,9 @@
 //! Rows less their mean, or over their sum, generated.
 
 use crate::per_row;
-use sensai_codegen::prelude::*;
-use sensai_graph::Stage;
-use sensai_lower::{Kernel, stage_rule};
+use tessera_codegen::prelude::*;
+use tessera_graph::Stage;
+use tessera_lower::{Kernel, stage_rule};
 
 /// One thread per row: the sum, then each element.
 #[kernel]

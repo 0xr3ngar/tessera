@@ -228,7 +228,7 @@ pub fn derive(input: DeriveInput) -> Result<Tokens, Error> {
     let line = Line { entries };
     let krate = match line.expr("crate") {
         Some(e) => quote!(#e),
-        None => quote!(sensai_lower),
+        None => quote!(tessera_lower),
     };
     let ty = &input.ident;
     let (arms, sizes) = fields_of(&input, &krate)?;
@@ -261,7 +261,7 @@ pub fn derive(input: DeriveInput) -> Result<Tokens, Error> {
         .map(|e| quote!(fn needs(&self) -> #krate::Needs { #e }));
     let order = line
         .expr("order")
-        .map(|e| quote!(fn order(&self) -> sensai_graph::Order { #e }));
+        .map(|e| quote!(fn order(&self) -> tessera_graph::Order { #e }));
     let guess = guess(&line, &krate)?;
     let runs_on = line
         .expr("runs_on")

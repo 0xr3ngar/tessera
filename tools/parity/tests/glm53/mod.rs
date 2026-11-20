@@ -4,13 +4,13 @@ mod module_test;
 mod regions_test;
 mod shard_test;
 
-use sensai_models::mla::{Config, RotatedMoe, program, stepper};
-use sensai_parity::{Spec, Stepper, suite};
-use sensai_trace::Composite::{Attention, Layer, Mlp, Model, Moe};
-use sensai_trace::Graph;
+use tessera_models::mla::{Config, RotatedMoe, program, stepper};
+use tessera_parity::{Spec, Stepper, suite};
+use tessera_trace::Composite::{Attention, Layer, Mlp, Model, Moe};
+use tessera_trace::Graph;
 
 fn small() -> Graph {
-    program::<RotatedMoe>(&sensai_models::small::glm53())
+    program::<RotatedMoe>(&tessera_models::small::glm53())
 }
 
 pub fn release() -> Graph {
@@ -18,9 +18,9 @@ pub fn release() -> Graph {
 }
 
 const STEPPER: Stepper = Stepper {
-    small: || stepper::<RotatedMoe>(&sensai_models::small::glm53()),
+    small: || stepper::<RotatedMoe>(&tessera_models::small::glm53()),
     release: || stepper::<RotatedMoe>(&Config::glm53(1, 1024)),
-    drift: sensai_parity::MLA_DRIFT,
+    drift: tessera_parity::MLA_DRIFT,
 };
 
 const SPEC: Spec = Spec {

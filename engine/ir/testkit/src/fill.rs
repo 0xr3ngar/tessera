@@ -1,6 +1,6 @@
 use crate::Noise;
-use sensai_graph::{DType, DimName, Graph, TensorType, Weight};
-use sensai_mem::Tensor;
+use tessera_graph::{DType, DimName, Graph, TensorType, Weight};
+use tessera_mem::Tensor;
 
 /// The shape of `ty`, given `sizes`.
 fn shape(g: &Graph, ty: &TensorType, sizes: &[(DimName, u64)]) -> Option<Vec<usize>> {

@@ -2,15 +2,15 @@
 
 use crate::open;
 use crate::{Base, Error, Run};
-use sensai_codegen::Precision;
-use sensai_engine_comm::reduce::{CUDA, ENTRY};
-use sensai_engine_comm::{Reduce, Transport, summed};
-use sensai_engine_settings::Settings;
-use sensai_gpukit::Platform;
-use sensai_lower::{Arg, Launching, Plan, Shape, Step};
-use sensai_mem::{DType, Tensor};
 use std::ops::Range;
 use std::time::Instant;
+use tessera_codegen::Precision;
+use tessera_engine_comm::reduce::{CUDA, ENTRY};
+use tessera_engine_comm::{Reduce, Transport, summed};
+use tessera_engine_settings::Settings;
+use tessera_gpukit::Platform;
+use tessera_lower::{Arg, Launching, Plan, Shape, Step};
+use tessera_mem::{DType, Tensor};
 
 /// One rank: its runner and its way to the others.
 pub struct Rank<T: Transport> {
@@ -77,7 +77,7 @@ impl<T: Transport> Rank<T> {
             .runner
             .launch_fixed(CUDA, ENTRY, &args, Shape::Line(blocks * 256));
         if let Some(why) = self.reduce.as_ref().and_then(Reduce::failure) {
-            return Err(sensai_engine_comm::Error::Link(why).into());
+            return Err(tessera_engine_comm::Error::Link(why).into());
         }
         launched
     }
