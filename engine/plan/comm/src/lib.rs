@@ -2,14 +2,18 @@
 
 mod fabric;
 mod ibv;
+mod link;
+mod memory;
 pub mod reduce;
 mod shm;
 mod sockets;
 mod verbs;
 
 pub use fabric::{Fabric, Port};
+pub use link::{Blocking, Link, Put, Span};
+pub use memory::Memory;
 pub use reduce::{Pinned, Pinning, Reduce};
-pub use shm::Shm;
+pub use shm::{Shm, ShmLink};
 pub use sockets::Sockets;
 pub use verbs::Verbs;
 
