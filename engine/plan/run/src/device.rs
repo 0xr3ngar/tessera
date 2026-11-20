@@ -1,7 +1,7 @@
 //! Replays a plan on any GPU over the device traits.
 
 use crate::Error;
-use crate::kernels::Kernels;
+use crate::kernels::{Kernels, dialect};
 use crate::marks;
 use crate::overrides::{self, Overrides};
 use crate::profile::Marks;
@@ -51,14 +51,6 @@ pub(crate) struct Runner<D: Device> {
 
 /// Launches a closed gate holds, under any driver queue.
 const HELD: usize = 256;
-
-/// The kernel text a backend compiles.
-fn dialect(backend: Backend) -> Dialect {
-    match backend {
-        Backend::Metal => Dialect::Metal,
-        Backend::Cuda | Backend::Rocm => Dialect::Cuda,
-    }
-}
 
 impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
     pub fn new(plan: Plan, settings: &Settings) -> Result<Self, Error> {
@@ -366,7 +358,7 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
             let made =
                 |source: &str, entry: &str| -> Result<_, Error> { Ok(ctx.compile(source, entry)?) };
             // Generated kernels wait on `griddepcontrol`. Fixed ones do not.
-            let (kernel, generated) = self.compiled.get(step, dialect(D::BACKEND), fixed, made)?;
+            let (kernel, generated) = self.compiled.get(step, D::BACKEND, fixed, made)?;
             self.kernels.push(kernel);
             self.waits.push(generated);
         }
@@ -384,8 +376,7 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
         };
         let mut reloads = Vec::new();
         for (entry, step) in &self.entries {
-            let planned =
-                || overrides::text(&plan.steps[*step].kernel.source(), dialect(D::BACKEND));
+            let planned = || overrides::text(&plan.steps[*step].kernel.source(), D::BACKEND);
             let compile = |text: &str| Ok(ctx.compile(&format!("{}{text}", marks::OFF), entry)?);
             reloads.extend(files.check(entry, planned, compile));
         }
@@ -404,7 +395,7 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
         let source = self.base.plan.steps[step].kernel.source();
         let entry = overrides::entry(&source).to_string();
         let loaded = self.overrides.as_ref().and_then(|f| f.text(&entry));
-        let text = loaded.map_or_else(|| overrides::text(&source, Dialect::Cuda), str::to_string);
+        let text = loaded.map_or_else(|| overrides::text(&source, D::BACKEND), str::to_string);
         if !text.contains("TS_MARK") {
             return Ok(Some(Marks::default()));
         }
@@ -447,7 +438,7 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
         let mut written = Vec::new();
         for (entry, step) in &self.entries {
             let source = self.base.plan.steps[*step].kernel.source();
-            let text = overrides::text(&source, dialect(D::BACKEND));
+            let text = overrides::text(&source, D::BACKEND);
             written.extend(files.write(entry, &text)?);
         }
         Ok(written)
