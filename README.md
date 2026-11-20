@@ -59,7 +59,7 @@ tessera is not alpha or beta. It's an experiment right now and no numbers are av
 <tr><td colspan="3">&emsp;<a href="engine/rules"><b>rules/</b></a></td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/rules/attention">attention/</a></td><td>tessera-attention</td><td>Attention kernels for the CPU and the GPU, registered as lowering rules</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/rules/cpu">cpu/</a></td><td>tessera-cpu</td><td>CPU kernels for matmuls: short bodies over a dot primitive</td></tr>
-<tr><td>&emsp;&emsp;<a href="engine/rules/device">device/</a></td><td>tessera-device</td><td>Device headers, import scanner and host proxy for whole-model recipe kernels</td></tr>
+<tr><td>&emsp;&emsp;<a href="engine/rules/device">device/</a></td><td>tessera-device</td><td>Device headers, import scanner, host proxy and launcher for recipe kernels</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/rules/guest">guest/</a></td><td>tessera-guest</td><td>The recipe module ABI: memory hand-off and the table format</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/rules/kernels">kernels/</a></td><td>tessera-kernels</td><td>Kernels and the lowering rules for each</td></tr>
 <tr><td>&emsp;&emsp;<a href="engine/rules/linear">linear/</a></td><td>tessera-linear</td><td>Generated matmul kernels, registered as lowering rules</td></tr>

@@ -1,7 +1,37 @@
 //! The structs the host writes, laid out as the headers.
 
-/// The most ranks in one collective group.
+/// Limits and doorbell page offsets from `core.h`.
+pub(crate) const ARENAS: usize = 16;
 pub(crate) const MAX_GROUP: usize = 8;
+pub(crate) const MAX_POOLS: usize = 4;
+pub const MAX_DEPTH: usize = 4;
+pub const VALUES: usize = 58;
+pub const NONE: u32 = u32::MAX;
+pub(crate) const DOORBELL_SLOTS: usize = 64;
+pub(crate) const DOORBELL_ABORT: usize = 4032;
+pub(crate) const DOORBELL_SENT: usize = 4040;
+/// `dtype` names in code order, with bytes per element.
+pub(crate) const DTYPES: [(&str, u32); 7] = [
+    ("F32", 4),
+    ("BF16", 2),
+    ("F16", 2),
+    ("E4M3", 1),
+    ("U32", 4),
+    ("FORM", 1),
+    ("BYTES", 1),
+];
+/// `status_code` names in code order.
+pub(crate) const STATUS: [&str; 6] = [
+    "OK",
+    "ABI_MISMATCH",
+    "PEER_LOST",
+    "BAD_INPUT",
+    "TIMEOUT",
+    "PROTOCOL",
+];
+/// The page, and where the host puts all-to-all sizes.
+pub const PAGE: usize = 4096;
+pub const SIZES: usize = 1024;
 
 /// One field: its name, byte offset and size.
 pub type Field = (&'static str, usize, usize);
@@ -38,6 +68,18 @@ layout!(Ref = "ref" {
     unused: u32,
     offset: u64,
 });
+
+impl Ref {
+    pub const NONE: Ref = Ref::at(NONE, 0);
+
+    pub const fn at(arena: u32, offset: u64) -> Ref {
+        Ref {
+            arena,
+            unused: 0,
+            offset,
+        }
+    }
+}
 
 layout!(Item = "item" {
     at: Ref,
