@@ -1,8 +1,9 @@
 //! Sites for the module, and its offers as drafts.
 
-use crate::abi::{Count, Input, Kept, Kind, Offer, Place, Site};
+use crate::abi::{Count, Entry, Input, Kept, Kind, Offer, Place, Site};
 use crate::text::{Fixed, Text};
 use sensai_graph::{Composite, DimName, PathSeg};
+use sensai_lower::kernels::AllReduce;
 use sensai_lower::{Arg, Draft, Extent, Home, Read, T, Term, Tree, sites};
 
 /// What a site's offers may read.
@@ -11,6 +12,10 @@ pub(crate) struct Reads {
     pub kept: Vec<sites::Appended>,
     /// Per rotated input: its place, then `suh` and `svh`.
     pub parts: Vec<(usize, [T; 2])>,
+    /// Region outputs. The last offers write them.
+    pub outputs: Vec<T>,
+    /// Elements of each all-reduce the offers must place.
+    pub sums: Vec<usize>,
 }
 
 impl Reads {
@@ -22,34 +27,22 @@ impl Reads {
 
 /// The site for `kind` at `at`, and its reads.
 pub(crate) fn find(tree: &Tree, at: T, kind: Kind) -> Option<(Site, Reads)> {
-    if kind == Kind::Matmul {
-        let m: sites::Matmul = tree.site(at)?;
-        let site = Site::Matmul {
-            m: m.m,
-            n: m.n,
-            k: m.k,
-            form: m.form.name().into(),
-        };
-        let reads = Reads {
-            nodes: vec![m.x, m.w],
-            kept: Vec::new(),
-            parts: Vec::new(),
-        };
-        return m.picked.is_none().then_some((site, reads));
-    }
-    let r: sites::Region = tree.site(at)?;
     let wanted = match kind {
+        Kind::Matmul => return matmul(tree, at),
         Kind::Mlp => Composite::Mlp,
+        Kind::Moe => Composite::Moe,
         Kind::Attention => Composite::Attention,
-        _ => Composite::Moe,
+        Kind::Layer => Composite::Layer,
+        Kind::Model => Composite::Model,
     };
-    if r.kind != wanted {
-        return None;
-    }
+    let r = sites::Region::of(tree, at, Some(wanted))?;
+    let outputs = r.outputs.iter().map(|t| tree.elements(*t)).collect();
     let reads = Reads {
         nodes: r.inputs,
         kept: r.kept,
         parts: r.parts,
+        outputs: r.outputs,
+        sums: r.sums,
     };
     let mut inputs = Vec::with_capacity(reads.nodes.len());
     for (i, t) in reads.nodes.iter().enumerate() {
@@ -61,10 +54,29 @@ pub(crate) fn find(tree: &Tree, at: T, kind: Kind) -> Option<(Site, Reads)> {
     let site = Site::Region {
         kind,
         inputs,
-        len: r.len,
+        outputs,
         kept,
+        sums: reads.sums.clone(),
     };
     Some((site, reads))
+}
+
+fn matmul(tree: &Tree, at: T) -> Option<(Site, Reads)> {
+    let m: sites::Matmul = tree.site(at)?;
+    let site = Site::Matmul {
+        m: m.m,
+        n: m.n,
+        k: m.k,
+        form: m.form.name().into(),
+    };
+    let reads = Reads {
+        nodes: vec![m.x, m.w],
+        kept: Vec::new(),
+        parts: Vec::new(),
+        outputs: Vec::new(),
+        sums: Vec::new(),
+    };
+    m.picked.is_none().then_some((site, reads))
 }
 
 fn rows(tree: &Tree, k: &sites::Appended) -> Kept {
@@ -129,43 +141,86 @@ fn arg(tree: &Tree, nodes: &[T], count: Count) -> Option<Arg> {
     Some(Arg::size(extent))
 }
 
-/// Drafts for the offers. `None` on unknown names.
+/// The entries as drafts. `None` if they do not fit.
 pub(crate) fn drafts(
-    offers: Vec<Offer>,
+    entries: Vec<Entry>,
     kernels: &'static [Fixed],
     tree: &Tree,
     from: &Reads,
 ) -> Option<Vec<Draft>> {
-    let mut drafts = Vec::with_capacity(offers.len());
-    for offer in offers {
-        let fixed = kernels.iter().find(|k| k.name == offer.kernel)?;
-        let mut reads = Vec::with_capacity(offer.reads.len());
-        let mut kept = None;
-        for place in &offer.reads {
-            reads.push(match *place {
-                Place::Read(i) => Read::Node(*from.nodes.get(i)?),
-                Place::Draft { draft } if draft < drafts.len() => Read::Draft(draft),
-                Place::Draft { .. } => return None,
-                Place::Part { part: [i, 0] } => Read::Node(*from.nodes.get(i)?),
-                Place::Part { part: [i, p] } => Read::Node(*from.scales(i)?.get(p - 1)?),
-                Place::Kept { kept: i } => {
-                    let k = from.kept.get(i)?;
-                    kept = Some(*k);
-                    Read::Kept(k.index)
+    let mut drafts: Vec<Draft> = Vec::with_capacity(entries.len());
+    let (mut sums, mut written) = (0, vec![None; from.outputs.len()]);
+    for entry in entries {
+        let (draft, writes) = match entry {
+            Entry::Launch(offer) => (
+                launch(&offer, kernels, tree, from, drafts.len())?,
+                offer.writes,
+            ),
+            Entry::Sum(sum) => {
+                let len = drafts.get(sum.all_reduce)?.len;
+                // Ranks pair sums by order, so each length must match.
+                if from.sums.get(sums) != Some(&len) {
+                    return None;
                 }
-            });
+                sums += 1;
+                let read = [Read::Draft(sum.all_reduce)];
+                (Draft::new(AllReduce { len }, read, len), sum.writes)
+            }
+        };
+        if let Some(o) = writes
+            && written.get_mut(o)?.replace(drafts.len()).is_some()
+        {
+            return None;
         }
-        let mut args = Vec::with_capacity(offer.counts.len());
-        for count in &offer.counts {
-            args.push(arg(tree, &from.nodes, *count)?);
-        }
-        let mut text = Text::new(fixed, &offer, args);
-        text.kept = kept.map(|k| {
-            let values = tree.kept.values(k.slots, k.context);
-            let values = values.into_iter().map(|v| Arg::count(v as usize));
-            (tree.kept, values.collect())
-        });
-        drafts.push(Draft::new(text, reads, offer.len));
+        drafts.push(draft);
+    }
+    if sums != from.sums.len() {
+        return None;
+    }
+    // One output defaults to the last entry.
+    if let [last @ None] = written.as_mut_slice() {
+        *last = drafts.len().checked_sub(1);
+    }
+    for (o, d) in written.into_iter().enumerate() {
+        drafts[d?].writes = Some(from.outputs[o]);
     }
     Some(drafts)
+}
+
+/// One offer's launch, after `made` earlier drafts.
+fn launch(
+    offer: &Offer,
+    kernels: &'static [Fixed],
+    tree: &Tree,
+    from: &Reads,
+    made: usize,
+) -> Option<Draft> {
+    let fixed = kernels.iter().find(|k| k.name == offer.kernel)?;
+    let mut reads = Vec::with_capacity(offer.reads.len());
+    let mut kept = None;
+    for place in &offer.reads {
+        reads.push(match *place {
+            Place::Read(i) => Read::Node(*from.nodes.get(i)?),
+            Place::Draft { draft } if draft < made => Read::Draft(draft),
+            Place::Draft { .. } => return None,
+            Place::Part { part: [i, 0] } => Read::Node(*from.nodes.get(i)?),
+            Place::Part { part: [i, p] } => Read::Node(*from.scales(i)?.get(p - 1)?),
+            Place::Kept { kept: i } => {
+                let k = from.kept.get(i)?;
+                kept = Some(*k);
+                Read::Kept(k.index)
+            }
+        });
+    }
+    let mut args = Vec::with_capacity(offer.counts.len());
+    for count in &offer.counts {
+        args.push(arg(tree, &from.nodes, *count)?);
+    }
+    let mut text = Text::new(fixed, offer, args);
+    text.kept = kept.map(|k| {
+        let values = tree.kept.values(k.slots, k.context);
+        let values = values.into_iter().map(|v| Arg::count(v as usize));
+        (tree.kept, values.collect())
+    });
+    Some(Draft::new(text, reads, offer.len))
 }

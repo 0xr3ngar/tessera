@@ -57,20 +57,22 @@ fn one() -> usize {
     1
 }
 
-/// One launch `propose` offers. `null` offers none.
+/// One entry `propose` offers. `null` offers none.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum Entry {
+    Launch(Offer),
+    Sum(Sum),
+}
+
+/// Sums draft `all_reduce` across ranks, as a new draft.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Offer {
-    pub kernel: String,
-    /// In kernel argument order.
-    pub reads: Vec<Place>,
-    /// Elements written.
-    pub len: usize,
-    /// u32 arguments after the output.
+pub(crate) struct Sum {
+    pub all_reduce: usize,
     #[serde(default)]
-    pub counts: Vec<Count>,
-    pub shape: Shape,
-    /// Work units, and seconds per unit until measured.
-    pub work: f64,
-    pub guess: f64,
+    pub writes: Option<usize>,
 }
+
+/// One launch, as the host reads it.
+pub(crate) type Offer = sensai_guest::site::Offer<String, Count>;
