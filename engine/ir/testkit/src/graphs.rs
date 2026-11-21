@@ -5,8 +5,8 @@ use tessera_graph::{
     Composite, DType, Dim, DimExpr, DimName, Graph, PathSeg, Port, Role, TensorType,
 };
 use tessera_trace::{
-    Act, Embed, EntryKind, Linear, Linears, Mask, Model, Norm, Pairs, Vector, Weights, declare,
-    each,
+    Act, Embed, EntryKind, Linear, Linears, Mask, Model, Norm, Pairs, Taps, Vector, Weights,
+    declare, each,
 };
 
 #[derive(Weights)]
@@ -138,7 +138,7 @@ pub fn blocks(bounded: &[Dim], [heads, key, value]: [u64; 3]) -> Graph {
     m.finish([(Role::Logits, &keys), (Role::Logits, &values)])
 }
 
-/// Norms, maps, centering, unit sum, softmax, mask, argmax, mean.
+/// Norms, maps, softplus, centering, unit sum, softmax, mask, argmax, mean.
 pub fn rows(bounded: &[Dim], width: u64) -> Graph {
     let m = model(
         bounded,
@@ -149,7 +149,7 @@ pub fn rows(bounded: &[Dim], width: u64) -> Graph {
     let bits = rows_of(bounded, VocabWords, DType::U32);
     let [x, y, bits] = m.entry(EntryKind::Forward, [port(), port(), bits]);
     let gated = x.rms_norm(&w.norm, 1e-6).act(Act::Silu).mul(&y.rms(1e-6));
-    let sum = y.add(&gated).center();
+    let sum = y.act(Act::Softplus).add(&gated).center();
     let probs = sum.act(Act::Sigmoid).unit_sum().softmax();
     let ids = probs.allow(&bits).top_k(1u64);
     m.finish([(Role::Tokens, &ids), (Role::Logits, &sum.mean(0))])
@@ -172,15 +172,23 @@ pub fn attention(bounded: &[Dim], [heads, kv_heads, width]: [u64; 3]) -> Graph {
     m.finish([(Role::Logits, &out)])
 }
 
-/// The gated delta rule, value heads over key heads.
+/// Filtered values, then the delta rule over key heads.
 pub fn delta(bounded: &[Dim], [heads, kv_heads, width]: [u64; 3]) -> Graph {
-    let fixed = [(Heads, heads), (KvHeads, kv_heads), (HeadDim, width)];
+    let fixed = [
+        (Heads, heads),
+        (KvHeads, kv_heads),
+        (HeadDim, width),
+        (Hidden, heads * width),
+    ];
     let m = model(bounded, &fixed);
     let keys = || floats([Seqs, Context, KvHeads, HeadDim]);
     let gates = || floats([Seqs, Context, Heads]);
-    let values = floats([Seqs, Context, Heads, HeadDim]);
+    let values = floats([Seqs, Context, Hidden]);
     let ports = [keys(), keys(), values, gates(), gates()];
-    let [q, k, v, decay, rate] = m.entry(EntryKind::Forward, ports);
+    let [q, k, x, decay, rate] = m.entry(EntryKind::Forward, ports);
+    let mut path = vec![PathSeg::Field("taps".into())];
+    let taps = Taps::declare(&m, &mut path, &[Hidden.into(), 4u64.into()]);
+    let v = x.conv(&taps).reshape([Seqs, Context, Heads, HeadDim]);
     let out = m.delta(0.25, [&q, &k, &v], [&decay, &rate]);
     m.finish([(Role::Logits, &out)])
 }
