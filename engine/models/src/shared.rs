@@ -38,7 +38,12 @@ impl Weights for Rotated {
 }
 
 /// Field `name` under `path`, declared with `shape`.
-fn part<T: Weights>(m: &Model, path: &mut Vec<PathSeg>, name: &str, shape: &[DimExpr]) -> T {
+pub(crate) fn part<T: Weights>(
+    m: &Model,
+    path: &mut Vec<PathSeg>,
+    name: &str,
+    shape: &[DimExpr],
+) -> T {
     path.push(PathSeg::Field(name.into()));
     let value = T::declare(m, path, shape);
     path.pop();
@@ -82,6 +87,8 @@ pub struct Attend<'a, D: Dense> {
     head_dim: DimExpr,
     /// Positions, theta, pairing and pairs turned, if rotating.
     rope: Option<(&'a Tensor, f32, Pairs, Option<u32>)>,
+    /// The leading width that rotates, and the width kept after.
+    part: Option<[DimExpr; 2]>,
 }
 
 impl<'a, D: Dense> Attend<'a, D> {
@@ -95,6 +102,7 @@ impl<'a, D: Dense> Attend<'a, D> {
             kv_heads,
             head_dim,
             rope: None,
+            part: None,
         }
     }
 
@@ -110,6 +118,30 @@ impl<'a, D: Dense> Attend<'a, D> {
             rope.3 = turned;
         }
         self
+    }
+
+    /// Only each head's first `width` rotates. The `kept` rest stays.
+    pub fn partial(mut self, [width, kept]: [DimExpr; 2]) -> Self {
+        self.part = Some([width, kept]);
+        self
+    }
+
+    /// Heads `t`, rotated as `rotary`, `turning` and `partial` set.
+    pub fn rotate(&self, t: Tensor) -> Tensor {
+        let Some((positions, theta, pairs, turned)) = self.rope else {
+            return t;
+        };
+        let spin = |t: Tensor| match turned {
+            Some(n) => t.rope_part(positions, theta, pairs, n),
+            None => t.rope(positions, theta, pairs),
+        };
+        let Some([width, kept]) = &self.part else {
+            return spin(t);
+        };
+        let last = t.ty().rank() as u32 - 1;
+        let front = t.slice(last, 0u64, width.clone());
+        let back = t.slice(last, width.clone(), kept.clone());
+        spin(front).concat(&back)
     }
 
     /// `lead`, then `rest`.
@@ -135,14 +167,9 @@ impl<'a, D: Dense> Attend<'a, D> {
             Side::Key | Side::Value => self.kv_heads.clone(),
         };
         let t = turn(self.split(w.apply(h), heads, self.head_dim.clone()), side);
-        match (self.rope, side) {
-            (Some((positions, theta, pairs, None)), Side::Query | Side::Key) => {
-                t.rope(positions, theta, pairs)
-            }
-            (Some((positions, theta, pairs, Some(n))), Side::Query | Side::Key) => {
-                t.rope_part(positions, theta, pairs, n)
-            }
-            _ => t,
+        match side {
+            Side::Query | Side::Key => self.rotate(t),
+            Side::Value => t,
         }
     }
 
@@ -200,6 +227,16 @@ pub struct Stack {
     pub max_context: u64,
     pub steps: Steps,
 }
+
+/// Config keys for `Stack::sized`'s sizes, in its order.
+pub(crate) const SIZES: [&str; 6] = [
+    "vocab_size",
+    "hidden_size",
+    "num_hidden_layers",
+    "num_attention_heads",
+    "head_dim",
+    "intermediate_size",
+];
 
 impl Stack {
     /// `[vocab, hidden, layers, heads, head_dim, ffn]`, then the launch bounds.

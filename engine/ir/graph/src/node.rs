@@ -273,6 +273,17 @@ pub enum Act {
     Relu,
     /// `ln(1 + e^x)`.
     Softplus,
+    Exp,
+}
+
+impl Act {
+    /// Whether zero maps to zero.
+    pub fn keeps_zero(self) -> bool {
+        match self {
+            Act::GeluTanh | Act::Silu | Act::Relu => true,
+            Act::Sigmoid | Act::Softplus | Act::Exp => false,
+        }
+    }
 }
 
 /// Data-dependent picks.
