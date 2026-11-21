@@ -27,7 +27,7 @@ fn step_over_ranks() {
                 continue;
             };
             let want = match name.as_str() {
-                "q_b" | "kv_b" if heads => Placement::Split { axis: 0 },
+                "head" | "q_b" | "kv_b" if heads || name == "head" => Placement::Split { axis: 0 },
                 "o" if heads => Placement::Split { axis: 1 },
                 "q_b" | "kv_b" | "o" | "kv_a" | "weights" | "wk" | "wq" => Placement::Replicated,
                 _ => continue,
