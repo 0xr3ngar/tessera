@@ -1855,6 +1855,8 @@ version = "0.1.0"
 dependencies = [
  "tessera-engine-comm",
  "tessera-gpukit",
+ "tessera-graph",
+ "tessera-lower",
  "tessera-run",
  "tessera-testkit",
  "thiserror",

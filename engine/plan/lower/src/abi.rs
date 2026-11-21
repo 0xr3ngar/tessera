@@ -206,3 +206,199 @@ impl Source {
         }
     }
 }
+
+/// Collective kind on one resident lane, matching `collectives.h`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum Collective {
+    Sum = 0,
+    Gather = 1,
+    AllToAll = 2,
+    Send = 3,
+    Recv = 4,
+    Fetch = 5,
+}
+
+/// Element kind for resident items and lanes, matching `core.h`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum Elem {
+    F32 = 0,
+    Bf16 = 1,
+    F16 = 2,
+    E4M3 = 3,
+    U32 = 4,
+    Form = 5,
+    Bytes = 6,
+}
+
+impl Elem {
+    /// Element kind for a storage form name.
+    pub fn of(name: &str) -> Self {
+        match name {
+            "f32" => Elem::F32,
+            "bf16" => Elem::Bf16,
+            "f16" => Elem::F16,
+            "e4m3" => Elem::E4M3,
+            "u32" => Elem::U32,
+            "bytes" | "u8" => Elem::Bytes,
+            _ => Elem::Form,
+        }
+    }
+
+    /// Bytes per element, or 1 for packed forms.
+    pub fn bytes(self) -> u32 {
+        match self {
+            Elem::F32 | Elem::U32 => 4,
+            Elem::Bf16 | Elem::F16 => 2,
+            Elem::E4M3 | Elem::Form | Elem::Bytes => 1,
+        }
+    }
+}
+
+/// Stable 32-bit identifier for a storage form name.
+pub fn form_kind(name: &str) -> u32 {
+    let mut h = 0x811c_9dc5u32;
+    for &b in name.as_bytes() {
+        h ^= u32::from(b);
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    h
+}
+
+/// One collective pool in a resident step.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PoolSpec {
+    pub depth: u32,
+    pub one_way: bool,
+    /// Member ranks, or empty for all ranks.
+    pub group: Vec<u32>,
+    pub send_bytes: u32,
+    pub recv_bytes: u32,
+}
+
+/// One collective lane in a resident step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LaneSpec {
+    pub op: Collective,
+    pub elem: Elem,
+    pub pool: u32,
+    pub block: u32,
+}
+
+/// Role of one item in `tessera::table.items`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ItemKind {
+    Input = 0,
+    Output = 1,
+    Scratch = 2,
+}
+
+/// Backing storage for one resident item.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ItemData {
+    Slot(Slot),
+    Scratch(usize),
+}
+
+/// One entry in `tessera::table.items`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ItemSpec {
+    pub data: ItemData,
+    pub kind: ItemKind,
+    pub elem: Elem,
+    pub dims: u32,
+    pub shape: [u32; 4],
+    pub share: [u32; 4],
+    /// Index into `forms`, or `u32::MAX` if none.
+    pub form: u32,
+    pub forms: u32,
+}
+
+/// One packed or rotated weight in `tessera::table.forms`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FormSpec {
+    pub codes: Slot,
+    pub suh: Option<Slot>,
+    pub svh: Option<Slot>,
+    pub kind: u32,
+    pub rows: u32,
+    pub cols: u32,
+}
+
+/// One kept-row table in the `KV` convention.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeptSpec {
+    pub index: u32,
+    pub base: Slot,
+    pub pages: Option<Slot>,
+    pub pages_per_slot: u32,
+    pub page_rows: u32,
+    pub row_bytes: u32,
+    pub elem: Elem,
+    pub slots: u32,
+}
+
+/// One recurrent state buffer in the `STATE` convention.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeldSpec {
+    pub base: Slot,
+    pub fresh: Option<Slot>,
+    pub slot_bytes: u32,
+    pub elem: Elem,
+}
+
+/// Token and sampling buffers in the `LLM` convention.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LlmSpec {
+    pub rows: Extent,
+    pub out_rows: Extent,
+    pub vocab: u32,
+    pub token: Option<Slot>,
+    pub slot: Option<Slot>,
+    pub position: Option<Slot>,
+    pub out_row: Option<Slot>,
+    pub temperature: Option<Slot>,
+    pub top_k: Option<Slot>,
+    pub seed: Option<Slot>,
+    pub logits: Option<Slot>,
+    pub sampled: Option<Slot>,
+}
+
+/// Optional conventions populated in `tessera::table.conventions`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Conventions {
+    pub kv: Vec<KeptSpec>,
+    pub llm: Option<LlmSpec>,
+    pub state: Vec<HeldSpec>,
+}
+
+/// Persistent `tessera::table*` launch metadata for a step.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResidentSpec {
+    pub threads: u32,
+    pub share: u32,
+    pub shared_bytes: u32,
+    pub pools: Vec<PoolSpec>,
+    pub lanes: Vec<LaneSpec>,
+    pub items: Vec<ItemSpec>,
+    pub forms: Vec<FormSpec>,
+    pub values: Vec<Arg>,
+    pub conventions: Conventions,
+}
+
+impl ResidentSpec {
+    /// Resolves every launch value to a `u32`.
+    pub fn bound_values(&self, size: &dyn Fn(DimName) -> Option<u32>) -> Option<Vec<u32>> {
+        let mut out = Vec::with_capacity(self.values.len());
+        for arg in &self.values {
+            let word = match arg {
+                Arg::Size(e) => e.value(size)? as u32,
+                other => other.u32()?,
+            };
+            out.push(word);
+        }
+        Some(out)
+    }
+}

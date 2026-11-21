@@ -94,7 +94,7 @@ const ACT_CUDA: &str = "extern \"C\" __global__ void act(const float* a, float* 
 }";
 
 /// The version these modules speak.
-const ABI: u32 = 6;
+const ABI: u32 = tessera_guest::ABI;
 
 /// `kernels`, and one rule at `site`.
 fn declare(abi: u32, site: &str, kernels: Value) -> Value {
@@ -404,7 +404,7 @@ fn bad_modules_fail() {
     let newer = module(&manifest(ABI + 1, "matmul"), &offer, "");
     assert!(matches!(
         tessera_wasm::load(&newer),
-        Err(tessera_wasm::Error::Abi(7))
+        Err(tessera_wasm::Error::Abi(v)) if v == ABI + 1
     ));
     // An endless loop runs out of fuel.
     let spin = module(&manifest(ABI, "matmul"), &offer, "(loop (br 0))");
@@ -602,6 +602,7 @@ fn guest(
         work: 8192.0,
         guess: 1e-15,
         writes: None,
+        resident: None,
     };
     let bytes = module(&json!(manifest), &json!([offer]), "");
     Ok(tessera_wasm::load(&bytes)?[0])
@@ -648,4 +649,123 @@ fn module_flattens_imports() {
         refused.to_string(),
         "row.h:2: includes belong in the block at the top"
     );
+}
+
+#[test]
+fn resident_absorbs_sums() {
+    let sharded = shard(&split_layer(), &Parts::even(2)).unwrap().graph;
+    let src = "#include <tessera/1/grid>\n#include <tessera/1/all_reduce>\n\
+        #include <tessera/1/llm>\n#include <tessera/1/state>\n\
+        extern \"C\" __global__ void mega(const tessera::table* t) {}\n";
+    let manifest = json!({
+        "abi": ABI,
+        "kernels": [{"name": "mega", "entry": "mega", "file": "mega.cu"}],
+        "rules": [{"name": "wasm_mega", "site": "layer"}],
+        "files": [{"path": "mega.cu", "text": src}],
+    });
+    let offer = json!([{
+        "kernel": "mega",
+        "reads": [0, 1, 2],
+        "len": 256,
+        "work": 1.0,
+        "guess": 1e-15,
+        "resident": {
+            "threads": 256,
+            "share": 2,
+            "shared_bytes": 65536,
+            "pools": [{"depth": 2, "send_bytes": 1024, "recv_bytes": 1024}],
+            "lanes": [{"op": "sum", "elem": "f32", "pool": 0}],
+            "scratch": [{"bytes": 4096, "elem": "f32", "shape": [1024]}],
+            "conventions": {
+                "llm": {"rows": {"dim": "Rows"}, "out_rows": 1, "vocab": 64, "token": 0, "sampled": {"out": 0}},
+                "state": [{"base": 0, "slot_bytes": 256, "elem": "f32"}]
+            },
+            "values": [{"dim": "Rows"}, 64],
+            "absorbs_sums": 1
+        }
+    }]);
+    let rule = tessera_wasm::load(&module(&manifest, &offer, "")).unwrap()[0];
+    for plan in ranks(&sharded, compiling(), rule) {
+        assert_eq!(rules(&plan), ["wasm_mega"]);
+        assert!(plan.steps.iter().all(|s| s.kernel.name() != "all_reduce"));
+        let spec = plan.steps[0].resident().expect("resident spec");
+        assert_eq!(
+            (spec.threads, spec.share, spec.shared_bytes),
+            (256, 2, 65536)
+        );
+        assert_eq!(
+            (spec.pools.len(), spec.lanes.len(), spec.items.len()),
+            (1, 1, 5)
+        );
+        assert!(spec.conventions.llm.is_some() && spec.conventions.state.len() == 1);
+    }
+    // Non-resident offer skipping required all_reduce is rejected.
+    let plain = json!([{
+        "kernel": "wasm_gemm", "reads": [0, 1], "len": 256,
+        "shape": {"line": 256}, "work": 1.0, "guess": 1e-15,
+    }]);
+    let bad_rule = load("layer", plain);
+    for plan in ranks(&sharded, compiling(), bad_rule) {
+        assert!(!rules(&plan).contains(&"wasm_layer"));
+    }
+}
+
+#[test]
+fn resident_forms_kept() {
+    let src = "#include <tessera/1/grid>\n#include <tessera/1/kept>\n\
+        extern \"C\" __global__ void kv_mega(const tessera::table* t) {}\n";
+    let manifest = json!({
+        "abi": ABI,
+        "kernels": [{"name": "kv_mega", "entry": "kv_mega", "file": "kv.cu"}],
+        "rules": [{"name": "wasm_kv", "site": "attention"}],
+        "files": [{"path": "kv.cu", "text": src}],
+    });
+    let offer = json!([{
+        "kernel": "kv_mega",
+        "reads": [0, 3, 1, 2],
+        "len": 4 * 4 * 16,
+        "work": 1.0,
+        "guess": 1e-15,
+        "resident": {
+            "threads": 128,
+            "conventions": {"kv": [0, 1]},
+            "values": [{"dim": "Context"}]
+        }
+    }]);
+    let rule = tessera_wasm::load(&module(&manifest, &offer, "")).unwrap()[0];
+    let mut device = compiling().adding(rule);
+    device.kept = &kept::PAGED16;
+    let plan = lower(
+        &kept_graph(),
+        0,
+        &[(Seqs, 4), (Rows, 4), (Context, 4)],
+        &device,
+    )
+    .unwrap();
+    assert_eq!(rules(&plan), ["wasm_kv"]);
+    let spec = plan.steps[0].resident().expect("resident spec");
+    assert_eq!(spec.conventions.kv.len(), 2);
+    assert!(spec.conventions.kv[0].pages.is_some() && spec.conventions.kv[0].page_rows == 16);
+
+    let rot_src =
+        "#include <tessera/1/grid>\nextern \"C\" __global__ void f(const tessera::table* t) {}\n";
+    let rot_manifest = json!({
+        "abi": ABI,
+        "kernels": [{"name": "f", "entry": "f", "file": "f.cu"}],
+        "rules": [{"name": "wasm_rot", "site": "mlp"}],
+        "files": [{"path": "f.cu", "text": rot_src}],
+    });
+    let rot_offer = json!([{
+        "kernel": "f", "reads": [0, 1], "len": 512, "work": 1.0, "guess": 1e-15,
+        "resident": {"threads": 128}
+    }]);
+    let rot_rule = tessera_wasm::load(&module(&rot_manifest, &rot_offer, "")).unwrap()[0];
+    let rotated = tessera_lower::form::named("trellis_k4_rot").unwrap();
+    let device = compiling()
+        .adding(rot_rule)
+        .pinned(tessera_lower::Pins::all(rotated));
+    let plan = lower(&sized(true, 128, 128), 0, &[(Rows, 4)], &device).unwrap();
+    let spec = plan.steps[0].resident().expect("resident spec");
+    assert_eq!(spec.forms.len(), 1);
+    assert!(spec.forms[0].suh.is_some() && spec.forms[0].svh.is_some());
 }

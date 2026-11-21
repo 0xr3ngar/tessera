@@ -123,6 +123,8 @@ pub struct Engine {
     context: usize,
     /// Kept-row lanes the graph declares.
     slots: usize,
+    /// Per-slot kept-row lengths for resident KV conventions.
+    slot_lens: Vec<u32>,
     /// The page table, when kept rows are paged.
     lanes: Option<lanes::Lanes>,
     /// Mask words per pick, if the graph takes masks.
@@ -207,7 +209,15 @@ impl Engine {
         recipe: &Recipe,
         settings: &Settings,
     ) -> Result<Self, Error> {
-        let run = |plan| Ok(open(plan, settings)?);
+        let run = |plan| {
+            let mut runner = open(plan, settings)?;
+            let exec = tessera_device::exec::local(settings.gpu())
+                .map_err(|e| tessera_run::Error::Resident(Box::new(e)))?;
+            if let Some(exec) = exec {
+                runner.set_resident(exec);
+            }
+            Ok(runner)
+        };
         Self::placed(graph, context, recipe, settings, None, run)
     }
 
@@ -264,6 +274,7 @@ impl Engine {
             plans,
             context,
             slots,
+            slot_lens: vec![0; slots],
             lanes,
             words,
             sparse,
@@ -449,6 +460,15 @@ impl Engine {
         if let Some((table, bytes)) = table.and_then(|(t, l)| Some((t, l.changed()?))) {
             self.runner.held_mut().upload(table, &bytes)?;
         }
+        for r in rows {
+            let entry = &mut self.slot_lens[r.slot as usize];
+            if r.position == 0 {
+                *entry = 1;
+            } else {
+                *entry = (*entry).max(r.position + 1);
+            }
+        }
+        self.runner.set_kv_lens(self.slot_lens.clone());
         self.runner.bind_all(&bound);
         let views: Vec<_> = feeds.iter().map(Tensor::view).collect();
         self.runner.feed(&views)?;

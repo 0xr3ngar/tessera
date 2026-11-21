@@ -2,6 +2,7 @@
 
 mod abi;
 mod guest;
+mod resident;
 mod site;
 mod text;
 

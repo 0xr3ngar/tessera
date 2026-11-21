@@ -154,6 +154,10 @@ pub enum Place {
     Part {
         part: [usize; 2],
     },
+    /// This launch's own output, for convention bindings.
+    Out {
+        out: usize,
+    },
 }
 
 /// A u32 argument, fixed or read at launch.
@@ -195,6 +199,7 @@ pub struct Offer<K = &'static str, C = Count> {
     /// u32 arguments after the output.
     #[serde(default = "Vec::new")]
     pub counts: Vec<C>,
+    #[serde(default = "default_shape")]
     pub shape: Shape,
     /// Work units, and seconds per unit until measured.
     pub work: f64,
@@ -202,6 +207,176 @@ pub struct Offer<K = &'static str, C = Count> {
     /// Output index it writes. With one output, the last entry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub writes: Option<usize>,
+    /// Persistent `tessera::table*` launch settings, if resident.
+    #[serde(default = "default_none", skip_serializing_if = "Option::is_none")]
+    pub resident: Option<Box<Resident<C>>>,
+}
+
+fn default_none<T>() -> Option<T> {
+    None
+}
+
+fn default_conventions<C>() -> Conventions<C> {
+    Conventions::default()
+}
+
+fn default_shape() -> Shape {
+    Shape::Line(1)
+}
+
+fn default_one() -> u32 {
+    1
+}
+
+fn default_two() -> u32 {
+    2
+}
+
+fn default_f32() -> String {
+    "f32".into()
+}
+
+fn default_bytes() -> String {
+    "bytes".into()
+}
+
+/// One collective pool for a resident kernel.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pool {
+    #[serde(default = "default_two")]
+    pub depth: u32,
+    #[serde(default)]
+    pub one_way: bool,
+    /// Member ranks, or empty for every rank.
+    #[serde(default)]
+    pub group: Vec<u32>,
+    pub send_bytes: u32,
+    pub recv_bytes: u32,
+}
+
+/// Collective operation kind on a resident lane.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Op {
+    Sum,
+    Gather,
+    AllToAll,
+    Send,
+    Recv,
+    Fetch,
+}
+
+/// One collective lane for a resident kernel.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Lane {
+    pub op: Op,
+    #[serde(default = "default_f32")]
+    pub elem: String,
+    #[serde(default)]
+    pub pool: u32,
+    #[serde(default)]
+    pub block: u32,
+}
+
+/// A scratch item in `tessera::table.items`.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Scratch {
+    pub bytes: usize,
+    #[serde(default = "default_bytes")]
+    pub elem: String,
+    #[serde(default)]
+    pub shape: Vec<u32>,
+}
+
+/// Token and sampling bindings for the `LLM` convention.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Llm<C = Count> {
+    pub rows: C,
+    pub out_rows: C,
+    #[serde(default)]
+    pub vocab: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<Place>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<Place>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<Place>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub out_row: Option<Place>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<Place>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<Place>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<Place>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logits: Option<Place>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sampled: Option<Place>,
+}
+
+/// One recurrent state table for the `STATE` convention.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct State {
+    pub base: Place,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fresh: Option<Place>,
+    pub slot_bytes: u32,
+    #[serde(default = "default_f32")]
+    pub elem: String,
+}
+
+/// Conventions requested in `tessera::table.conventions`.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Conventions<C = Count> {
+    /// Kept indices from `site.kept` exposed in `kv_tables`.
+    #[serde(default)]
+    pub kv: Vec<usize>,
+    #[serde(default = "default_none", skip_serializing_if = "Option::is_none")]
+    pub llm: Option<Llm<C>>,
+    #[serde(default)]
+    pub state: Vec<State>,
+}
+
+impl<C> Default for Conventions<C> {
+    fn default() -> Self {
+        Self {
+            kv: Vec::new(),
+            llm: None,
+            state: Vec::new(),
+        }
+    }
+}
+
+/// Persistent `tessera::table*` launch settings on an offer.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Resident<C = Count> {
+    pub threads: u32,
+    #[serde(default = "default_one")]
+    pub share: u32,
+    #[serde(default)]
+    pub shared_bytes: u32,
+    #[serde(default)]
+    pub pools: Vec<Pool>,
+    #[serde(default)]
+    pub lanes: Vec<Lane>,
+    #[serde(default)]
+    pub scratch: Vec<Scratch>,
+    #[serde(default = "default_conventions")]
+    pub conventions: Conventions<C>,
+    /// Launch values written into `launch.values`.
+    #[serde(default = "Vec::new")]
+    pub values: Vec<C>,
+    /// Region `sums` absorbed internally by this kernel.
+    #[serde(default)]
+    pub absorbs_sums: usize,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]

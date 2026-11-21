@@ -2,10 +2,12 @@
 
 use crate::abi::{File, Offer, Shape};
 use crate::leak;
+use crate::resident::TablePlan;
+use std::collections::BTreeSet;
 use std::fmt;
-use tessera_device::{Backend, Options, Problem, flatten};
+use tessera_device::{Backend, Import, Options, Problem, flatten};
 use tessera_lower::kept::Layout;
-use tessera_lower::{Arg, Kernel, Launch, Needs, Source, Step};
+use tessera_lower::{Arg, Kernel, Launch, Needs, ResidentSpec, Source, Step};
 
 /// A module kernel's text, never freed.
 #[derive(Debug)]
@@ -17,10 +19,14 @@ pub struct Fixed {
     pub hip: &'static str,
     /// Platform backends with no text.
     lacks: &'static [&'static str],
+    /// Imports flattened from recipe files, sorted.
+    pub imports: &'static [Import],
+    /// Whether this kernel came from a recipe file.
+    pub from_file: bool,
 }
 
-/// Metal, CUDA and HIP text of `file`, or empty.
-fn flat(file: &str, files: &[File]) -> Result<[String; 3], tessera_device::Error> {
+/// Metal, CUDA and HIP text of `file`, plus its imports.
+fn flat(file: &str, files: &[File]) -> Result<([String; 3], Vec<Import>), tessera_device::Error> {
     let load = |path: &str| {
         files
             .iter()
@@ -33,6 +39,7 @@ fn flat(file: &str, files: &[File]) -> Result<[String; 3], tessera_device::Error
         problem: Problem::Missing(file.into()),
     })?;
     let mut out: [String; 3] = Default::default();
+    let mut imports = BTreeSet::new();
     let mut skipped = None;
     let backends = [Backend::Metal, Backend::Cuda, Backend::Hip];
     for (slot, backend) in out.iter_mut().zip(backends) {
@@ -43,7 +50,10 @@ fn flat(file: &str, files: &[File]) -> Result<[String; 3], tessera_device::Error
             marks: false,
         };
         match flatten(file, &text, &load, &options) {
-            Ok(flat) => *slot = flat.text,
+            Ok(flat) => {
+                imports.extend(flat.imports);
+                *slot = flat.text;
+            }
             Err(e) if matches!(e.problem, Problem::Extension(_) | Problem::Unsupported(..)) => {
                 skipped = Some(e)
             }
@@ -52,18 +62,20 @@ fn flat(file: &str, files: &[File]) -> Result<[String; 3], tessera_device::Error
     }
     match skipped {
         Some(e) if out.iter().all(String::is_empty) => Err(e),
-        _ => Ok(out),
+        _ => Ok((out, imports.into_iter().collect())),
     }
 }
 
 impl Fixed {
     /// Kernel `k`, with any recipe file flattened per backend.
     pub fn open(k: crate::abi::Text, files: &[File]) -> Result<Self, tessera_device::Error> {
-        let [metal, cuda, hip] = if k.file.is_empty() {
+        let from_file = !k.file.is_empty();
+        let ([metal, cuda, hip], imports) = if !from_file {
             let cuda = leak(k.cuda);
-            [leak(k.metal), cuda, cuda]
+            ([leak(k.metal), cuda, cuda], Vec::new())
         } else {
-            flat(&k.file, files)?.map(leak)
+            let (texts, imports) = flat(&k.file, files)?;
+            (texts.map(leak), imports)
         };
         let texts = [("metal", metal), ("cuda", cuda), ("rocm", hip)];
         let lacks = texts.iter().filter(|t| t.1.is_empty()).map(|t| t.0);
@@ -74,6 +86,8 @@ impl Fixed {
             cuda,
             hip,
             lacks: lacks.collect::<Vec<_>>().leak(),
+            imports: imports.leak(),
+            from_file,
         })
     }
 }
@@ -88,6 +102,8 @@ pub struct Text {
     pub guess: f64,
     /// For kept-row launches: the layout and its scalars.
     pub kept: Option<(&'static dyn Layout, Vec<Arg>)>,
+    /// Persistent `tessera::table*` plan, when resident.
+    pub(crate) resident: Option<TablePlan>,
 }
 
 impl Text {
@@ -111,6 +127,7 @@ impl Text {
             work: offer.work,
             guess: offer.guess,
             kept: None,
+            resident: None,
         }
     }
 }
@@ -120,7 +137,11 @@ impl fmt::Debug for Text {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Fixed { name, .. } = self.fixed;
         let layout = self.kept.as_ref().map(|(l, _)| l.name());
-        write!(f, "{name}{:?}{:?}{layout:?}", self.args, self.shape)
+        write!(
+            f,
+            "{name}{:?}{:?}{layout:?}{:?}",
+            self.args, self.shape, self.resident
+        )
     }
 }
 
@@ -146,6 +167,16 @@ impl Kernel for Text {
     }
 
     fn launches(&self, step: &Step) -> Vec<Launch> {
+        if let Some(plan) = &self.resident {
+            return vec![Launch {
+                args: self.args.clone(),
+                shape: tessera_lower::Shape::Grid {
+                    across: 1,
+                    down: 1,
+                    threads: plan.threads as usize,
+                },
+            }];
+        }
         let mut args: Vec<Arg> = (0..step.reads.len()).map(|i| step.read(i)).collect();
         args.push(step.out());
         args.extend(self.args.iter().cloned());
@@ -158,6 +189,10 @@ impl Kernel for Text {
             args,
             shape: self.shape,
         }]
+    }
+
+    fn resident(&self, step: &Step) -> Option<ResidentSpec> {
+        self.resident.as_ref().map(|p| p.spec(step))
     }
 
     fn work(&self, _: usize) -> f64 {
@@ -183,8 +218,10 @@ impl Kernel for Text {
 
     /// A module may bring text for some backends only.
     fn needs(&self) -> Needs {
+        let group_threads = self.resident.as_ref().map_or(0, |r| r.threads as usize);
         Needs {
             lacks: self.fixed.lacks,
+            group_threads,
             ..Needs::text()
         }
     }

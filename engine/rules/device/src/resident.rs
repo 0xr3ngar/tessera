@@ -1,9 +1,10 @@
 //! One persistent grid per rank, with its proxy beside it.
 
 use crate::layout::{
-    ARENAS, Barrier, ConventionRef, Counters, DOORBELL_ABORT, DTYPES, Fault, Item, Lane,
-    Launch as Record, MAX_DEPTH, MAX_GROUP, MAX_POOLS, PAGE, Pool, PoolSet, Ref, SIZES, STATUS,
-    Table, VALUES,
+    ARENAS, Barrier, CONV_KV, CONV_LLM, CONV_STATE, CONVENTIONS, ConventionRef, Counters,
+    DOORBELL_ABORT, DTYPES, Fault, Form, Held, Item, Kept, KvTables, Lane, Launch as Record,
+    LlmStep, MAX_DEPTH, MAX_GROUP, MAX_POOLS, NONE, PAGE, Pool, PoolSet, Ref, SIZES, STATUS,
+    StateTables, Table, VALUES,
 };
 use crate::proxy::page::Page;
 use crate::proxy::running::Running;
@@ -12,9 +13,10 @@ use crate::proxy::{self, Op, Proxy};
 use crate::{Backend, Options, flatten};
 use std::ffi::c_int;
 use std::fmt;
+use std::mem::offset_of;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use tessera_engine_comm::{Error as CommError, Link as Comm};
+use tessera_engine_comm::{Error as CommError, Link as Comm, Put, Span};
 use tessera_gpukit::Error as GpuError;
 use tessera_gpukit::backend::Backend as Gpu;
 use tessera_gpukit::device::{Device, DeviceBuffer};
@@ -54,21 +56,86 @@ pub struct LanePlan {
     pub block: u32,
 }
 
+/// One kept-row table with its slot count and dense flag.
 #[derive(Clone, Debug)]
+pub struct KvPlan {
+    pub kept: Kept,
+    pub slots: u32,
+    /// When true and `kept.pages` is `NONE`, writes identity pages.
+    pub dense_pages: bool,
+}
+
+/// Optional convention records written into the control arena.
+#[derive(Clone, Debug, Default)]
+pub struct ConventionsPlan {
+    pub kv: Vec<KvPlan>,
+    pub llm: Option<LlmStep>,
+    pub state: Vec<Held>,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct Plan {
     pub pools: Vec<PoolPlan>,
     pub lanes: Vec<LanePlan>,
     /// Items whose refs name arenas from `USER` on.
     pub items: Vec<Item>,
+    /// Packed or rotated weights referenced by `FORM` items.
+    pub forms: Vec<Form>,
+    /// Convention records populated in `table.conventions`.
+    pub conventions: ConventionsPlan,
     /// Device addresses of those arenas, in order.
     pub arenas: Vec<u64>,
     pub threads: u32,
     /// Grids that run on the device at once.
     pub share: u32,
+    /// Dynamic shared memory per block, in bytes.
+    pub shared_bytes: u32,
+}
+
+/// Single-rank link for resident kernels with no collective pools.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LocalLink;
+
+impl Comm for LocalLink {
+    fn rank(&self) -> u32 {
+        0
+    }
+
+    fn ranks(&self) -> u32 {
+        1
+    }
+
+    fn put(&mut self, _: Put) -> Result<(), CommError> {
+        Err(CommError::Fit("local link has no peers".into()))
+    }
+
+    fn word(&mut self, _: u32, _: Span, _: u64, _: u64) -> Result<(), CommError> {
+        Err(CommError::Fit("local link has no peers".into()))
+    }
+
+    fn poll(&mut self, _: &mut Vec<u64>) -> Result<(), CommError> {
+        Ok(())
+    }
+
+    fn reset(&mut self) -> Result<(), CommError> {
+        Ok(())
+    }
+
+    fn load(&self, _: Span) -> Result<u64, CommError> {
+        Err(CommError::Fit("local link has no regions".into()))
+    }
+
+    fn read(&self, _: Span) -> Result<Vec<u8>, CommError> {
+        Err(CommError::Fit("local link has no regions".into()))
+    }
+
+    fn write(&mut self, _: Span, _: &[u8]) -> Result<(), CommError> {
+        Err(CommError::Fit("local link has no regions".into()))
+    }
 }
 
 impl Plan {
-    fn proxy_pools(&self, rank: u32) -> Vec<proxy::Pool> {
+    pub(crate) fn proxy_pools(&self, rank: u32) -> Vec<proxy::Pool> {
         let pool = |p: &PoolPlan| proxy::Pool {
             depth: p.depth,
             one_way: p.one_way,
@@ -78,7 +145,7 @@ impl Plan {
         self.pools.iter().map(pool).collect()
     }
 
-    fn bytes(&self) -> Vec<(usize, usize)> {
+    pub(crate) fn bytes(&self) -> Vec<(usize, usize)> {
         let bytes = |p: &PoolPlan| (p.send_bytes as usize, p.recv_bytes as usize);
         self.pools.iter().map(bytes).collect()
     }
@@ -150,9 +217,172 @@ fn zeroed<T>() -> T {
 }
 
 /// Where each record sits in the control arena.
-struct Places {
-    launch: u64,
-    status: u64,
+#[derive(Clone, Debug, Default)]
+pub struct ControlPlaces {
+    pub launch: u64,
+    pub status: u64,
+    pub items: Option<u64>,
+    pub items_len: usize,
+    pub forms: Option<u64>,
+    pub forms_len: usize,
+    pub llm: Option<u64>,
+    pub kv_tables: Option<u64>,
+    /// Control offset and slot count per KV table's `len` array.
+    pub kv_lens: Vec<(u64, u32)>,
+    /// Control offset for each dense KV table's identity pages.
+    pub kv_pages: Vec<Option<u64>>,
+    pub state_tables: Option<u64>,
+    pub state_len: usize,
+}
+
+/// Builds the host-side control arena bytes and record offsets.
+pub(crate) fn layout_control(
+    plan: &Plan,
+    [rank, ranks]: [u32; 2],
+    arenas: [u64; ARENAS],
+    pool_places: &[Place],
+) -> Result<(Vec<u8>, ControlPlaces), Error> {
+    check(plan, rank)?;
+    if pool_places.len() != plan.pools.len() {
+        return Err(self::plan("pool place count mismatch"));
+    }
+    let mut block = Block::default();
+    let table_at = block.put(&[zeroed::<Table>()]);
+    let launch = block.put(&[zeroed::<Record>()]);
+    let (items_ref, items_at) = match plan.items.is_empty() {
+        true => (Ref::NONE, None),
+        false => {
+            let at = block.put(&plan.items);
+            (Ref::at(CONTROL, at), Some(at))
+        }
+    };
+    let (forms_ref, forms_at) = match plan.forms.is_empty() {
+        true => (Ref::NONE, None),
+        false => {
+            let at = block.put(&plan.forms);
+            (Ref::at(CONTROL, at), Some(at))
+        }
+    };
+    let (lanes_ref, lanes_len, pools_ref) = if plan.pools.is_empty() {
+        (Ref::NONE, 0, Ref::NONE)
+    } else {
+        let lanes: Vec<Lane> = plan.lanes.iter().map(|l| lane(plan, l, rank)).collect();
+        let lanes_at = block.put(&lanes);
+        let mut set: PoolSet = zeroed();
+        set.count = plan.pools.len() as u32;
+        for (p, (pool, &place)) in plan.pools.iter().zip(pool_places).enumerate() {
+            set.pools[p] = pool_record(pool, p, place);
+        }
+        let mut counters: Counters = zeroed();
+        counters.next = [BASE; MAX_POOLS];
+        // The first bump must differ from the page's zero.
+        counters.writes = 1;
+        set.state = Ref::at(CONTROL, block.put(&[counters]));
+        let pools = block.put(&[set]);
+        (
+            Ref::at(CONTROL, lanes_at),
+            lanes.len() as u32,
+            Ref::at(CONTROL, pools),
+        )
+    };
+    let barrier = block.put(&[zeroed::<Barrier>()]);
+    let status = block.put(&[zeroed::<Fault>()]);
+    let none = ConventionRef {
+        at: Ref::NONE,
+        version: 0,
+        bytes: 0,
+    };
+    let mut conventions = [none; CONVENTIONS];
+    let mut places = ControlPlaces {
+        launch,
+        status,
+        items: items_at,
+        items_len: plan.items.len(),
+        forms: forms_at,
+        forms_len: plan.forms.len(),
+        ..ControlPlaces::default()
+    };
+    if let Some(llm) = plan.conventions.llm {
+        let at = block.put(&[llm]);
+        places.llm = Some(at);
+        conventions[CONV_LLM] = ConventionRef {
+            at: Ref::at(CONTROL, at),
+            version: crate::EDITION,
+            bytes: size_of::<LlmStep>() as u32,
+        };
+    }
+    if !plan.conventions.kv.is_empty() {
+        let mut kepts = Vec::with_capacity(plan.conventions.kv.len());
+        for kv in &plan.conventions.kv {
+            let slots = kv.slots.max(1);
+            let len_arr = vec![0u32; slots as usize];
+            let len_at = block.put(&len_arr);
+            places.kv_lens.push((len_at, slots));
+            let mut kept = kv.kept;
+            kept.len = Ref::at(CONTROL, len_at);
+            if kv.dense_pages && kept.pages.arena == NONE {
+                let dense: Vec<u32> = (0..slots).collect();
+                let pages_at = block.put(&dense);
+                kept.pages = Ref::at(CONTROL, pages_at);
+                places.kv_pages.push(Some(pages_at));
+            } else {
+                places.kv_pages.push(None);
+            }
+            kepts.push(kept);
+        }
+        let tables_at = block.put(&kepts);
+        places.kv_tables = Some(tables_at);
+        let header = KvTables {
+            count: kepts.len() as u32,
+            unused: 0,
+            tables: Ref::at(CONTROL, tables_at),
+        };
+        let kv_at = block.put(&[header]);
+        conventions[CONV_KV] = ConventionRef {
+            at: Ref::at(CONTROL, kv_at),
+            version: crate::EDITION,
+            bytes: size_of::<KvTables>() as u32,
+        };
+    }
+    if !plan.conventions.state.is_empty() {
+        let held_at = block.put(&plan.conventions.state);
+        places.state_tables = Some(held_at);
+        places.state_len = plan.conventions.state.len();
+        let header = StateTables {
+            count: plan.conventions.state.len() as u32,
+            unused: 0,
+            tables: Ref::at(CONTROL, held_at),
+        };
+        let state_at = block.put(&[header]);
+        conventions[CONV_STATE] = ConventionRef {
+            at: Ref::at(CONTROL, state_at),
+            version: crate::EDITION,
+            bytes: size_of::<StateTables>() as u32,
+        };
+    }
+    let table = Table {
+        edition: crate::EDITION,
+        rank,
+        ranks,
+        items_len: plan.items.len() as u32,
+        forms_len: plan.forms.len() as u32,
+        lanes_len,
+        values_len: VALUES as u32,
+        unused: 0,
+        arenas,
+        now: Ref::at(CONTROL, launch),
+        items: items_ref,
+        forms: forms_ref,
+        conventions,
+        lanes: lanes_ref,
+        pools: pools_ref,
+        doorbell: Ref::at(DOORBELL, 0),
+        barrier: Ref::at(CONTROL, barrier),
+        status: Ref::at(CONTROL, status),
+        marks: Ref::NONE,
+    };
+    block.0[table_at as usize..][..size_of::<Table>()].copy_from_slice(bytes(&[table]));
+    Ok((block.0, places))
 }
 
 pub(crate) fn backend<D: Device>() -> Result<Backend, Error> {
@@ -187,14 +417,17 @@ pub struct Resident<D: Device, L> {
     ctx: D,
     kernel: D::Kernel,
     control: DeviceBuffer<D>,
-    places: Places,
+    places: ControlPlaces,
     page: u64,
     registered: Vec<*mut u8>,
     running: Option<Running<L>>,
-    /// A stopped proxy's link, kept until its pages unregister.
+    /// Whether this resident owns a collective host proxy thread.
+    has_proxy: bool,
+    /// A stopped or unused link, kept until its pages unregister.
     parked: Option<Wired<L>>,
     grid: u32,
     threads: u32,
+    shared_bytes: u32,
     /// The device clock and the host instant it matches.
     clock: (u64, Instant),
     seq: u64,
@@ -203,17 +436,30 @@ pub struct Resident<D: Device, L> {
     apart: Option<Box<dyn Apart>>,
 }
 
+impl<D> Resident<D, LocalLink>
+where
+    D: Device + Launch<Kernel = <D as Device>::Kernel>,
+{
+    /// Opens a single-rank resident grid without a collective link.
+    pub fn open_local(ctx: &D, text: &str, entry: &str, plan: &Plan) -> Result<Self, Error> {
+        if !plan.pools.is_empty() {
+            return Err(self::plan("collective pools require a multi-rank link"));
+        }
+        Self::open(ctx, text, entry, LocalLink, plan)
+    }
+}
+
 impl<D, L> Resident<D, L>
 where
     D: Device + Launch<Kernel = <D as Device>::Kernel>,
     L: Comm + 'static,
 {
-    /// Compiles `text`, lays out `plan` and starts the proxy.
+    /// Compiles `text`, lays out `plan` and starts any proxy.
     pub fn open(ctx: &D, text: &str, entry: &str, link: L, plan: &Plan) -> Result<Self, Error> {
         let rank = link.rank();
         check(plan, rank)?;
         let kernel = ctx.compile(text, entry)?;
-        let fit = ctx.resident(&kernel, plan.threads, 0)?;
+        let fit = ctx.resident(&kernel, plan.threads, plan.shared_bytes)?;
         if fit == 0 {
             let threads = plan.threads;
             return Err(self::plan(format!(
@@ -228,20 +474,20 @@ where
         let mut wired = Wired::new(link, &pools, &plan.bytes(), groups)?;
         let (page, device_page) = ctx.pin(PAGE)?;
         unsafe { std::ptr::write_bytes(page as *mut u8, 0, PAGE) };
+        let has_proxy = !plan.pools.is_empty();
         let mut made = Resident {
             ctx: ctx.clone(),
             kernel,
             control: DeviceBuffer::alloc(ctx, 16)?,
-            places: Places {
-                launch: 0,
-                status: 0,
-            },
+            places: ControlPlaces::default(),
             page,
             registered: Vec::new(),
             running: None,
+            has_proxy,
             parked: None,
             grid,
             threads: plan.threads,
+            shared_bytes: plan.shared_bytes,
             clock: (0, Instant::now()),
             seq: 0,
             broken: false,
@@ -249,20 +495,26 @@ where
         };
         let mut arenas = [0u64; ARENAS];
         arenas[DOORBELL as usize] = device_page;
-        let mapped = made.map(wired.link(), plan)?;
-        arenas[LINK as usize..][..REGIONS].copy_from_slice(&mapped);
         arenas[USER as usize..][..plan.arenas.len()].copy_from_slice(&plan.arenas);
-        let mut page_words = unsafe { Page::new(page as *mut u64, &mut wired)? };
-        let proxy_lanes = plan.lanes.iter().map(|l| proxy::Lane {
-            op: l.op,
-            pool: l.pool,
-            width: width(l.elem),
-            block: l.block,
-        });
-        let proxy = Proxy::new(&mut page_words, pools, proxy_lanes.collect(), BASE)?;
-        made.lay_out(&wired, plan, [rank, ranks], arenas)?;
-        made.clock = (clock(ctx)?, Instant::now());
-        made.running = Some(Running::spawn(proxy, page_words, wired));
+        if has_proxy {
+            let mapped = made.map(wired.link(), plan)?;
+            arenas[LINK as usize..][..REGIONS].copy_from_slice(&mapped);
+            let mut page_words = unsafe { Page::new(page as *mut u64, &mut wired)? };
+            let proxy_lanes = plan.lanes.iter().map(|l| proxy::Lane {
+                op: l.op,
+                pool: l.pool,
+                width: width(l.elem),
+                block: l.block,
+            });
+            let proxy = Proxy::new(&mut page_words, pools, proxy_lanes.collect(), BASE)?;
+            made.lay_out(&wired, plan, [rank, ranks], arenas)?;
+            made.clock = (clock(ctx)?, Instant::now());
+            made.running = Some(Running::spawn(proxy, page_words, wired));
+        } else {
+            made.lay_out(&wired, plan, [rank, ranks], arenas)?;
+            made.clock = (clock(ctx)?, Instant::now());
+            made.parked = Some(wired);
+        }
         Ok(made)
     }
 
@@ -319,59 +571,110 @@ where
         [rank, ranks]: [u32; 2],
         arenas: [u64; ARENAS],
     ) -> Result<(), Error> {
-        let mut block = Block::default();
-        let table_at = block.put(&[zeroed::<Table>()]);
-        let launch = block.put(&[zeroed::<Record>()]);
-        let items = block.put(&plan.items);
-        let lanes: Vec<Lane> = plan.lanes.iter().map(|l| lane(plan, l, rank)).collect();
-        let lanes_at = block.put(&lanes);
-        let mut set: PoolSet = zeroed();
-        set.count = plan.pools.len() as u32;
-        for (p, pool) in plan.pools.iter().enumerate() {
-            let place = wired.place(p).expect("a place per pool");
-            set.pools[p] = pool_record(pool, p, place);
+        let mut pool_places = Vec::with_capacity(plan.pools.len());
+        for p in 0..plan.pools.len() {
+            pool_places.push(wired.place(p).expect("a place per pool"));
         }
-        let mut counters: Counters = zeroed();
-        counters.next = [BASE; MAX_POOLS];
-        // The first bump must differ from the page's zero.
-        counters.writes = 1;
-        set.state = Ref::at(CONTROL, block.put(&[counters]));
-        let pools = block.put(&[set]);
-        let barrier = block.put(&[zeroed::<Barrier>()]);
-        let status = block.put(&[zeroed::<Fault>()]);
-        let none = ConventionRef {
-            at: Ref::NONE,
-            version: 0,
-            bytes: 0,
-        };
-        let table = Table {
-            edition: crate::EDITION,
-            rank,
-            ranks,
-            items_len: plan.items.len() as u32,
-            forms_len: 0,
-            lanes_len: lanes.len() as u32,
-            values_len: VALUES as u32,
-            unused: 0,
-            arenas,
-            now: Ref::at(CONTROL, launch),
-            items: Ref::at(CONTROL, items),
-            forms: Ref::NONE,
-            conventions: [none; 16],
-            lanes: Ref::at(CONTROL, lanes_at),
-            pools: Ref::at(CONTROL, pools),
-            doorbell: Ref::at(DOORBELL, 0),
-            barrier: Ref::at(CONTROL, barrier),
-            status: Ref::at(CONTROL, status),
-            marks: Ref::NONE,
-        };
-        let control = DeviceBuffer::alloc(&self.ctx, block.0.len())?;
-        let mut table = table;
-        table.arenas[CONTROL as usize] = control.device_ptr();
-        block.0[table_at as usize..][..size_of::<Table>()].copy_from_slice(bytes(&[table]));
-        control.write_bytes(&block.0)?;
+        let (mut raw, places) = layout_control(plan, [rank, ranks], arenas, &pool_places)?;
+        let control = DeviceBuffer::alloc(&self.ctx, raw.len())?;
+        let ptr_at = offset_of!(Table, arenas) + CONTROL as usize * size_of::<u64>();
+        raw[ptr_at..ptr_at + 8].copy_from_slice(&control.device_ptr().to_ne_bytes());
+        control.write_bytes(&raw)?;
         self.control = control;
-        self.places = Places { launch, status };
+        self.places = places;
+        Ok(())
+    }
+
+    /// Updates user arena base addresses in the control table.
+    pub fn update_arenas(&mut self, user_arenas: &[u64]) -> Result<(), Error> {
+        if user_arenas.len() > ARENAS - USER as usize {
+            return Err(plan(format!("{} arenas", user_arenas.len())));
+        }
+        let mut slots = [0u64; ARENAS - USER as usize];
+        slots[..user_arenas.len()].copy_from_slice(user_arenas);
+        let at = (offset_of!(Table, arenas) + USER as usize * size_of::<u64>()) as u64;
+        self.ctx.upload(self.table() + at, bytes(&slots))?;
+        Ok(())
+    }
+
+    /// Updates item records in place when the count matches.
+    pub fn update_items(&mut self, items: &[Item]) -> Result<(), Error> {
+        if items.len() != self.places.items_len {
+            return Err(plan("item count changed"));
+        }
+        if let Some(at) = self.places.items {
+            self.ctx.upload(self.table() + at, bytes(items))?;
+        }
+        Ok(())
+    }
+
+    /// Updates form records in place when the count matches.
+    pub fn update_forms(&mut self, forms: &[Form]) -> Result<(), Error> {
+        if forms.len() != self.places.forms_len {
+            return Err(plan("form count changed"));
+        }
+        if let Some(at) = self.places.forms {
+            self.ctx.upload(self.table() + at, bytes(forms))?;
+        }
+        Ok(())
+    }
+
+    /// Updates the `LLM` convention record in place.
+    pub fn update_llm(&mut self, llm: LlmStep) -> Result<(), Error> {
+        let at = self
+            .places
+            .llm
+            .ok_or_else(|| plan("no LLM convention in table"))?;
+        self.ctx.upload(self.table() + at, bytes(&[llm]))?;
+        Ok(())
+    }
+
+    /// Updates one `KV` table record, keeping control-owned refs.
+    pub fn update_kv(&mut self, index: usize, mut kept: Kept) -> Result<(), Error> {
+        let base_at = self
+            .places
+            .kv_tables
+            .ok_or_else(|| plan("no KV convention in table"))?;
+        let &(len_at, _) = self
+            .places
+            .kv_lens
+            .get(index)
+            .ok_or_else(|| plan(format!("no KV table {index}")))?;
+        kept.len = Ref::at(CONTROL, len_at);
+        if kept.pages.arena == NONE
+            && let Some(pages_at) = self.places.kv_pages[index]
+        {
+            kept.pages = Ref::at(CONTROL, pages_at);
+        }
+        let at = base_at + (index * size_of::<Kept>()) as u64;
+        self.ctx.upload(self.table() + at, bytes(&[kept]))?;
+        Ok(())
+    }
+
+    /// Updates per-slot kept lengths for KV table `index`.
+    pub fn update_kv_len(&mut self, index: usize, lens: &[u32]) -> Result<(), Error> {
+        let &(len_at, slots) = self
+            .places
+            .kv_lens
+            .get(index)
+            .ok_or_else(|| plan(format!("no KV table {index}")))?;
+        if lens.len() > slots as usize {
+            return Err(plan("too many KV slot lengths"));
+        }
+        let mut words = vec![0u32; slots as usize];
+        words[..lens.len()].copy_from_slice(lens);
+        self.ctx.upload(self.table() + len_at, bytes(&words))?;
+        Ok(())
+    }
+
+    /// Updates the `STATE` convention records in place.
+    pub fn update_state(&mut self, held: &[Held]) -> Result<(), Error> {
+        if held.len() != self.places.state_len {
+            return Err(plan("state table count changed"));
+        }
+        if let Some(at) = self.places.state_tables {
+            self.ctx.upload(self.table() + at, bytes(held))?;
+        }
         Ok(())
     }
 
@@ -387,7 +690,8 @@ where
         let mut args = KernelArgs::new();
         args.device_ptr(self.table());
         let (grid, threads) = ((self.grid, 1, 1), (self.threads, 1, 1));
-        self.ctx.launch(&self.kernel, grid, threads, 0, &mut args)?;
+        self.ctx
+            .launch(&self.kernel, grid, threads, self.shared_bytes, &mut args)?;
         self.ctx.finish()?;
         self.status()?;
         self.broken = false;
@@ -477,6 +781,9 @@ where
 
     /// The proxy's error, if its thread stopped.
     pub fn alive(&mut self) -> Result<(), Error> {
+        if !self.has_proxy {
+            return Ok(());
+        }
         if !self.running.as_ref().is_none_or(Running::failed) {
             return Ok(());
         }
@@ -489,8 +796,12 @@ where
             .map_or_else(|| plan("the proxy is gone"), Error::from))
     }
 
-    /// Stops the proxy and gives the link back.
+    /// Stops any proxy and gives the link back.
     pub fn close(mut self) -> Result<L, Error> {
+        if !self.has_proxy {
+            let wired = self.parked.take().ok_or_else(|| plan("the link is gone"))?;
+            return Ok(wired.into_link());
+        }
         let running = self
             .running
             .take()
@@ -531,6 +842,13 @@ fn check(plan: &Plan, rank: u32) -> Result<(), Error> {
     }
     if let Some(l) = plan.lanes.iter().find(|l| l.elem as usize >= DTYPES.len()) {
         return Err(self::plan(format!("a lane of dtype {}", l.elem)));
+    }
+    if let Some(l) = plan
+        .lanes
+        .iter()
+        .find(|l| l.pool as usize >= plan.pools.len())
+    {
+        return Err(self::plan(format!("lane names missing pool {}", l.pool)));
     }
     for (p, pool) in plan.pools.iter().enumerate() {
         if !pool.group.contains(&rank) {

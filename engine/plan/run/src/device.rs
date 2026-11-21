@@ -5,6 +5,7 @@ use crate::kernels::{Kernels, dialect};
 use crate::marks;
 use crate::overrides::{self, Overrides};
 use crate::profile::Marks;
+use crate::resident::{ResidentCall, ResidentExec};
 use crate::run::{Base, Reload, Run};
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -23,9 +24,13 @@ pub(crate) struct Runner<D: Device> {
     ctx: &'static D,
     base: Base,
     /// Each step's running kernel: a file's, else the plan's.
-    kernels: Vec<D::Kernel>,
+    kernels: Vec<Option<D::Kernel>>,
     /// Each step's kernel as planned.
-    planned: Vec<D::Kernel>,
+    planned: Vec<Option<D::Kernel>>,
+    /// Which steps run through the resident executor.
+    resident_steps: Vec<bool>,
+    /// Executor for resident `tessera::table*` steps, if set.
+    resident: Option<Box<dyn ResidentExec>>,
     /// Kernel files in place of planned kernels, when set.
     overrides: Option<Overrides<D::Kernel>>,
     /// Each distinct entry, with its first step.
@@ -62,6 +67,8 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
             base: Base::new(settings.memory, &ctx.platform()),
             kernels: Vec::new(),
             planned: Vec::new(),
+            resident_steps: Vec::new(),
+            resident: None,
             overrides: settings.kernels.as_ref().map(files),
             entries: Vec::new(),
             uses: Vec::new(),
@@ -81,10 +88,46 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
     }
 
     fn buffer(&self, slot: Slot) -> &DeviceBuffer<D> {
-        let backing = self.base.held.get(slot).backing().as_any();
+        self.buffer_at(slot.buffer)
+    }
+
+    fn buffer_at(&self, index: u32) -> &DeviceBuffer<D> {
+        let backing = self.base.held.buffer(index).backing().as_any();
         backing
             .downcast_ref::<DeviceBuffer<D>>()
             .expect("this runner allocates device buffers")
+    }
+
+    /// Runs one resident step with current buffer addresses.
+    fn run_resident(&mut self, step: usize) -> Result<(), Error> {
+        self.open();
+        self.ctx.finish()?;
+        let buffers: Vec<u64> = (0..self.base.plan.buffers.len() as u32)
+            .map(|b| self.buffer_at(b).device_ptr())
+            .collect();
+        let exec = self
+            .resident
+            .as_mut()
+            .ok_or_else(|| Error::Resident("missing resident executor".into()))?;
+        let call = ResidentCall {
+            step,
+            plan: &self.base.plan,
+            buffers: &buffers,
+            bound: &self.base.bound,
+            kv_lens: &self.base.kv_lens,
+        };
+        exec.run(&call)
+    }
+
+    /// Runs all launches of `step`, plain or resident.
+    fn run_step(&mut self, step: usize) -> Result<(), Error> {
+        if self.resident_steps[step] {
+            return self.run_resident(step);
+        }
+        for launch in self.base.launches(step)? {
+            self.launch(step, &launch)?;
+        }
+        Ok(())
     }
 
     /// Each argument by position, in the device's form.
@@ -134,7 +177,8 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
         let overlap = self.launching.pdl && self.overlaps && self.waits[step];
         self.ctx.programmatic(overlap);
         let mut args = self.bound(&launch.args)?;
-        let fired = self.fire(&self.kernels[step], launch.shape, &mut args);
+        let kernel = self.kernels[step].as_ref().expect("plain step kernel");
+        let fired = self.fire(kernel, launch.shape, &mut args);
         fired.map_err(|e| {
             let name = self.base.plan.steps[step].kernel.name().to_string();
             Error::Launch(step, name, Box::new(e))
@@ -156,14 +200,12 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
     }
 
     /// Each step's seconds by waiting, or `None` when stamped.
-    fn walk(&self, steps: Range<usize>) -> Result<Option<Vec<f64>>, Error> {
+    fn walk(&mut self, steps: Range<usize>) -> Result<Option<Vec<f64>>, Error> {
         let stamped = self.ctx.stamp()?;
         let mut waited = Vec::new();
         for i in steps {
             let start = Instant::now();
-            for launch in self.base.launches(i)? {
-                self.launch(i, &launch)?;
-            }
+            self.run_step(i)?;
             match stamped {
                 true => _ = self.ctx.stamp()?,
                 false => {
@@ -201,9 +243,9 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
 
     /// Runs `work`, then waits. Returns the device's seconds, if kept.
     fn waited(
-        &self,
+        &mut self,
         timed: bool,
-        work: impl FnOnce(&Self) -> Result<(), Error>,
+        work: impl FnOnce(&mut Self) -> Result<(), Error>,
     ) -> Result<Option<f64>, Error> {
         if !timed {
             work(self)?;
@@ -225,9 +267,11 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
 
     /// Launches every step, as a recorded graph when whole.
     fn run(&mut self, steps: Range<usize>, timed: bool) -> Result<Option<f64>, Error> {
+        let has_resident = self.resident_steps.iter().any(|r| *r);
         let whole = self.launching.graphs
             && self.ctx.graphs()
             && self.base.plan.id != 0
+            && !has_resident
             && steps == (0..self.base.plan.steps.len());
         if !whole {
             return self.waited(timed, |r| r.launch_all(steps));
@@ -235,7 +279,8 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
         let mut key: Vec<(DimName, u32)> = self.base.bound.iter().map(|(k, v)| (*k, *v)).collect();
         key.sort_unstable();
         if !self.graphs.contains_key(&key) {
-            let graph = self.ctx.capture(|| self.launch_all(steps.clone()))?;
+            let ctx = self.ctx;
+            let graph = ctx.capture(|| self.launch_all(steps.clone()))?;
             self.graphs.insert(key.clone(), graph);
         }
         self.waited(timed, |r| Ok(r.ctx.replay(&r.graphs[&key])?))
@@ -285,8 +330,11 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
             return;
         };
         for (i, kernel) in self.kernels.iter_mut().enumerate() {
+            let Some(planned) = &self.planned[i] else {
+                continue;
+            };
             let entry = &self.entries[self.uses[i]].0;
-            *kernel = files.kernel(entry).unwrap_or(&self.planned[i]).clone();
+            *kernel = Some(files.kernel(entry).unwrap_or(planned).clone());
         }
     }
 
@@ -345,11 +393,9 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Runner<D> {
     }
 
     /// Every launch of `steps`, in order.
-    fn launch_all(&self, steps: Range<usize>) -> Result<(), Error> {
+    fn launch_all(&mut self, steps: Range<usize>) -> Result<(), Error> {
         for i in steps {
-            for launch in self.base.launches(i)? {
-                self.launch(i, &launch)?;
-            }
+            self.run_step(i)?;
         }
         Ok(())
     }
@@ -402,20 +448,35 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
         })?;
         self.kernels.clear();
         self.waits.clear();
+        self.resident_steps.clear();
         for step in &plan.steps {
+            if step.resident().is_some() {
+                self.kernels.push(None);
+                self.waits.push(false);
+                self.resident_steps.push(true);
+                continue;
+            }
             let fixed = |text, entry| -> Result<_, Error> { Ok(cached_source::<D>(text, entry)?) };
             let made =
                 |source: &str, entry: &str| -> Result<_, Error> { Ok(ctx.compile(source, entry)?) };
             // Generated kernels wait on `griddepcontrol`. Fixed ones do not.
             let (kernel, generated) = self.compiled.get(step, D::BACKEND, fixed, made)?;
-            self.kernels.push(kernel);
+            self.kernels.push(Some(kernel));
             self.waits.push(generated);
+            self.resident_steps.push(false);
         }
         self.planned = self.kernels.clone();
         self.index(plan);
         self.apply();
+        if let Some(exec) = &mut self.resident {
+            exec.replan(plan)?;
+        }
         self.base.adopt(plan);
         Ok(())
+    }
+
+    fn set_resident(&mut self, exec: Box<dyn ResidentExec>) {
+        self.resident = Some(exec);
     }
 
     fn refresh(&mut self) -> Result<Vec<Reload>, Error> {
@@ -425,7 +486,7 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
     }
 
     fn marks(&mut self, step: usize) -> Result<Option<Marks>, Error> {
-        if dialect(D::BACKEND) == Dialect::Metal {
+        if dialect(D::BACKEND) == Dialect::Metal || self.resident_steps[step] {
             return Ok(None);
         }
         let source = self.base.plan.steps[step].kernel.source();
@@ -485,6 +546,12 @@ impl<D: Device + Launch<Kernel = <D as Device>::Kernel>> Run for Runner<D> {
         self.reread()?;
         self.ctx.finish()?;
         let start = Instant::now();
+        if self.resident_steps[step] {
+            for _ in 0..times {
+                self.run_resident(step)?;
+            }
+            return Ok(start.elapsed().as_secs_f64() / times as f64);
+        }
         let launches = self.base.launches(step)?;
         let clocked = self.waited(true, |r| {
             for _ in 0..times {

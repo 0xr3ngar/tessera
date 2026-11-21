@@ -73,9 +73,12 @@ where
             block: 0,
         }],
         items: vec![item],
+        forms: Vec::new(),
+        conventions: Default::default(),
         arenas: vec![out.device_ptr()],
         threads: THREADS,
         share: if args.shm.is_some() { ranks * MPS } else { 1 },
+        shared_bytes: 0,
     };
     let options = Options {
         backend,

@@ -43,9 +43,12 @@ fn plan(ranks: u32) -> Plan {
             block: 0,
         }],
         items: Vec::new(),
+        forms: Vec::new(),
+        conventions: Default::default(),
         arenas: Vec::new(),
         threads: THREADS,
         share: SHARE,
+        shared_bytes: 0,
     }
 }
 

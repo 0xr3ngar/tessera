@@ -1,6 +1,7 @@
 //! One process's rank of a plan, over a transport.
 
 use crate::open;
+use crate::resident::ResidentExec;
 use crate::{Base, Error, Run};
 use std::ops::Range;
 use std::time::Instant;
@@ -107,6 +108,10 @@ impl<T: Transport> Run for Rank<T> {
 
     fn replan(&mut self, plan: &Plan) -> Result<(), Error> {
         self.runner.replan(plan)
+    }
+
+    fn set_resident(&mut self, exec: Box<dyn ResidentExec>) {
+        self.runner.set_resident(exec);
     }
 
     /// Runs these steps. Sums wait for every rank.

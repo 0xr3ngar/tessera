@@ -1,5 +1,6 @@
 //! Device headers for recipe kernels, and the import scanner.
 
+pub mod exec;
 mod flatten;
 pub mod layout;
 pub mod proxy;
@@ -18,6 +19,9 @@ mod scan_test;
 
 pub use flatten::{Flat, Options, flatten};
 pub use scan::{Error, Problem};
+
+#[cfg(test)]
+mod resident_test;
 
 /// The edition every import path names.
 pub(crate) const EDITION: u32 = 1;

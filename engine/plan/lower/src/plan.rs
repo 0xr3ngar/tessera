@@ -1,6 +1,6 @@
 //! A plan: kernel launches over buffers that stay on device.
 
-use crate::abi::{Arg, Launch};
+use crate::abi::{Arg, Launch, ResidentSpec};
 use crate::form::{F32_FORM, Load};
 use crate::kernel::KernelRef;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -60,6 +60,11 @@ pub struct Step {
 impl Step {
     pub fn launches(&self) -> Vec<Launch> {
         self.kernel.launches(self)
+    }
+
+    /// Persistent `tessera::table*` metadata, when this step is resident.
+    pub fn resident(&self) -> Option<ResidentSpec> {
+        self.kernel.resident(self)
     }
 
     /// The `i`th input's buffer, from its start.

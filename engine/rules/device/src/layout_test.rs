@@ -129,12 +129,21 @@ fn headers_match_rust() {
         ("MAX_POOLS", MAX_POOLS),
         ("MAX_DEPTH", MAX_DEPTH),
         ("VALUES", VALUES),
+        ("CONVENTIONS", CONVENTIONS),
         ("DOORBELL_SLOTS", DOORBELL_SLOTS),
         ("DOORBELL_ABORT", DOORBELL_ABORT),
         ("DOORBELL_SENT", DOORBELL_SENT),
     ];
-    let names = DTYPES.iter().map(|d| d.0).enumerate();
-    for (code, name) in names.chain(STATUS.into_iter().enumerate()) {
+    let convs = ["LLM", "KV", "STATE", "IMAGE"];
+    let kinds = ["INPUT", "OUTPUT", "SCRATCH"];
+    let names = DTYPES
+        .iter()
+        .map(|d| d.0)
+        .enumerate()
+        .chain(STATUS.into_iter().enumerate())
+        .chain(convs.into_iter().enumerate())
+        .chain(kinds.into_iter().enumerate());
+    for (code, name) in names {
         assert_eq!(headers.number(name), code, "{name}");
     }
     for (name, value) in numbers {

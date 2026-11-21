@@ -19,7 +19,7 @@ pub(crate) struct Reads {
 }
 
 impl Reads {
-    fn scales(&self, input: usize) -> Option<[T; 2]> {
+    pub(crate) fn scales(&self, input: usize) -> Option<[T; 2]> {
         let found = self.parts.iter().find(|(place, _)| *place == input)?;
         Some(found.1)
     }
@@ -116,10 +116,10 @@ fn input(tree: &Tree, t: T) -> Input {
     }
 }
 
-/// A count's argument. Varying dimensions wait for launch.
-fn arg(tree: &Tree, nodes: &[T], count: Count) -> Option<Arg> {
+/// A count as an extent. Varying dimensions wait for launch.
+pub(crate) fn extent(tree: &Tree, nodes: &[T], count: Count) -> Option<Extent> {
     let (dim, mul): (DimName, usize) = match count {
-        Count::Fixed(n) => return Some(Arg::count(n as usize)),
+        Count::Fixed(n) => return Some(Extent::Fixed(n as usize)),
         Count::Dim { dim, mul } => (dim, mul),
     };
     let most = tree.size(dim)? as usize * mul;
@@ -138,7 +138,12 @@ fn arg(tree: &Tree, nodes: &[T], count: Count) -> Option<Arg> {
         },
         false => Extent::Fixed(most),
     };
-    Some(Arg::size(extent))
+    Some(extent)
+}
+
+/// A count's argument. Varying dimensions wait for launch.
+pub(crate) fn arg(tree: &Tree, nodes: &[T], count: Count) -> Option<Arg> {
+    Some(Arg::size(extent(tree, nodes, count)?))
 }
 
 /// The entries as drafts. `None` if they do not fit.
@@ -152,10 +157,16 @@ pub(crate) fn drafts(
     let (mut sums, mut written) = (0, vec![None; from.outputs.len()]);
     for entry in entries {
         let (draft, writes) = match entry {
-            Entry::Launch(offer) => (
-                launch(&offer, kernels, tree, from, drafts.len())?,
-                offer.writes,
-            ),
+            Entry::Launch(offer) => {
+                let (draft, absorbed) = launch(&offer, kernels, tree, from, &drafts)?;
+                if absorbed > 0 {
+                    if sums + absorbed > from.sums.len() {
+                        return None;
+                    }
+                    sums += absorbed;
+                }
+                (draft, offer.writes)
+            }
             Entry::Sum(sum) => {
                 let len = drafts.get(sum.all_reduce)?.len;
                 // Ranks pair sums by order, so each length must match.
@@ -187,22 +198,29 @@ pub(crate) fn drafts(
     Some(drafts)
 }
 
-/// One offer's launch, after `made` earlier drafts.
+/// One offer's launch and absorbed sum count.
 fn launch(
     offer: &Offer,
     kernels: &'static [Fixed],
     tree: &Tree,
     from: &Reads,
-    made: usize,
-) -> Option<Draft> {
+    earlier: &[Draft],
+) -> Option<(Draft, usize)> {
     let fixed = kernels.iter().find(|k| k.name == offer.kernel)?;
+    if let Some(res) = offer.resident.as_deref() {
+        let (reads, plan) = crate::resident::build(offer, res, fixed, tree, from, earlier)?;
+        let mut text = Text::new(fixed, offer, Vec::new());
+        text.resident = Some(plan);
+        return Some((Draft::new(text, reads, offer.len), res.absorbs_sums));
+    }
+    let made = earlier.len();
     let mut reads = Vec::with_capacity(offer.reads.len());
     let mut kept = None;
     for place in &offer.reads {
         reads.push(match *place {
             Place::Read(i) => Read::Node(*from.nodes.get(i)?),
             Place::Draft { draft } if draft < made => Read::Draft(draft),
-            Place::Draft { .. } => return None,
+            Place::Draft { .. } | Place::Out { .. } => return None,
             Place::Part { part: [i, 0] } => Read::Node(*from.nodes.get(i)?),
             Place::Part { part: [i, p] } => Read::Node(*from.scales(i)?.get(p - 1)?),
             Place::Kept { kept: i } => {
@@ -222,5 +240,5 @@ fn launch(
         let values = values.into_iter().map(|v| Arg::count(v as usize));
         (tree.kept, values.collect())
     });
-    Some(Draft::new(text, reads, offer.len))
+    Some((Draft::new(text, reads, offer.len), 0))
 }

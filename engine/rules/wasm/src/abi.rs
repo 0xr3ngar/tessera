@@ -2,7 +2,9 @@
 
 use serde::Deserialize;
 use tessera_graph::DimName;
-pub(crate) use tessera_guest::site::{Ask, Input, Kept, Kind, Place, Shape, Site};
+pub(crate) use tessera_guest::site::{
+    Ask, Input, Kept, Kind, Op as CollectiveOp, Place, Shape, Site,
+};
 
 /// The version of this exchange the host reads.
 pub(crate) use tessera_guest::ABI;
@@ -90,3 +92,5 @@ pub(crate) struct Sum {
 
 /// One launch, in the host's form.
 pub(crate) type Offer = tessera_guest::site::Offer<String, Count>;
+/// Resident launch settings, in the host's form.
+pub(crate) type Resident = tessera_guest::site::Resident<Count>;

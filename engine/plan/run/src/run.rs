@@ -3,6 +3,7 @@
 use crate::Error;
 use crate::held::Held;
 use crate::profile::Profile;
+use crate::resident::ResidentExec;
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
@@ -29,6 +30,8 @@ pub struct Base {
     pub(crate) budget: Option<u64>,
     /// Seconds per step kernel, while profiling.
     pub(crate) profile: Option<Profile>,
+    /// Per-slot kept-row lengths for resident KV tables.
+    pub(crate) kv_lens: Vec<u32>,
 }
 
 impl Base {
@@ -137,6 +140,12 @@ pub trait Run {
     fn bind(&mut self, name: DimName, value: u32) {
         self.base_mut().bound.insert(name, value);
     }
+    /// Sets per-slot kept-row lengths for resident steps.
+    fn set_kv_lens(&mut self, lens: Vec<u32>) {
+        self.base_mut().kv_lens = lens;
+    }
+    /// Attaches an executor for resident `tessera::table*` steps.
+    fn set_resident(&mut self, _exec: Box<dyn ResidentExec>) {}
     /// Runs these steps in order and waits for them.
     fn submit(&mut self, steps: Range<usize>) -> Result<(), Error>;
     /// Rereads kernel files that changed. Returns what changed.

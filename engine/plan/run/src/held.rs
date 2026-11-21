@@ -32,7 +32,11 @@ pub struct Held {
 
 impl Held {
     pub fn get(&self, slot: Slot) -> &Buffer {
-        &self.all[self.bound[slot.buffer as usize]]
+        self.buffer(slot.buffer)
+    }
+
+    pub fn buffer(&self, index: u32) -> &Buffer {
+        &self.all[self.bound[index as usize]]
     }
 
     /// These buffers' bytes, each named once, for the host.

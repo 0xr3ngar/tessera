@@ -17,6 +17,7 @@ mod overrides;
 mod overrides_test;
 mod profile;
 mod rank;
+mod resident;
 mod run;
 pub mod testing;
 
@@ -24,6 +25,7 @@ pub use held::Held;
 pub use loopback::Loopback;
 pub use profile::{Marks, Profile, Ranks, Region, Spent};
 pub use rank::{Rank, Sum};
+pub use resident::{ResidentCall, ResidentExec};
 pub use run::{Base, Outcome, Reload, Run};
 
 /// A failure while loading or running a plan.
@@ -58,6 +60,8 @@ pub enum Error {
     },
     #[error("sums: {0}")]
     Sums(Box<dyn std::error::Error + Send + Sync>),
+    #[error("resident: {0}")]
+    Resident(Box<dyn std::error::Error + Send + Sync>),
     #[error("step {0} has no device address")]
     Unaddressed(usize),
     #[error("a sum of {0} floats does not fit the device")]

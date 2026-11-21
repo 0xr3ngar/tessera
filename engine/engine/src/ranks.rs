@@ -4,7 +4,7 @@ use crate::{Engine, Error, Head, Row};
 use tessera_engine_comm::{Reader, Transport, Writer};
 use tessera_graph::{Graph, Parts, shard};
 use tessera_lower::{Cluster, Device, Recipe, Settings, ZoneKind};
-use tessera_run::{Profile, Rank, Ranks, Run, Sum};
+use tessera_run::{Profile, Rank, Ranks, ResidentExec, Run, Sum};
 
 /// A rank's zones and each rank's share of split weights.
 pub struct Place {
@@ -13,6 +13,8 @@ pub struct Place {
     rank: u32,
     /// A persistent grid for the sums, if any.
     grid: Option<Box<dyn Sum>>,
+    /// Executor for resident `tessera::table*` steps, if any.
+    resident: Option<Box<dyn ResidentExec>>,
 }
 
 impl Place {
@@ -24,12 +26,19 @@ impl Place {
             parts,
             rank,
             grid: None,
+            resident: None,
         }
     }
 
     /// Runs the sums through `grid`.
     pub fn with_grid(mut self, grid: Option<Box<dyn Sum>>) -> Self {
         self.grid = grid;
+        self
+    }
+
+    /// Runs resident `tessera::table*` steps through `exec`.
+    pub fn with_resident(mut self, exec: Option<Box<dyn ResidentExec>>) -> Self {
+        self.resident = exec;
         self
     }
 
@@ -76,8 +85,17 @@ impl Engine {
     ) -> Result<Self, Error> {
         place.rank = sums.rank();
         let grid = place.grid.take();
+        let resident = place.resident.take();
         let run = |plan| {
-            let rank = Rank::open(plan, settings, sums)?.with_grid(grid);
+            let mut rank = Rank::open(plan, settings, sums)?.with_grid(grid);
+            let exec = match resident {
+                Some(exec) => Some(exec),
+                None => tessera_device::exec::local(settings.gpu())
+                    .map_err(|e| tessera_run::Error::Resident(Box::new(e)))?,
+            };
+            if let Some(exec) = exec {
+                rank.set_resident(exec);
+            }
             Ok(Box::new(rank) as Box<dyn Run>)
         };
         let mut engine = Self::placed(graph, context, recipe, settings, Some(&place), run)?;

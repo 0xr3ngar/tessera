@@ -19,7 +19,10 @@ mod select;
 pub mod sites;
 mod tree;
 
-pub use abi::{Arg, Launch, Shape, Source, ToArg};
+pub use abi::{
+    Arg, Collective, Conventions, Elem, FormSpec, HeldSpec, ItemData, ItemKind, ItemSpec, KeptSpec,
+    LaneSpec, Launch, LlmSpec, PoolSpec, ResidentSpec, Shape, Source, ToArg, form_kind,
+};
 pub use assign::assign;
 pub use body::{GUESS, small, source};
 pub use cache::Cache;

@@ -1,6 +1,6 @@
 //! The kernel trait: what a plan step launches.
 
-use crate::abi::{Launch, Source};
+use crate::abi::{Launch, ResidentSpec, Source};
 use crate::plan::Step;
 use std::fmt;
 use std::sync::Arc;
@@ -59,6 +59,10 @@ pub trait Kernel: fmt::Debug + Send + Sync {
     /// Its needs from a thread group. Zero needs nothing.
     fn needs(&self) -> Needs {
         Needs::default()
+    }
+    /// Persistent `tessera::table*` launch metadata, if resident.
+    fn resident(&self, _step: &Step) -> Option<ResidentSpec> {
+        None
     }
 }
 

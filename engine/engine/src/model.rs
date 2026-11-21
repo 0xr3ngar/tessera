@@ -74,6 +74,11 @@ impl Model {
             Err(tessera_lower::Error::Unsupported(_)) => Executor::Interpreted(Vec::new()),
             planned => {
                 let mut runner = open(planned?, settings)?;
+                let exec = tessera_device::exec::local(settings.gpu())
+                    .map_err(|e| tessera_run::Error::Resident(Box::new(e)))?;
+                if let Some(exec) = exec {
+                    runner.set_resident(exec);
+                }
                 runner.launching(recipe.launch);
                 let device = Device::stored(runner.platform(), settings)
                     .map_err(tessera_lower::Error::from)?
