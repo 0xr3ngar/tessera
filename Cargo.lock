@@ -1959,7 +1959,6 @@ dependencies = [
 name = "tessera-glm53-moe-module"
 version = "0.1.0"
 dependencies = [
- "serde_json",
  "tessera-guest",
 ]
 
@@ -2320,8 +2319,6 @@ dependencies = [
 name = "tessera-sprite-module"
 version = "0.1.0"
 dependencies = [
- "serde",
- "serde_json",
  "tessera-guest",
  "tessera-models",
 ]
