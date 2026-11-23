@@ -1,13 +1,10 @@
 //! DFlash block-diffusion drafter conditioned on tapped target states.
 
 use crate::decoder::{HeadNorm, Layer, Mlp, Swiglu};
+pub use crate::dflash_shard::shard;
 use crate::keys::Keys;
 use crate::shared::{Stack, join_rows, with_head};
 use serde_json::json;
-use tessera_graph::{
-    Node, NodeId, Numerics, Op, Parts, Placement, Row as GraphRow, Sharded, Shares, Stage,
-    VerifyError, infer, shard_mode, verify,
-};
 use tessera_trace::DimName::*;
 use tessera_trace::{
     Act, Composite, DType, Dim, DimExpr, Embed, EntryKind, Graph, Kept, Linear, Mask, Model, Norm,
@@ -46,6 +43,18 @@ pub struct TargetSpec {
     pub tied: bool,
 }
 
+/// On-load quantization mode for BF16 drafter linears.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DraftQuant {
+    /// Keep all BF16 weights in BF16.
+    Bf16,
+    /// Quantize layers and head, keep fc and selector BF16.
+    #[default]
+    MxFp8,
+    /// Quantize all eligible 2D BF16 linears.
+    MxFp8All,
+}
+
 /// DFlash drafter sizes and conditioning settings.
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -73,6 +82,8 @@ pub struct Config {
     pub bridge: Option<BridgeConfig>,
     pub output_multiplier: f32,
     pub logit_softcap: Option<f32>,
+    /// On-load quantization mode for eligible BF16 linear weights.
+    pub quant: DraftQuant,
 }
 
 /// Evenly spaced 0-based target layer indices for `draft_layers`.
@@ -222,6 +233,18 @@ impl Config {
         let logit_softcap = k
             .or::<Option<f32>>(&["dflash_config.final_logit_softcapping"], None)
             .filter(|&v| v > 0.0);
+        let quant = match k
+            .or::<Option<String>>(&["dflash_config.quant"], None)
+            .as_deref()
+        {
+            None | Some("mxfp8") => DraftQuant::MxFp8,
+            Some("bf16") => DraftQuant::Bf16,
+            Some("mxfp8_all") => DraftQuant::MxFp8All,
+            Some(other) => {
+                k.misfit("quant", format!("unknown draft quant `{other}`"));
+                DraftQuant::MxFp8
+            }
+        };
         let sizes = [vocab, hidden, layers, heads, head_dim, ffn];
         Self {
             stack: Stack::sized(sizes, max_seqs, max_context),
@@ -240,6 +263,7 @@ impl Config {
             bridge,
             output_multiplier,
             logit_softcap,
+            quant,
         }
     }
 
@@ -270,6 +294,7 @@ impl Config {
             bridge: None,
             output_multiplier: 1.0,
             logit_softcap: None,
+            quant: DraftQuant::MxFp8,
         }
     }
 
@@ -845,147 +870,4 @@ pub fn stepper<N: HeadNorm>(c: &Config) -> Graph {
     }
     let ids = logits.top_k(1u64).reshape(vec![DimExpr::Const(n)]);
     m.finish([(Role::Tokens, &ids), (Role::Logits, &logits)])
-}
-
-fn insert_stage(g: &mut Graph, at: NodeId, stage: Stage) {
-    let new = NodeId(at.0 + 1);
-    let remap = |n: &mut NodeId| {
-        n.0 += u32::from(*n >= new);
-        if *n == at {
-            *n = new;
-        }
-    };
-    g.nodes[new.0 as usize..]
-        .iter_mut()
-        .for_each(|n| n.args.iter_mut().for_each(remap));
-    let ty = g.node(at).ty.clone();
-    let op = Op::Row(GraphRow(vec![stage]));
-    let node = Node {
-        op,
-        args: vec![at],
-        ty,
-        numerics: Some(Numerics::default()),
-    };
-    g.nodes.insert(new.0 as usize, node);
-    g.entries
-        .iter_mut()
-        .flat_map(|e| &mut e.outputs)
-        .for_each(|o| remap(&mut o.node));
-    for r in &mut g.regions {
-        r.start.0 += u32::from(r.start >= new);
-        r.end.0 += u32::from(r.end >= new);
-        r.inputs.iter_mut().chain(&mut r.outputs).for_each(remap);
-    }
-}
-
-fn split_weight(g: &mut Graph, node: NodeId, axis: u32) -> bool {
-    let Op::Weight(w) = g.node(node).op else {
-        return false;
-    };
-    let ty = &mut g.weights[w as usize].ty;
-    if ty.rank() != 2 || ty.placement != Placement::Replicated {
-        return false;
-    }
-    ty.placement = Placement::Split { axis };
-    true
-}
-
-fn adopt_split(out: &mut Graph, mut g: Graph, parts: &Parts, shares: &Shares) -> bool {
-    for i in 0..g.nodes.len() {
-        if let Op::Append(k) = g.nodes[i].op {
-            let p = g.node(g.nodes[i].args[0]).ty.placement;
-            g.kept[k as usize].placement = match p {
-                Placement::Split { axis } => Placement::Split { axis: axis + 1 },
-                other => other,
-            };
-        }
-        let args: Vec<_> = g.nodes[i].args.iter().map(|a| &g.node(*a).ty).collect();
-        let Ok(ty) = infer(&g, &g.nodes[i].op, &args) else {
-            return false;
-        };
-        g.nodes[i].ty = ty;
-    }
-    let val = |d: &DimExpr| d.value(&g.dims, &|_| None).map(|v| v as usize);
-    for n in &g.nodes {
-        let Placement::Split { axis } = n.ty.placement else {
-            continue;
-        };
-        let a = axis as usize;
-        let Some(counts) = val(&n.ty.shape.0[a]).and_then(|v| parts.counts(v)) else {
-            return false;
-        };
-        if let Op::Weight(w) = n.op {
-            let sizes: Option<Vec<_>> = n.ty.shape.0.iter().map(val).collect();
-            if sizes.is_none_or(|s| counts.iter().any(|&c| !shares(w, &s, a, c))) {
-                return false;
-            }
-        }
-    }
-    if verify(&g).is_err() {
-        return false;
-    }
-    *out = g;
-    true
-}
-
-/// Shards a DFlash/DFlash2/DSpine graph across ranks in `parts`.
-pub fn shard(g: &Graph, parts: &Parts, shares: &Shares) -> Result<Sharded, VerifyError> {
-    let mut sharded = shard_mode(g, parts, shares, false)?;
-    let out = &mut sharded.graph;
-    // Shard `fc` (AllGather) and conv-wrapped `o`/`down` (AllReduce).
-    let mut i = 0;
-    while i < out.nodes.len() {
-        let id = NodeId(i as u32);
-        i += 1;
-        let node = out.node(id);
-        let Some(&w_node) = (node.op == Op::Matmul).then(|| &node.args[1]) else {
-            continue;
-        };
-        let Op::Weight(w) = out.node(w_node).op else {
-            continue;
-        };
-        let wt = &out.weights[w as usize];
-        if wt.ty.placement != Placement::Replicated {
-            continue;
-        }
-        let mut tried = out.clone();
-        match wt.path.last() {
-            Some(PathSeg::Field(f)) if f == "fc" && wt.path.len() == 1 => {
-                let lone = (0..out.nodes.len()).all(|k| {
-                    k + 1 == i
-                        || !out.nodes[k]
-                            .args
-                            .iter()
-                            .any(|a| out.node(*a).op == Op::Weight(w))
-                });
-                if !lone || !split_weight(&mut tried, w_node, 0) {
-                    continue;
-                }
-                insert_stage(&mut tried, id, Stage::AllGather);
-            }
-            Some(PathSeg::Field(f)) if f == "o" || f == "down" => {
-                let (mut stack, mut seen) = (vec![node.args[0]], vec![false; out.nodes.len()]);
-                while let Some(cur) = stack.pop() {
-                    if std::mem::replace(&mut seen[cur.0 as usize], true) {
-                        continue;
-                    }
-                    let n = out.node(cur);
-                    if (n.op == Op::Matmul && split_weight(&mut tried, n.args[1], 0))
-                        || split_weight(&mut tried, cur, 0)
-                    {
-                        continue;
-                    }
-                    stack.extend_from_slice(&n.args);
-                }
-                split_weight(&mut tried, w_node, 1);
-                insert_stage(&mut tried, id, Stage::AllReduce);
-            }
-            _ => continue,
-        }
-        if adopt_split(out, tried, parts, shares) {
-            i += 1;
-        }
-    }
-    verify(out)?;
-    Ok(sharded)
 }
