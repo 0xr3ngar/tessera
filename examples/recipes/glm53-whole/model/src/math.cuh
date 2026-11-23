@@ -58,10 +58,24 @@ struct spans_t {
     u32 *picked, *ids;
 };
 
+struct moe_meta {
+    mat codes[3], su[3], sv[3], shared[3];
+    const float *in_signs, *out_signs;
+    u32 loc_e[8], loc_m[8];
+    float loc_g[8];
+    u32 cnt;
+    u32 flags;
+};
+
 // Unified block shared memory, under 32 KiB.
 struct alignas(16) Smem {
     float red[WARPS];
-    union {
+    sizes s0;
+    sizes ls;
+    spans_t p;
+    place pl;
+    moe_meta meta;
+    union alignas(16) {
         struct {
             u32 tiles[WARPS][256];
             float buf[WARPS][ROW_TILE][128];
@@ -78,7 +92,23 @@ struct alignas(16) Smem {
         } moe;
         struct {
             float q[ATTN_STAGE];
+            float part[8][128];
         } attn;
+        struct {
+            u32 x_h[3072];
+            u32 buf[WARPS][296];
+        } q32;
+        struct {
+            float m[WARPS];
+            float tot[WARPS];
+            float o[WARPS][512];
+        } mla;
+        struct {
+            float x[6144];
+        } rf;
+        struct {
+            u8 turned[128];
+        } wk;
         struct {
             u32 cnt[WARPS];
             u32 thresh;
@@ -122,24 +152,29 @@ static __device__ __forceinline__ bool is_turned(const table* t, u32 item) {
     return it->elem == FORM && form_of(t, item, 0)->suh.arena != NONE;
 }
 
-static __device__ void lay_fields(const table* t, place& pl, u32 from, u32 to, u32* at) {
+static __device__ void lay_fields_fast(const table* t, place& pl, u32 from, u32 to, u32* at,
+                                       u32 base, const u8* turned) {
     for (u32 f = from; f < to; f++) {
-        pl.item[f] = *at;
-        *at += is_turned(t, *at) ? 3u : 1u;
+        u32 cur = *at;
+        pl.item[f] = cur;
+        u32 off = cur - base;
+        bool tr = off < 128u ? (turned[off] != 0u) : is_turned(t, cur);
+        *at = cur + (tr ? 3u : 1u);
     }
 }
 
-static __device__ place walk(const table* t, const sizes& s, u32 l, u32 first, u32 kept) {
+static __device__ place walk_fast(const table* t, const sizes& s, u32 l, u32 first, u32 kept,
+                                  const u8* turned) {
     place pl;
     pl.kept = kept;
     pl.layer = l;
     u32 at = first;
-    lay_fields(t, pl, A_NORM, WQ, &at);
-    if (indexes(s, l)) lay_fields(t, pl, WQ, D_GATE, &at);
+    lay_fields_fast(t, pl, A_NORM, WQ, &at, first, turned);
+    if (indexes(s, l)) lay_fields_fast(t, pl, WQ, D_GATE, &at, first, turned);
     if (l < s.dense) {
-        lay_fields(t, pl, D_GATE, ROUTER, &at);
+        lay_fields_fast(t, pl, D_GATE, ROUTER, &at, first, turned);
     } else {
-        lay_fields(t, pl, ROUTER, FIELD_END, &at);
+        lay_fields_fast(t, pl, ROUTER, FIELD_END, &at, first, turned);
     }
     pl.next = at;
     return pl;
@@ -306,6 +341,48 @@ static __device__ __forceinline__ float vec_elem(const mat& w, u32 o, u32 i) {
     return elem(w, 0, o, i);
 }
 
+static __device__ __forceinline__ void vec_elem4(const mat& w, u32 o, u32 i, float out[4]) {
+    u64 n = u64(o) * w.in + i;
+    if (w.klass == K_F32
+        && (reinterpret_cast<u64>(reinterpret_cast<const float*>(w.p) + n) & 15ull) == 0ull) {
+        float4 f = *reinterpret_cast<const float4*>(reinterpret_cast<const float*>(w.p) + n);
+        out[0] = f.x;
+        out[1] = f.y;
+        out[2] = f.z;
+        out[3] = f.w;
+        return;
+    }
+    if (w.klass == K_BF16
+        && (reinterpret_cast<u64>(reinterpret_cast<const u16*>(w.p) + n) & 7ull) == 0ull) {
+        uint2 h = *reinterpret_cast<const uint2*>(reinterpret_cast<const u16*>(w.p) + n);
+        out[0] = __uint_as_float(h.x << 16);
+        out[1] = __uint_as_float(h.x & 0xFFFF0000u);
+        out[2] = __uint_as_float(h.y << 16);
+        out[3] = __uint_as_float(h.y & 0xFFFF0000u);
+        return;
+    }
+#pragma unroll
+    for (u32 q = 0u; q < 4u; q++) out[q] = vec_elem(w, o, i + q);
+}
+
+static __device__ __forceinline__ float4 norm_w4(const mat& nw, bool nw_bf16, u32 i) {
+    if (nw_bf16) {
+        uint2 h = *reinterpret_cast<const uint2*>(reinterpret_cast<const u16*>(nw.p) + i);
+        return make_float4(__uint_as_float(h.x << 16), __uint_as_float(h.x & 0xFFFF0000u),
+                           __uint_as_float(h.y << 16), __uint_as_float(h.y & 0xFFFF0000u));
+    }
+    return make_float4(vec_elem(nw, 0u, i), vec_elem(nw, 0u, i + 1u), vec_elem(nw, 0u, i + 2u),
+                       vec_elem(nw, 0u, i + 3u));
+}
+
+static __device__ __forceinline__ uint4 ld_nc_u4(const void* p) {
+    uint4 v;
+    asm volatile("ld.global.nc.L1::no_allocate.v4.u32 {%0,%1,%2,%3}, [%4];"
+                 : "=r"(v.x), "=r"(v.y), "=r"(v.z), "=r"(v.w)
+                 : "l"(p));
+    return v;
+}
+
 static __device__ __forceinline__ float warp_sum(float v) {
 #pragma unroll
     for (u32 off = 16; off > 0; off >>= 1) v += __shfl_xor_sync(0xFFFFFFFFu, v, off);
@@ -322,6 +399,15 @@ static __device__ __forceinline__ float block_sum(const ctx& c, float v) {
     for (u32 w = 0; w < nw; w++) sum += c.sm.red[w];
     __syncthreads();
     return sum;
+}
+
+static __device__ __forceinline__ float rms_inv(const ctx& c, const float* x, u32 n) {
+    float sq = 0.0f;
+    for (u32 i = threadIdx.x << 2; i < n; i += blockDim.x << 2) {
+        float4 v = *reinterpret_cast<const float4*>(x + i);
+        sq = fmaf(v.x, v.x, fmaf(v.y, v.y, fmaf(v.z, v.z, fmaf(v.w, v.w, sq))));
+    }
+    return 1.0f / sqrtf(block_sum(c, sq) / float(n) + c.s.eps);
 }
 
 static __device__ __forceinline__ void load_vec4(const float* p, bool aligned, float v[4]) {

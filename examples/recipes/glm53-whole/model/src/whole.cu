@@ -45,36 +45,45 @@ static __device__ void embed_rows(const mat& embed, const u32* tokens, float* x,
 extern "C" __global__ __launch_bounds__(256, 2) void glm53_whole(const table* t) {
     if (!check(t)) return;
     __shared__ Smem smem;
-    sizes s = read(t);
-    spans_t p = lay_out(t, s);
+    if (threadIdx.x == 0u) {
+        smem.s0 = read(t);
+        smem.p = lay_out(t, smem.s0);
+    }
+    __syncthreads();
+    const sizes& s = smem.s0;
+    const spans_t& p = smem.p;
     session se = begin(t);
     ctx c = {t, s, p, se, smem};
     u32 norm = IDS + (is_turned(t, IDS) ? 3u : 1u);
     u32 head = norm + (is_turned(t, norm) ? 3u : 1u);
     u32 first = head + (is_turned(t, head) ? 3u : 1u);
-    u32 reads = first, kept = 0u;
-    for (u32 l = 0; l < s.layers; l++) {
-        reads = walk(t, for_layer(s, l), l, reads, kept).next;
-        kept += indexes(s, l) ? 3u : 2u;
-    }
     TS_MARK();
     embed_rows(weight(t, IDS), at<const u32>(t, 0), p.x, s.rows, s.hidden);
     if (!sync(t)) return;
     TS_MARK();
-    for (u32 n = 0, from = first, rows = 0; n < s.layers; n++) {
-        sizes ls = for_layer(s, n);
-        ctx lc = {t, ls, p, se, smem};
-        place pl = walk(t, ls, n, from, rows);
-        if (!layer(lc, pl)) return;
-        from = pl.next;
-        rows += indexes(s, n) ? 3u : 2u;
+    u32 from = first, kept_rows = 0u;
+    for (u32 n = 0; n < s.layers; n++) {
+        if (threadIdx.x < 128u) {
+            u32 it = from + threadIdx.x;
+            smem.wk.turned[threadIdx.x] = (it < t->items_len && is_turned(t, it)) ? 1u : 0u;
+        }
+        __syncthreads();
+        if (threadIdx.x == 0u) {
+            smem.ls = for_layer(s, n);
+            smem.pl = walk_fast(t, smem.ls, n, from, kept_rows, smem.wk.turned);
+        }
+        __syncthreads();
+        ctx lc = {t, smem.ls, p, se, smem};
+        if (!layer(lc, smem.pl)) return;
+        from = smem.pl.next;
+        kept_rows += indexes(s, n) ? 3u : 2u;
     }
     TS_MARK();
     rms(c, p.x, s.hidden, weight(t, norm), p.h, s.hidden, s.picks, s.hidden,
         at<const u32>(t, 3), false);
     if (!sync(t)) return;
     TS_MARK();
-    if (!linear(c, weight(t, head), p.h, s.hidden, at<float>(t, reads + kept), s.vocab, s.picks,
+    if (!linear(c, weight(t, head), p.h, s.hidden, at<float>(t, from + kept_rows), s.vocab, s.picks,
                 s.vocab)) {
         return;
     }

@@ -28,18 +28,235 @@ static __device__ void zero_buf(float* dst, u64 len) {
     for (u64 i = vec_end + l.at; i < len; i += l.step) dst[i] = 0.0f;
 }
 
-// Fused router sigmoid, bias top-k, gate norm, and buffer zeroing.
-static __device__ bool route(const ctx& c, const place& pl, bool zero_t2) {
+static __device__ void fill_moe_meta(const ctx& c, const place& pl, u32 mid) {
+    moe_meta& mt = c.sm.meta;
+    if (mid < 3u) mt.codes[mid] = field_mat(c, pl, E_GATE + 3u * mid);
+    else if (mid < 6u) mt.su[mid - 3u] = field_mat(c, pl, E_GATE + 3u * (mid - 3u) + 1u);
+    else if (mid < 9u) mt.sv[mid - 6u] = field_mat(c, pl, E_GATE + 3u * (mid - 6u) + 2u);
+    else if (mid < 12u) mt.shared[mid - 9u] = field_mat(c, pl, S_GATE + (mid - 9u));
+    else if (mid == 12u) mt.in_signs = reinterpret_cast<const float*>(field_mat(c, pl, SIGNS_IN).p);
+    else mt.out_signs = reinterpret_cast<const float*>(field_mat(c, pl, SIGNS_OUT).p);
+}
+
+static __device__ void set_moe_flags(const ctx& c) {
     const sizes& s = c.s;
+    moe_meta& mt = c.sm.meta;
+    bool fast = (s.hidden & 127u) == 0u && (s.effn & 127u) == 0u && s.experts <= 2048u;
+    bool fuse_sh = fast && (s.ffn & 127u) == 0u && s.ffn != 0u;
+    for (u32 i = 0; i < 3u; i++) {
+        if (mt.codes[i].klass != K_TRELLIS) fast = false;
+        const mat& sh = mt.shared[i];
+        u32 expect_in = i == 2u ? s.ffn : s.hidden;
+        u32 expect_out = i == 2u ? s.hidden : s.ffn;
+        if (sh.klass != K_TURNED || sh.suh == nullptr || sh.svh == nullptr || sh.in != expect_in
+            || sh.out != expect_out) {
+            fuse_sh = false;
+        }
+    }
+    mt.flags = (fast ? 1u : 0u) | (fuse_sh && fast ? 2u : 0u);
+}
+
+static __device__ void load_moe_meta(const ctx& c, const place& pl) {
+    if (threadIdx.x < 14u) fill_moe_meta(c, pl, threadIdx.x);
+    __syncthreads();
+    if (threadIdx.x == 0u) set_moe_flags(c);
+    __syncthreads();
+}
+
+// Fused router sigmoid, bias top-k, gate norm, and buffer zeroing.
+static __device__ bool route(const ctx& c, const place& pl, bool zero_t2, bool fuse_mlp_norm,
+                             bool load_meta, bool* fast_routed) {
+    const sizes& s = c.s;
+    *fast_routed = false;
     u32 r_cnt = s.rows, e = s.experts;
-    if (!linear(c, field_mat(c, pl, ROUTER), c.p.h, s.hidden, c.p.a, e, r_cnt, e)) return false;
-    mat bias = field_mat(c, pl, R_BIAS);
+    mat rw = field_mat(c, pl, ROUTER);
     u32 wid = (blockIdx.x * blockDim.x + threadIdx.x) >> 5;
     u32 wstep = (gridDim.x * blockDim.x) >> 5;
     u32 lane = threadIdx.x & 31u;
+    bool is_bf16 = rw.klass == K_BF16;
+    bool is_f32 = rw.klass == K_F32;
+    u64 align_mask = is_bf16 ? 7ull : 15ull;
+    bool fast_r = r_cnt == 1u && (is_bf16 || is_f32) && (s.hidden & 31u) == 0u
+                  && (reinterpret_cast<u64>(rw.p) & align_mask) == 0ull
+                  && (reinterpret_cast<u64>(c.p.h) & 15ull) == 0ull && e > 0u
+                  && e * 4u <= s.width;
+    u32 r_splits = fast_r ? min(4u, max(1u, wstep / e)) : 1u;
+    if (fast_r && r_splits > 1u) {
+        const float* x_src = c.p.h;
+        if (fuse_mlp_norm) {
+            u32 n = s.hidden;
+            mat nw = field_mat(c, pl, MLP_NORM);
+            float inv = rms_inv(c, c.p.x, n);
+            bool nw_bf16 = nw.klass == K_BF16 && (reinterpret_cast<u64>(nw.p) & 7ull) == 0ull;
+            bool write_h = blockIdx.x == 0u;
+            for (u32 i = threadIdx.x << 2; i < n; i += blockDim.x << 2) {
+                float4 v = *reinterpret_cast<const float4*>(c.p.x + i);
+                float4 wv = norm_w4(nw, nw_bf16, i);
+                float4 out = make_float4(v.x * (inv * wv.x), v.y * (inv * wv.y), v.z * (inv * wv.z),
+                                         v.w * (inv * wv.w));
+                if (write_h) *reinterpret_cast<float4*>(c.p.h + i) = out;
+                *reinterpret_cast<float4*>(c.sm.rf.x + i) = out;
+            }
+            __syncthreads();
+            x_src = c.sm.rf.x;
+        }
+        u32 chunk = ((s.hidden / r_splits) + 7u) & ~7u;
+        bool bf16_v4 = is_bf16 && (reinterpret_cast<u64>(rw.p) & 15ull) == 0ull
+                       && (s.hidden & 7u) == 0u;
+        for (u32 u = wid; u < e * r_splits; u += wstep) {
+            u32 o = u / r_splits, sp = u % r_splits;
+            u32 c0 = sp * chunk, c1 = min(s.hidden, c0 + chunk);
+            float acc = 0.0f;
+            if (bf16_v4) {
+                const u16* wr = reinterpret_cast<const u16*>(rw.p) + u64(o) * s.hidden;
+                for (u32 i = c0 + (lane << 3); i < c1; i += 256u) {
+                    uint4 h = ld_nc_u4(wr + i);
+                    float4 x0 = *reinterpret_cast<const float4*>(x_src + i);
+                    float4 x1 = *reinterpret_cast<const float4*>(x_src + i + 4u);
+                    acc = fmaf(__uint_as_float(h.x << 16), x0.x,
+                               fmaf(__uint_as_float(h.x & 0xFFFF0000u), x0.y,
+                                    fmaf(__uint_as_float(h.y << 16), x0.z,
+                                         fmaf(__uint_as_float(h.y & 0xFFFF0000u), x0.w, acc))));
+                    acc = fmaf(__uint_as_float(h.z << 16), x1.x,
+                               fmaf(__uint_as_float(h.z & 0xFFFF0000u), x1.y,
+                                    fmaf(__uint_as_float(h.w << 16), x1.z,
+                                         fmaf(__uint_as_float(h.w & 0xFFFF0000u), x1.w, acc))));
+                }
+            } else if (is_bf16) {
+                const u16* wr = reinterpret_cast<const u16*>(rw.p) + u64(o) * s.hidden;
+                for (u32 i = c0 + (lane << 2); i < c1; i += 128u) {
+                    uint2 h = *reinterpret_cast<const uint2*>(wr + i);
+                    float4 xv = *reinterpret_cast<const float4*>(x_src + i);
+                    acc = fmaf(__uint_as_float(h.x << 16), xv.x,
+                               fmaf(__uint_as_float(h.x & 0xFFFF0000u), xv.y,
+                                    fmaf(__uint_as_float(h.y << 16), xv.z,
+                                         fmaf(__uint_as_float(h.y & 0xFFFF0000u), xv.w, acc))));
+                }
+            } else {
+                const float* wr = reinterpret_cast<const float*>(rw.p) + u64(o) * s.hidden;
+                for (u32 i = c0 + (lane << 2); i < c1; i += 128u) {
+                    float4 wv = *reinterpret_cast<const float4*>(wr + i);
+                    float4 xv = *reinterpret_cast<const float4*>(x_src + i);
+                    acc = fmaf(wv.x, xv.x, fmaf(wv.y, xv.y, fmaf(wv.z, xv.z, fmaf(wv.w, xv.w, acc))));
+                }
+            }
+            float sum = warp_sum(acc);
+            if (lane == 0u) c.p.b[u] = sum;
+        }
+        if (!sync(c.t)) return false;
+    } else {
+        if (fuse_mlp_norm) {
+            PHASE(rms(c, c.p.x, s.hidden, field_mat(c, pl, MLP_NORM), c.p.h, s.hidden, s.rows,
+                      s.hidden, nullptr, false));
+        }
+        if (!linear(c, rw, c.p.h, s.hidden, c.p.a, e, r_cnt, e)) return false;
+    }
+    if (r_cnt == 1u && fast_r && r_splits > 1u && e <= 256u) {
+        bool try_all = (load_meta || zero_t2) && s.topk <= 8u;
+        if (load_meta && threadIdx.x >= 32u && threadIdx.x < 46u) {
+            fill_moe_meta(c, pl, threadIdx.x - 32u);
+        } else if (try_all ? (threadIdx.x < 32u) : (wid == 0u)) {
+            mat bias = field_mat(c, pl, R_BIAS);
+            float sc_reg[8], b_reg[8];
+#pragma unroll
+            for (u32 i = 0; i < 8u; i++) {
+                u32 idx = lane + (i << 5);
+                if (idx < e) {
+                    float logit = 0.0f;
+                    for (u32 sp = 0; sp < r_splits; sp++) logit += c.p.b[idx * r_splits + sp];
+                    float sv = 1.0f / (1.0f + __expf(-logit));
+                    sc_reg[i] = sv;
+                    b_reg[i] = sv + vec_elem(bias, 0u, idx);
+                } else {
+                    sc_reg[i] = 0.0f;
+                    b_reg[i] = __int_as_float(0xFF800000u);
+                }
+            }
+            u32 taken = 0u;
+            float sum = 0.0f;
+            u32 sel_id[8];
+            float sel_s[8];
+            for (u32 k = 0; k < s.topk; k++) {
+                u32 best = e;
+                float most = __int_as_float(0xFF800000u);
+                float best_sc = 0.0f;
+#pragma unroll
+                for (u32 i = 0; i < 8u; i++) {
+                    u32 idx = lane + (i << 5);
+                    if (idx >= e || ((taken >> i) & 1u) != 0u) continue;
+                    float v = b_reg[i];
+                    if (best == e || v > most) {
+                        best = idx;
+                        most = v;
+                        best_sc = sc_reg[i];
+                    }
+                }
+#pragma unroll
+                for (u32 off = 16; off > 0; off >>= 1) {
+                    float pv = __shfl_xor_sync(0xFFFFFFFFu, most, off);
+                    u32 pe = __shfl_xor_sync(0xFFFFFFFFu, best, off);
+                    float ps = __shfl_xor_sync(0xFFFFFFFFu, best_sc, off);
+                    bool win = pe < e && (best == e || pv > most || (pv == most && pe < best));
+                    if (win) {
+                        best = pe;
+                        most = pv;
+                        best_sc = ps;
+                    }
+                }
+                if ((best & 31u) == lane) taken |= 1u << (best >> 5);
+                if (lane == 0u) {
+                    sel_id[k] = best;
+                    sel_s[k] = best_sc;
+                    sum += best_sc;
+                }
+            }
+            if (lane == 0u) {
+                float inv = s.route / sum;
+                u32 cnt = 0u;
+                for (u32 k = 0; k < s.topk; k++) {
+                    u32 id = sel_id[k];
+                    float g = sel_s[k] * inv;
+                    if (blockIdx.x == 0u) {
+                        c.p.ids[k] = id;
+                        c.p.gates[k] = g;
+                    }
+                    if (try_all && id >= s.held_first && id < s.held_first + s.held) {
+                        c.sm.meta.loc_m[cnt] = id - s.held_first;
+                        c.sm.meta.loc_e[cnt] = id;
+                        c.sm.meta.loc_g[cnt] = g;
+                        cnt++;
+                    }
+                }
+                if (try_all) c.sm.meta.cnt = cnt;
+            }
+        }
+        if (load_meta) {
+            __syncthreads();
+            if (threadIdx.x == 0u) set_moe_flags(c);
+            __syncthreads();
+            zero_t2 = (c.sm.meta.flags & 2u) != 0u;
+        }
+        if (zero_t2 && s.topk <= 8u) {
+            if (!load_meta) __syncthreads();
+            *fast_routed = true;
+            return true;
+        }
+        zero_buf(c.p.d, u64(s.topk) * s.hidden);
+        if (zero_t2) zero_buf(c.p.t2, s.hidden);
+        return sync(c.t);
+    }
+    mat bias = field_mat(c, pl, R_BIAS);
     for (u32 row = wid; row < r_cnt; row += wstep) {
         float* scores = c.p.a + u64(row) * e;
-        for (u32 idx = lane; idx < e; idx += 32u) scores[idx] = 1.0f / (1.0f + expf(-scores[idx]));
+        if (fast_r && r_splits > 1u) {
+            for (u32 idx = lane; idx < e; idx += 32u) {
+                float logit = 0.0f;
+                for (u32 sp = 0; sp < r_splits; sp++) logit += c.p.b[idx * r_splits + sp];
+                scores[idx] = 1.0f / (1.0f + __expf(-logit));
+            }
+        } else {
+            for (u32 idx = lane; idx < e; idx += 32u) scores[idx] = 1.0f / (1.0f + __expf(-scores[idx]));
+        }
         __syncwarp();
         u64 taken = 0ull;
         float sum = 0.0f;
@@ -84,8 +301,11 @@ static __device__ bool route(const ctx& c, const place& pl, bool zero_t2) {
             out_gates[k] = scores[out_ids[k]] / sum * s.route;
         }
     }
-    zero_buf(c.p.d, u64(r_cnt) * s.topk * s.hidden);
-    if (zero_t2) zero_buf(c.p.t2, u64(r_cnt) * s.hidden);
+    bool skip_zero = r_cnt == 1u && zero_t2 && s.topk <= 8u;
+    if (!skip_zero) {
+        zero_buf(c.p.d, u64(r_cnt) * s.topk * s.hidden);
+        if (zero_t2) zero_buf(c.p.t2, u64(r_cnt) * s.hidden);
+    }
     return sync(c.t);
 }
 
@@ -227,9 +447,9 @@ static __device__ void call_down(const ctx& c, const mat& w, u32 m, u32 ch, u32 
 }
 
 // MoE phase 1: fused shared and routed expert chunks.
-static __device__ void routed_step(const ctx& c, const mat codes[3], const mat su[3],
-                                   const mat sv[3], const float* in_signs, const mat shared[3],
-                                   bool fuse_sh) {
+static __device__ __noinline__ void routed_step(const ctx& c, const mat codes[3], const mat su[3],
+                                                const mat sv[3], const float* in_signs,
+                                                const mat shared[3], bool fuse_sh) {
     const sizes& s = c.s;
     u32 warp = threadIdx.x >> 5, lane = threadIdx.x & 31u;
     u32 groups = (s.rows + ROW_TILE - 1u) / ROW_TILE;
@@ -438,8 +658,9 @@ static __device__ void picked_mat(const ctx& c, const mat& w, const float* x, fl
     }
 }
 
-static __device__ bool routed_slow(const ctx& c, const mat codes[3], const mat su[3],
-                                   const mat sv[3], const float* in_signs, const float* out_signs) {
+static __device__ __noinline__ bool routed_slow(const ctx& c, const mat codes[3], const mat su[3],
+                                                const mat sv[3], const float* in_signs,
+                                                const float* out_signs) {
     const sizes& s = c.s;
     line l = threads();
     u32 h = s.hidden, f = s.effn, rk = s.rows * s.topk;
@@ -472,41 +693,193 @@ static __device__ bool routed_slow(const ctx& c, const mat codes[3], const mat s
     return sync(c.t);
 }
 
-static __device__ bool can_fuse_moe(const ctx& c, const place& pl) {
+static __device__ bool routed(const ctx& c, const place& pl, bool fuse_sh, bool split,
+                              bool fast_routed, u32* moe_cnt, ticket* pre_r, bool* has_pre) {
     const sizes& s = c.s;
-    if ((s.hidden & 127u) != 0u || (s.effn & 127u) != 0u || (s.ffn & 127u) != 0u || s.ffn == 0u
-        || s.experts > 2048u) {
-        return false;
+    *moe_cnt = 0xFFFFFFFFu;
+    *has_pre = false;
+    moe_meta& mt = c.sm.meta;
+    if (!fast_routed) {
+        if (threadIdx.x == 0u) {
+            u32 cnt = 0u;
+            if ((mt.flags & 1u) != 0u && s.rows == 1u && fuse_sh && s.topk <= 8u) {
+                for (u32 k = 0; k < s.topk; k++) {
+                    u32 m;
+                    if (local_pick(c, k, &m)) {
+                        mt.loc_m[cnt] = m;
+                        mt.loc_e[cnt] = m + s.held_first;
+                        mt.loc_g[cnt] = c.p.gates[k];
+                        cnt++;
+                    }
+                }
+            }
+            mt.cnt = cnt;
+        }
+        __syncthreads();
     }
-    for (u32 i = 0; i < 3u; i++) {
-        if (field_mat(c, pl, E_GATE + 3u * i).klass != K_TRELLIS) return false;
-        mat sh = field_mat(c, pl, S_GATE + i);
-        if (sh.klass != K_TURNED || sh.suh == nullptr || sh.svh == nullptr) return false;
-        u32 expect_in = i == 2u ? s.ffn : s.hidden;
-        u32 expect_out = i == 2u ? s.hidden : s.ffn;
-        if (sh.in != expect_in || sh.out != expect_out) return false;
+    if ((mt.flags & 1u) == 0u) {
+        return routed_slow(c, mt.codes, mt.su, mt.sv, mt.in_signs, mt.out_signs);
     }
-    return true;
-}
-
-static __device__ bool routed(const ctx& c, const place& pl, bool fuse_sh) {
-    const sizes& s = c.s;
-    const float* in_signs = reinterpret_cast<const float*>(field_mat(c, pl, SIGNS_IN).p);
-    const float* out_signs = reinterpret_cast<const float*>(field_mat(c, pl, SIGNS_OUT).p);
-    mat su[3], sv[3], codes[3], shared[3];
-    for (u32 i = 0; i < 3; i++) {
-        u32 base = E_GATE + 3u * i;
-        codes[i] = field_mat(c, pl, base);
-        su[i] = field_mat(c, pl, base + 1u);
-        sv[i] = field_mat(c, pl, base + 2u);
-        shared[i] = field_mat(c, pl, S_GATE + i);
+    if (s.rows == 1u && fuse_sh && s.topk <= 8u) {
+        u32 cnt = mt.cnt;
+        u32 sh_chunks = s.ffn >> 7, r_chunks = s.effn >> 7;
+        u32 tot_chunks = sh_chunks + cnt * r_chunks;
+        u32 in_blocks = s.hidden >> 7;
+        u32 k_splits = 1u;
+        u32 best_cost = ((tot_chunks * 2u + gridDim.x - 1u) / gridDim.x) * in_blocks;
+        u32 cands[3] = {2u, 3u, 6u};
+        for (u32 ci = 0u; ci < 3u; ci++) {
+            u32 ks = cands[ci];
+            if ((in_blocks % ks) == 0u && ((in_blocks / ks) % WARPS) == 0u
+                && tot_chunks * 128u * ks <= s.width) {
+                u32 jobs = tot_chunks * 2u * ks;
+                u32 cost = ((jobs + gridDim.x - 1u) / gridDim.x) * (in_blocks / ks);
+                if (cost < best_cost) {
+                    best_cost = cost;
+                    k_splits = ks;
+                }
+            }
+        }
+        if (tot_chunks * 128u * k_splits <= s.width && 2u * s.hidden <= s.width
+            && cnt * s.hidden <= s.width) {
+            u32 wid = (blockIdx.x * blockDim.x + threadIdx.x) >> 5;
+            u32 wstep = (gridDim.x * blockDim.x) >> 5;
+            u32 lane = threadIdx.x & 31u;
+            u32 warp = threadIdx.x >> 5;
+            bool h_vec = (reinterpret_cast<u64>(c.p.h) & 15u) == 0u;
+            bool s_vec = (reinterpret_cast<u64>(mt.in_signs) & 15u) == 0u;
+            u32 n_vecs = (1u + cnt) * 2u;
+            for (u32 u = wid; u < n_vecs * in_blocks; u += wstep) {
+                u32 v_idx = u / in_blocks, ib = u % in_blocks;
+                u32 base = (ib << 7) + (lane << 2);
+                u32 side = v_idx & 1u;
+                bool is_sh = v_idx < 2u;
+                float v[4];
+                load_vec4(c.p.h + base, h_vec, v);
+                float* dst;
+                if (is_sh) {
+                    float sc[4];
+                    load_vec4(mt.shared[side].suh + base,
+                              (reinterpret_cast<u64>(mt.shared[side].suh) & 15u) == 0u, sc);
+                    for (u32 q = 0; q < 4u; q++) v[q] *= sc[q];
+                    dst = c.p.c + u64(side) * s.hidden;
+                } else {
+                    u32 rslot = (v_idx - 2u) >> 1;
+                    u32 e = mt.loc_e[rslot];
+                    float sg[4], su4[4];
+                    load_vec4(mt.in_signs + base, s_vec, sg);
+                    vec_elem4(mt.su[side], e, base, su4);
+                    for (u32 q = 0; q < 4u; q++) v[q] *= sg[q] * su4[q];
+                    dst = (side == 0u ? c.p.t1 : c.p.d) + u64(rslot) * s.hidden;
+                }
+                trellis::wht128(v, trellis::INV_SQRT128);
+                *reinterpret_cast<float4*>(dst + base) = make_float4(v[0], v[1], v[2], v[3]);
+            }
+            if (!sync(c.t)) return false;
+            u32 ib_cnt = in_blocks / k_splits;
+            u32 jobs1 = tot_chunks * 2u * k_splits;
+            for (u32 job = blockIdx.x; job < jobs1; job += gridDim.x) {
+                u32 sp = job % k_splits;
+                u32 rem = job / k_splits;
+                u32 side = rem & 1u, cj = rem >> 1;
+                bool is_sh = cj < sh_chunks;
+                u32 rslot = is_sh ? 0u : ((cj - sh_chunks) / r_chunks);
+                u32 ch = is_sh ? cj : ((cj - sh_chunks) % r_chunks);
+                const float* x_rot = is_sh ? (c.p.c + u64(side) * s.hidden)
+                                           : ((side == 0u ? c.p.t1 : c.p.d) + u64(rslot) * s.hidden);
+                float* dst = (side == 0u ? c.p.a : c.p.b) + u64(sp * tot_chunks + cj) * 128u;
+                call_s1(c, is_sh ? mt.shared[side] : mt.codes[side], x_rot,
+                        is_sh ? 0u : mt.loc_m[rslot], ch, sp * ib_cnt, ib_cnt, dst);
+            }
+            if (!sync(c.t)) return false;
+            if (warp == 0u) {
+                for (u32 cj = blockIdx.x; cj < tot_chunks; cj += gridDim.x) {
+                    bool is_sh = cj < sh_chunks;
+                    u32 rslot = is_sh ? 0u : ((cj - sh_chunks) / r_chunks);
+                    u32 ch = is_sh ? cj : ((cj - sh_chunks) % r_chunks);
+                    u32 e = is_sh ? 0u : mt.loc_e[rslot];
+                    float gv[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                    float uv[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                    for (u32 sp = 0u; sp < k_splits; sp++) {
+                        float4 pg = *reinterpret_cast<const float4*>(
+                            c.p.a + u64(sp * tot_chunks + cj) * 128u + (lane << 2));
+                        float4 pu = *reinterpret_cast<const float4*>(
+                            c.p.b + u64(sp * tot_chunks + cj) * 128u + (lane << 2));
+                        gv[0] += pg.x;
+                        gv[1] += pg.y;
+                        gv[2] += pg.z;
+                        gv[3] += pg.w;
+                        uv[0] += pu.x;
+                        uv[1] += pu.y;
+                        uv[2] += pu.z;
+                        uv[3] += pu.w;
+                    }
+                    trellis::wht128(gv, trellis::INV_SQRT128);
+                    trellis::wht128(uv, trellis::INV_SQRT128);
+                    u32 o_base = (ch << 7) + (lane << 2);
+                    float sv0[4], sv1[4], dsu4[4];
+                    if (is_sh) {
+                        load_vec4(mt.shared[0].svh + o_base,
+                                  (reinterpret_cast<u64>(mt.shared[0].svh) & 15u) == 0u, sv0);
+                        load_vec4(mt.shared[1].svh + o_base,
+                                  (reinterpret_cast<u64>(mt.shared[1].svh) & 15u) == 0u, sv1);
+                        load_vec4(mt.shared[2].suh + o_base,
+                                  (reinterpret_cast<u64>(mt.shared[2].suh) & 15u) == 0u, dsu4);
+                    } else {
+                        vec_elem4(mt.sv[0], e, o_base, sv0);
+                        vec_elem4(mt.sv[1], e, o_base, sv1);
+                        vec_elem4(mt.su[2], e, o_base, dsu4);
+                    }
+                    float act[4];
+                    for (u32 q = 0u; q < 4u; q++) {
+                        float gval = gv[q] * sv0[q];
+                        float uval = uv[q] * sv1[q];
+                        act[q] = (gval / (1.0f + __expf(-gval))) * uval * dsu4[q];
+                    }
+                    trellis::wht128(act, trellis::INV_SQRT128);
+                    *reinterpret_cast<float4*>(c.p.c + u64(cj) * 128u + (lane << 2)) =
+                        make_float4(act[0], act[1], act[2], act[3]);
+                }
+            }
+            if (!sync(c.t)) return false;
+            if (split) {
+                const tessera::lane* ln = get<const tessera::lane>(c.t, c.t->lanes);
+                u32 room = detail::pools(c.t)->pools[ln->pool].send_bytes
+                           >> (ln->elem == BF16 ? 1u : 2u);
+                if (s.hidden <= room) {
+                    *pre_r = prepare(c.se, 0u);
+                    *has_pre = true;
+                }
+            }
+            u32 ob_cnt = s.hidden >> 7;
+            u32 r_splits = (cnt > 0u && cnt * 2u * s.hidden <= s.width && (r_chunks & 1u) == 0u
+                            && (r_chunks >> 1) >= WARPS)
+                               ? 2u
+                               : 1u;
+            u32 r_nch = r_chunks / r_splits;
+            u32 r_jobs = cnt * r_splits * ob_cnt;
+            u32 jobs2 = r_jobs + ob_cnt;
+            for (u32 job = blockIdx.x; job < jobs2; job += gridDim.x) {
+                if (job < r_jobs) {
+                    u32 slot = job / ob_cnt, ob = job % ob_cnt;
+                    u32 rslot = slot / r_splits, half = slot % r_splits;
+                    float* dst = c.p.d + u64(slot) * s.hidden;
+                    call_s2(c, mt.codes[2], mt.sv[2], mt.out_signs, mt.loc_m[rslot], mt.loc_e[rslot],
+                            mt.loc_g[rslot], ob, half * r_nch, r_nch, sh_chunks + rslot * r_chunks,
+                            false, dst);
+                } else {
+                    u32 ob = job - r_jobs;
+                    call_s2(c, mt.shared[2], mt.sv[2], mt.out_signs, 0u, 0u, 1.0f, ob, 0u,
+                            sh_chunks, 0u, true, c.p.t2);
+                }
+            }
+            if (!sync(c.t)) return false;
+            *moe_cnt = cnt * r_splits;
+            return true;
+        }
     }
-    bool fast = codes[0].klass == K_TRELLIS && codes[1].klass == K_TRELLIS
-                && codes[2].klass == K_TRELLIS && (s.hidden & 127u) == 0u && (s.effn & 127u) == 0u
-                && s.experts <= 2048u;
-    if (!fast) return routed_slow(c, codes, su, sv, in_signs, out_signs);
-    PHASE(routed_step(c, codes, su, sv, in_signs, shared, fuse_sh));
-    PHASE(routed_out(c, sv[2], out_signs, fuse_sh ? shared[2].svh : nullptr));
+    PHASE(routed_step(c, mt.codes, mt.su, mt.sv, mt.in_signs, mt.shared, fuse_sh));
+    PHASE(routed_out(c, mt.sv[2], mt.out_signs, fuse_sh ? mt.shared[2].svh : nullptr));
     return true;
 }
 
@@ -533,17 +906,28 @@ static __device__ bool layer(const ctx& c, const place& pl) {
     if (mark) {
         TS_MARK();
     }
-    PHASE(rms(c, c.p.x, s.hidden, field_mat(c, pl, MLP_NORM), c.p.h, s.hidden, s.rows, s.hidden,
-              nullptr, false));
     if (pl.layer < s.dense) {
+        PHASE(rms(c, c.p.x, s.hidden, field_mat(c, pl, MLP_NORM), c.p.h, s.hidden, s.rows,
+                  s.hidden, nullptr, false));
         bool ok = swiglu(c, pl, D_GATE, s.dense_ffn) && add(c, split);
         if (mark) {
             TS_MARK();
         }
         return ok;
     }
-    bool fuse_sh = can_fuse_moe(c, pl);
-    if (!route(c, pl, fuse_sh)) return false;
+    bool fuse_mlp_norm = s.rows == 1u && s.hidden <= 6144u && (s.hidden & 31u) == 0u
+                         && (reinterpret_cast<u64>(c.p.x) & 15ull) == 0ull
+                         && (reinterpret_cast<u64>(c.p.h) & 15ull) == 0ull;
+    if (!fuse_mlp_norm) {
+        PHASE(rms(c, c.p.x, s.hidden, field_mat(c, pl, MLP_NORM), c.p.h, s.hidden, s.rows,
+                  s.hidden, nullptr, false));
+        load_moe_meta(c, pl);
+    }
+    bool fuse_sh = !fuse_mlp_norm && (c.sm.meta.flags & 2u) != 0u;
+    bool fast_routed = false;
+    if (!route(c, pl, fuse_sh, fuse_mlp_norm, fuse_mlp_norm, &fast_routed)) return false;
+    if (fuse_mlp_norm && !fast_routed) load_moe_meta(c, pl);
+    fuse_sh = (c.sm.meta.flags & 2u) != 0u;
     if (mark) {
         TS_MARK();
     }
@@ -553,9 +937,12 @@ static __device__ bool layer(const ctx& c, const place& pl) {
             TS_MARK();
         }
     }
-    if (!routed(c, pl, fuse_sh)) return false;
+    u32 moe_cnt = 0xFFFFFFFFu;
+    ticket pre_r;
+    bool has_pre = false;
+    if (!routed(c, pl, fuse_sh, split, fast_routed, &moe_cnt, &pre_r, &has_pre)) return false;
     if (mark) {
         TS_MARK();
     }
-    return add(c, split);
+    return add(c, split, moe_cnt, has_pre ? &pre_r : nullptr);
 }
