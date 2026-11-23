@@ -26,7 +26,21 @@ pub enum Origin {
     Model(String),
     /// `owner/name` or `owner/name@revision` on Hugging Face.
     Hub(String),
+    /// The recipe built into tesserax.
+    Default,
 }
+
+macro_rules! default_recipe {
+    () => {
+        "examples/recipes/gemma4-e4b/recipe.toml"
+    };
+}
+
+/// The recipe text verbs fall back to.
+pub const DEFAULT: (&str, &str) = (
+    default_recipe!(),
+    include_str!(concat!("../../../", default_recipe!())),
+);
 
 /// The repository in a `--model hf:<owner>/<name>[@<revision>]` value.
 fn hub_spec(value: &str) -> Option<Result<String, Stop>> {
@@ -93,6 +107,7 @@ impl Source {
         let mut fetched = None;
         let recipe = match &origin {
             Origin::Recipe(src) => Some(Recipe::open(src, cache.as_deref())?),
+            Origin::Default => Some(Recipe::parse(DEFAULT.1, Path::new(DEFAULT.0))?),
             Origin::Model(_) => None,
             Origin::Hub(spec) => {
                 let dir = cache.as_deref().ok_or(tessera_recipe::Error::NoCache)?;
@@ -108,6 +123,11 @@ impl Source {
             fetched,
             dump_sites,
         })
+    }
+
+    /// Opens `origin`, or the default recipe when there is none.
+    pub fn open_or_default(origin: Option<Origin>) -> Result<Source, Stop> {
+        Self::open(Some(origin.unwrap_or(Origin::Default)))
     }
 
     /// Serve options from the recipe, then from `rest`.
