@@ -26,6 +26,16 @@ pub enum Memory {
     Off,
 }
 
+/// How weight files are read.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Reads {
+    /// Through the file cache.
+    #[default]
+    Cached,
+    /// Past the file cache, where the file system can.
+    Direct,
+}
+
 /// Settings for the planner, the runners and the tools.
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -46,6 +56,7 @@ pub struct Settings {
     pub verbs: Option<String>,
     /// The plan size the runners refuse past.
     pub memory: Memory,
+    pub reads: Reads,
     /// The Hugging Face hub cache.
     pub hub: Option<PathBuf>,
     /// The Hugging Face access token, for gated repositories.
@@ -74,6 +85,7 @@ impl Default for Settings {
             emulate: None,
             verbs: None,
             memory: Memory::Device,
+            reads: Reads::Cached,
             hub: None,
             hf_token: None,
             profile: None,

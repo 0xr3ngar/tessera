@@ -39,6 +39,13 @@ fn copy_span(
     Ok(dst.backing_mut().upload(dst_at, &tmp)?)
 }
 
+/// The contents of a new buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Holds {
+    Weights,
+    Other,
+}
+
 /// Buffers that outlive one plan.
 #[derive(Default)]
 pub struct Held {
@@ -126,6 +133,13 @@ impl Held {
         Ok(self.all[at].backing_mut().upload(slot.start(), bytes)?)
     }
 
+    /// The slot's bytes in place, when the host addresses them.
+    pub fn mapped_slot(&mut self, slot: Slot) -> Option<&mut [u8]> {
+        let at = self.bound[slot.buffer as usize];
+        let all = self.all[at].backing_mut().mapped_mut()?;
+        all.get_mut(slot.start()..slot.start() + slot.bytes())
+    }
+
     pub fn view_mut(&mut self, slot: Slot) -> ViewMut<'_> {
         let at = self.bound[slot.buffer as usize];
         self.all[at].view_mut(slot.start(), slot.form.dtype(), vec![slot.len])
@@ -135,7 +149,7 @@ impl Held {
     pub fn bind(
         &mut self,
         plan: &Plan,
-        mut alloc: impl FnMut(u32, usize) -> Result<Buffer, Error>,
+        mut alloc: impl FnMut(u32, usize, Holds) -> Result<Buffer, Error>,
     ) -> Result<bool, Error> {
         let count = plan.buffers.len();
         let mut weights: Vec<Vec<(WeightKey, usize, usize)>> = vec![Vec::new(); count];
@@ -182,7 +196,7 @@ impl Held {
         zone: u32,
         slot: usize,
         bytes: usize,
-        alloc: &mut impl FnMut(u32, usize) -> Result<Buffer, Error>,
+        alloc: &mut impl FnMut(u32, usize, Holds) -> Result<Buffer, Error>,
         replaced: &mut bool,
     ) -> Result<usize, Error> {
         let slots = self.scratch.entry(zone).or_default();
@@ -192,13 +206,13 @@ impl Held {
             }
             // Scratch grows in steps, so a growing context reuses it.
             let want = bytes.max(LEAST).next_power_of_two();
-            self.all[at] = alloc(zone, want)?;
+            self.all[at] = alloc(zone, want, Holds::Other)?;
             *replaced = true;
             return Ok(at);
         }
         let want = bytes.max(LEAST).next_power_of_two();
         let at = self.all.len();
-        self.all.push(alloc(zone, want)?);
+        self.all.push(alloc(zone, want, Holds::Other)?);
         slots.push(at);
         Ok(at)
     }
@@ -264,7 +278,7 @@ impl Held {
         zone: u32,
         plan_bytes: usize,
         entries: &[(WeightKey, usize, usize)],
-        alloc: &mut impl FnMut(u32, usize) -> Result<Buffer, Error>,
+        alloc: &mut impl FnMut(u32, usize, Holds) -> Result<Buffer, Error>,
     ) -> Result<usize, Error> {
         let need = plan_bytes.max(LEAST);
         if let Some(places) = self.weights.get(&entries[0].0) {
@@ -288,7 +302,7 @@ impl Held {
                 }
             }
         }
-        let mut buf = alloc(zone, need)?;
+        let mut buf = alloc(zone, need, Holds::Weights)?;
         for &(key, offset, bytes) in entries {
             let found = self
                 .weights
@@ -322,7 +336,7 @@ impl Held {
         zone: u32,
         plan_bytes: usize,
         entries: &[(u32, usize, usize)],
-        alloc: &mut impl FnMut(u32, usize) -> Result<Buffer, Error>,
+        alloc: &mut impl FnMut(u32, usize, Holds) -> Result<Buffer, Error>,
     ) -> Result<usize, Error> {
         let need = plan_bytes.max(LEAST);
         if let Some(first) = self.kept.get(&entries[0].0).copied() {
@@ -342,7 +356,7 @@ impl Held {
             }
         }
         let at = self.all.len();
-        self.all.push(alloc(zone, need)?);
+        self.all.push(alloc(zone, need, Holds::Other)?);
         for &(index, offset, bytes) in entries {
             let place = Place {
                 buffer: at,
@@ -359,7 +373,7 @@ impl Held {
         &mut self,
         zone: u32,
         plan_bytes: usize,
-        alloc: &mut impl FnMut(u32, usize) -> Result<Buffer, Error>,
+        alloc: &mut impl FnMut(u32, usize, Holds) -> Result<Buffer, Error>,
     ) -> Result<usize, Error> {
         let need = plan_bytes.max(LEAST);
         if let Some(at) = self.table
@@ -369,7 +383,7 @@ impl Held {
             return Ok(at);
         }
         let at = self.all.len();
-        self.all.push(alloc(zone, need)?);
+        self.all.push(alloc(zone, need, Holds::Other)?);
         self.table = Some(at);
         Ok(at)
     }
