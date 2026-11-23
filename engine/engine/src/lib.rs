@@ -20,7 +20,7 @@ pub mod metrics;
 #[cfg(test)]
 mod metrics_test;
 mod model;
-mod mtp;
+mod mtp_draft;
 mod ranks;
 mod schedule;
 mod spec_len;
@@ -30,7 +30,7 @@ pub use dual::{DualSelector, DualSpeculate};
 pub use guide::{Allowed, FEW, Fault, Guide, Prefix};
 pub use kept::Totals;
 pub use model::Model;
-pub use mtp::{MtpDrafter, MtpSpeculate};
+pub use mtp_draft::{MtpDrafter, MtpSpeculate};
 pub use ranks::Place;
 pub use schedule::{Batch, Fair, Policy, Seq, Sink};
 pub use spec_len::{CostModel, SpecLen};
@@ -45,10 +45,9 @@ pub use tessera_interp::{Tensor, bind, fold};
 pub use tessera_lower::{Compute, Pick, Pins, Recipe, Settings, Site, Weight, form};
 pub use tessera_mem::form as storage;
 pub use tessera_mem::{block, trellis};
-pub use tessera_models::{
-    Stack, Steps, clip, decoder, dflash, eg2, flux2, gemma4, keys, mla, mtp as mtp_model, qwen35,
-    sprite, tagger, vae,
-};
+// The front end's name for `mtp`.
+pub use tessera_models::mtp as mtp_model;
+pub use tessera_models::*;
 pub use tessera_run::{Grid, gpu, pinning};
 pub use tessera_trace::{Linear, Norm};
 pub use tessera_wasm as wasm;
