@@ -9,16 +9,82 @@ use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+fn function_kind() -> String {
+    "function".into()
+}
+
+/// Function name and arguments for one tool call.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct FunctionCall {
+    pub name: String,
+    pub arguments: serde_json::Value,
+}
+
+/// One tool call on an assistant message.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ToolCall {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(rename = "type", default = "function_kind")]
+    pub kind: String,
+    pub function: FunctionCall,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Message {
     pub role: String,
-    pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl Message {
+    /// A plain text message for `role`.
+    pub fn text(role: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: role.into(),
+            content: Some(content.into()),
+            ..Self::default()
+        }
+    }
+}
+
+/// Extra variables for rendering a chat prompt.
+#[derive(Clone, Debug, Default)]
+pub struct RenderOptions<'a> {
+    pub think: Option<bool>,
+    pub reasoning_effort: Option<&'a str>,
+    pub tools: &'a [serde_json::Value],
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SpecialToken {
+    Text(String),
+    Object { content: String },
+}
+
+impl SpecialToken {
+    fn text(self) -> String {
+        match self {
+            SpecialToken::Text(s) | SpecialToken::Object { content: s } => s,
+        }
+    }
 }
 
 /// Chat settings from `tokenizer_config.json`.
 #[derive(Deserialize)]
 struct TokenizerConfig {
     chat_template: Option<String>,
+    bos_token: Option<SpecialToken>,
+    eos_token: Option<SpecialToken>,
 }
 
 /// The time `strftime_now` reads. Tests and replays supply their own.
@@ -55,6 +121,8 @@ fn strip_generation(source: &str) -> String {
 
 pub struct Template {
     env: Environment<'static>,
+    bos_token: Option<String>,
+    eos_token: Option<String>,
 }
 
 impl Template {
@@ -87,20 +155,41 @@ impl Template {
             },
         );
         env.add_template_owned("chat", strip_generation(&source))?;
-        Ok(Self { env })
+        Ok(Self {
+            env,
+            bos_token: None,
+            eos_token: None,
+        })
+    }
+
+    /// Sets `bos_token` and `eos_token` for template rendering.
+    pub fn with_tokens(mut self, bos: Option<String>, eos: Option<String>) -> Self {
+        self.bos_token = bos;
+        self.eos_token = eos;
+        self
     }
 
     /// The template in `dir`, if its tokenizer config has one.
     pub fn load(dir: &Path) -> Result<Option<Self>, Box<dyn Error + Send + Sync>> {
         let text = std::fs::read_to_string(dir.join("tokenizer_config.json"))?;
-        let config: TokenizerConfig = serde_json::from_str(&text)?;
+        Self::from_config(dir, &text)
+    }
+
+    /// The template from `tokenizer_config.json` text and `dir`.
+    pub fn from_config(
+        dir: &Path,
+        text: &str,
+    ) -> Result<Option<Self>, Box<dyn Error + Send + Sync>> {
+        let config: TokenizerConfig = serde_json::from_str(text)?;
         // Newer repositories keep the template in its own file.
         let source = match config.chat_template {
             Some(source) => Some(source),
             None => std::fs::read_to_string(dir.join("chat_template.jinja")).ok(),
         };
+        let bos = config.bos_token.map(SpecialToken::text);
+        let eos = config.eos_token.map(SpecialToken::text);
         Ok(match source {
-            Some(source) => Some(Self::new(source)?),
+            Some(source) => Some(Self::new(source)?.with_tokens(bos, eos)),
             None => None,
         })
     }
@@ -117,17 +206,40 @@ impl Template {
         think: bool,
         reasoning_effort: Option<&str>,
     ) -> Result<String, minijinja::Error> {
+        let options = RenderOptions {
+            think: (!think).then_some(false),
+            reasoning_effort,
+            tools: &[],
+        };
+        self.render_options(messages, &options)
+    }
+
+    /// Renders `messages` with thinking, effort and tool definitions.
+    pub fn render_options(
+        &self,
+        messages: &[Message],
+        options: &RenderOptions<'_>,
+    ) -> Result<String, minijinja::Error> {
         let template = self.env.get_template("chat")?;
         let messages = Value::from(Serde(messages));
         let mut ctx = std::collections::BTreeMap::new();
         ctx.insert("messages", messages);
         ctx.insert("add_generation_prompt", Value::from(true));
-        // Left undefined, `enable_thinking` means the model's default.
-        if !think {
-            ctx.insert("enable_thinking", Value::from(false));
+        if let Some(bos) = &self.bos_token {
+            ctx.insert("bos_token", Value::from(bos.as_str()));
         }
-        if let Some(effort) = reasoning_effort {
+        if let Some(eos) = &self.eos_token {
+            ctx.insert("eos_token", Value::from(eos.as_str()));
+        }
+        // Left undefined, `enable_thinking` means the model's default.
+        if let Some(think) = options.think {
+            ctx.insert("enable_thinking", Value::from(think));
+        }
+        if let Some(effort) = options.reasoning_effort {
             ctx.insert("reasoning_effort", Value::from(effort));
+        }
+        if !options.tools.is_empty() {
+            ctx.insert("tools", Value::from(Serde(options.tools)));
         }
         template.render(Value::from(ctx))
     }
