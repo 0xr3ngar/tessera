@@ -6,9 +6,8 @@ on:
   pull_request:
   merge_group:
 
-# Each push to main runs to the end, so its macOS job is never dropped.
 concurrency:
-  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:
