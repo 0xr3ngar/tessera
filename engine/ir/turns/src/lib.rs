@@ -170,6 +170,32 @@ impl Table {
         to.priority > s.priority || now - since >= self.rules.quantum * s.seconds
     }
 
+    /// Sends models out while loaded sizes pass the budget.
+    fn trim(&mut self, now: f64) {
+        loop {
+            let stays = |s: &Seat| s.holds() && !s.going();
+            let staying = self.seats.iter().filter(|s| stays(s));
+            let (count, used) = staying.fold((0, 0), |(n, sum), s| (n + 1, sum + s.bytes));
+            if count < 2 || self.fits(used) {
+                return;
+            }
+            // Idle models go first, then the lowest priority.
+            let rank = |i: &usize| {
+                let s = &self.seats[*i];
+                (s.wants(), s.priority, (self.worth(*i, now) * 1e12) as u64)
+            };
+            let resident = |i: &usize| matches!(self.seats[*i].place, Place::In(_));
+            let Some(at) = (0..self.seats.len()).filter(resident).min_by_key(rank) else {
+                return;
+            };
+            let s = &mut self.seats[at];
+            s.place = match s.wants() {
+                true => Place::Draining(now),
+                false => Place::Leaving,
+            };
+        }
+    }
+
     /// Gives room to seats that wait for their weights.
     fn place(&mut self, now: f64) {
         let waits = |s: &Seat| s.place == Place::Out && (s.wants() || s.prime);
@@ -197,6 +223,11 @@ impl Table {
                     self.seats[to].place = Place::Loading;
                 }
                 return;
+            }
+            // First loads have guessed sizes. One runs at a time.
+            let loading = self.seats.iter().any(|s| s.place == Place::Loading);
+            if self.seats[to].prime && loading {
+                continue;
             }
             let need = self.seats[to].bytes;
             if used == 0 || self.fits(used + need) {
@@ -245,6 +276,7 @@ impl Table {
                 s.place = Place::Leaving;
             }
         }
+        self.trim(now);
         self.place(now);
         let seats = &self.seats;
         if self.holder.is_none() {

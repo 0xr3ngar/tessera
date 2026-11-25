@@ -30,10 +30,10 @@ fn fitting_models_alternate() {
     t.settle(0.0);
     // The first load runs alone and gives the budget.
     assert_eq!((t.turn(a), t.turn(b)), (Some(Turn::Load), None));
-    t.loaded(a, 40, 1.0, 100, 1.0);
+    t.loaded(a, 40, 1.0, 200, 1.0);
     t.settle(1.0);
     assert_eq!(t.turn(b), Some(Turn::Load));
-    t.loaded(b, 40, 1.0, 100, 2.0);
+    t.loaded(b, 40, 1.0, 200, 2.0);
     t.asked(a, 2.0);
     t.asked(b, 2.0);
     // The seat that ran longest ago steps next.
@@ -135,4 +135,19 @@ fn idle_seat_returns() {
     // An idle seat asks the table again.
     let _b = turns.seat("b", 0, 60);
     assert_eq!(a.next(), Turn::Leave);
+}
+
+#[test]
+fn oversize_model_trims() {
+    let mut t = table(Some(100));
+    let (a, b) = (t.add("a", 0, 40, 0.0), t.add("b", 0, 40, 0.0));
+    t.settle(0.0);
+    // The guesses fit. First loads still run singly.
+    assert_eq!((t.turn(a), t.turn(b)), (Some(Turn::Load), None));
+    t.loaded(a, 60, 1.0, 0, 1.0);
+    t.settle(1.0);
+    assert_eq!(t.turn(b), Some(Turn::Load));
+    t.loaded(b, 70, 1.0, 0, 2.0);
+    t.settle(2.0);
+    assert_eq!(t.turn(a), Some(Turn::Leave));
 }
