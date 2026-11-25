@@ -1,9 +1,10 @@
 //! Pieces every token model's program uses.
 
+use std::cell::RefCell;
 use tessera_trace::DimName::*;
 use tessera_trace::{
-    Act, Dim, DimExpr, DimName, Embed, FEW, Linear, Linears, Model, Pairs, PathSeg, Tensor, Vector,
-    Weights,
+    Act, CalibTap, Dim, DimExpr, DimName, Embed, FEW, Graph, Linear, Linears, Model, Pairs,
+    PathSeg, Role, Tensor, Vector, Weights,
 };
 
 /// A head's width outside its rotary part.
@@ -207,10 +208,15 @@ impl<'a, D: Dense> Attend<'a, D> {
         sides.map(|(w, side)| self.side(w, h, side, &turn))
     }
 
+    /// Heads joined back into rows before `o`.
+    pub fn merge_in(&self, out: Tensor) -> Tensor {
+        let width = self.heads.clone() * self.head_dim.clone();
+        out.reshape(self.shape([width]))
+    }
+
     /// Heads joined back into rows, then projected.
     pub fn merge(&self, out: Tensor) -> Tensor {
-        let width = self.heads.clone() * self.head_dim.clone();
-        self.o.apply(&out.reshape(self.shape([width])))
+        self.o.apply(&self.merge_in(out))
     }
 
     /// `heads`, then `attend`, then `merge`.
@@ -411,19 +417,75 @@ impl<D: Dense> Weights for Swiglu<D> {
 
 impl<D: Dense> Swiglu<D> {
     pub(crate) fn eval(&self, h: &Tensor) -> Tensor {
-        swiglu(h, [&self.gate, &self.up, &self.down])
+        let [out, _] = self.eval_tapped(h);
+        out
+    }
+
+    pub(crate) fn eval_tapped(&self, h: &Tensor) -> [Tensor; 2] {
+        swiglu_tapped(h, [&self.gate, &self.up, &self.down])
     }
 }
 
-pub(crate) fn swiglu<D: Dense>(h: &Tensor, [gate, up, down]: [&D; 3]) -> Tensor {
+pub(crate) fn swiglu_tapped<D: Dense>(h: &Tensor, [gate, up, down]: [&D; 3]) -> [Tensor; 2] {
     let inner = gate.apply(h).act(Act::Silu).mul(&up.apply(h));
-    down.apply(&inner)
+    [down.apply(&inner), inner]
+}
+
+/// Calibration taps a traced pass records, when asked to.
+#[derive(Default)]
+pub struct CalibTaps(Option<RefCell<Vec<(Role, Tensor)>>>);
+
+impl CalibTaps {
+    /// A recorder that keeps every tap.
+    pub fn on() -> Self {
+        Self(Some(RefCell::default()))
+    }
+
+    pub(crate) fn note(&self, tap: CalibTap, t: &Tensor) {
+        if let Some(taps) = &self.0 {
+            taps.borrow_mut().push((Role::Calib(tap), t.clone()));
+        }
+    }
+
+    /// Finishes `m` with `logits` first, then each tap in order.
+    pub(crate) fn finish(self, m: &Model, logits: &Tensor) -> Graph {
+        let taps = self.0.map(RefCell::into_inner).unwrap_or_default();
+        let mut outs = vec![(Role::Logits, logits)];
+        for (role, t) in &taps {
+            outs.push((*role, t));
+        }
+        m.finish_many(&outs)
+    }
+}
+
+/// Routed experts, then the shared expert, with calibration taps.
+pub(crate) fn routed_calib<E: ExpertSet>(
+    m: &Model,
+    experts: &E,
+    h: &Tensor,
+    [ids, gates]: [Tensor; 2],
+    shared: impl FnOnce() -> [Tensor; 2],
+    taps: &CalibTaps,
+) -> Tensor {
+    taps.note(CalibTap::RouterIds, &ids);
+    taps.note(CalibTap::RouterGates, &gates);
+    let (routed, inner) = experts.apply_calib(m, h, [&ids, &gates]);
+    if let Some(inner) = inner {
+        taps.note(CalibTap::RoutedInner, &inner);
+    }
+    let [shared, sh_in] = shared();
+    taps.note(CalibTap::SharedDownIn, &sh_in);
+    routed.add(&shared)
 }
 
 /// Routed experts, however they are stored.
 pub trait ExpertSet: Weights {
     /// Each row's picked experts `ids`, mixed by `gates`.
     fn apply(&self, m: &Model, h: &Tensor, picks: [&Tensor; 2]) -> Tensor;
+    /// Same as `apply`, also exposing per-pick down input when plain.
+    fn apply_calib(&self, m: &Model, h: &Tensor, picks: [&Tensor; 2]) -> (Tensor, Option<Tensor>) {
+        (self.apply(m, h, picks), None)
+    }
     /// Rotates a tap into the experts' input gauge, when present.
     fn tap_gauge(&self, h: &Tensor) -> Tensor {
         h.clone()
@@ -442,12 +504,22 @@ pub struct PlainExperts {
 }
 
 impl ExpertSet for PlainExperts {
-    fn apply(&self, m: &Model, h: &Tensor, [ids, gates]: [&Tensor; 2]) -> Tensor {
+    fn apply(&self, m: &Model, h: &Tensor, picks: [&Tensor; 2]) -> Tensor {
+        self.apply_calib(m, h, picks).0
+    }
+
+    fn apply_calib(
+        &self,
+        m: &Model,
+        h: &Tensor,
+        [ids, gates]: [&Tensor; 2],
+    ) -> (Tensor, Option<Tensor>) {
         // One output row per pick, each on its own expert.
         let on = |set: &Linears, x: &Tensor| x.matmul_rows(&m.pick(set, ids));
         let inner = on(&self.gate, h).act(Act::Silu).mul(&on(&self.up, h));
         let picks = h.ty().rank() as u32 - 1;
-        on(&self.down, &inner).mix(picks, gates)
+        let out = on(&self.down, &inner).mix(picks, gates);
+        (out, Some(inner))
     }
 }
 

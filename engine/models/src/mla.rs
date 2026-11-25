@@ -1,12 +1,13 @@
 //! DeepSeek-style decoders: low-rank attention, MoE, indexed keys.
 
 use crate::shared::{
-    Attend, CodedExperts, ExpertSet, NOPE, PlainExperts, ROPE, Stack, Steps, Swiglu, TapSink, rows,
+    Attend, CalibTaps, CodedExperts, Dense, ExpertSet, NOPE, PlainExperts, ROPE, Stack, Steps,
+    Swiglu, TapSink, routed_calib, rows,
 };
 use tessera_trace::DimName::*;
 use tessera_trace::{
-    Act, Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Mask, Model, Norm,
-    Pairs, Role, Size, Tensor, TensorType, Vector, Weights,
+    Act, CalibTap, Composite, DType, Dim, DimExpr, DimName, Embed, Graph, Kept, Linear, Mask,
+    Model, Norm, Pairs, Role, Size, Tensor, TensorType, Vector, Weights,
 };
 use tessera_trace::{pick, step_ports, tokens};
 
@@ -269,6 +270,8 @@ struct Pass<'a> {
     positions: &'a Tensor,
     /// When stepping: each row's slot, and every layer's kept rows.
     step: Option<(&'a Tensor, Vec<Cache>)>,
+    /// Calibration taps recorded during tracing.
+    calib: CalibTaps,
 }
 
 pub fn forward<R: Routed>(
@@ -283,11 +286,16 @@ pub fn forward<R: Routed>(
         c,
         positions,
         step: None,
+        calib: CalibTaps::default(),
     };
     pass.logits(w, tokens)
 }
 
 impl Pass<'_> {
+    fn note(&self, tap: CalibTap, t: &Tensor) {
+        self.calib.note(tap, t);
+    }
+
     fn logits<R: Routed>(&self, w: &Mla<R>, tokens: &Tensor) -> Tensor {
         self.logits_taps(w, tokens, &[]).0
     }
@@ -357,14 +365,22 @@ impl Pass<'_> {
     ) -> (Tensor, Option<Tensor>) {
         let (m, c, a) = (self.m, self.c, &w.attn[l]);
         let h = x.rms_norm(&a.norm, c.eps);
+        self.note(CalibTap::AttnIn, &h);
         let picks = matches!(read, Keys::Pick(_));
         let attend = || self.mla(l, a, &h, read);
         let (attn, keys) = self.region(Composite::Attention, picks, attend);
         let x = x.add(&attn);
         let h = x.rms_norm(&w.mlp_norm[l], c.eps);
+        self.note(CalibTap::MlpIn, &h);
         let [mlp] = match l.checked_sub(w.dense.len()) {
-            None => m.composite(Composite::Mlp, || [w.dense[l].eval(&h)]),
-            Some(i) => m.composite(Composite::Moe, || [w.moe[i].apply(m, c, &h)]),
+            None => m.composite(Composite::Mlp, || {
+                let [out, inner] = w.dense[l].eval_tapped(&h);
+                self.note(CalibTap::DenseDownIn, &inner);
+                [out]
+            }),
+            Some(i) => m.composite(Composite::Moe, || {
+                [w.moe[i].apply_calib(m, c, &h, &self.calib)]
+            }),
         };
         (x.add(&mlp), keys)
     }
@@ -404,6 +420,7 @@ impl Pass<'_> {
         let heads = Attend::new(&w.o, self.lead([]), shape);
         let turn = |t: Tensor| t.rope(self.positions, c.rope_theta, Pairs::Adjacent);
         let qr = h.matmul(&w.q_a).rms_norm(&w.q_norm, c.eps);
+        self.note(CalibTap::QResid, &qr);
         let keys = match read {
             Keys::All => None,
             Keys::Given(k) => Some(k),
@@ -414,6 +431,7 @@ impl Pass<'_> {
         let (nope, rope) = (q.slice(head, 0u64, NOPE), turn(q.slice(head, NOPE, ROPE)));
         let kv = h.matmul(&w.kv_a);
         let latent = kv.slice(feature, 0u64, LATENT).rms_norm(&w.kv_norm, c.eps);
+        self.note(CalibTap::KvLatent, &latent);
         // Every head shares one rotary key part.
         let shared = turn(kv.slice(feature, LATENT, ROPE));
         let scale = 1.0 / ((c.nope + c.rope) as f32).sqrt();
@@ -432,7 +450,9 @@ impl Pass<'_> {
                 absorbed(m, w, [&nope, &rope], &k, (scale, by), keys.as_ref())
             }
         };
-        (heads.merge(out), keys)
+        let o_in = heads.merge_in(out);
+        self.note(CalibTap::OIn, &o_in);
+        (w.o.apply(&o_in), keys)
     }
 
     /// Each query's best `INDEX_KEEP` visible keys.
@@ -507,7 +527,12 @@ fn absorbed(
 
 /// Routed experts and a shared one, however they are stored.
 pub trait Routed: Weights {
-    fn apply(&self, m: &Model, c: &Config, h: &Tensor) -> Tensor;
+    /// The block's output, recording calibration taps in `taps`.
+    fn apply_calib(&self, m: &Model, c: &Config, h: &Tensor, taps: &CalibTaps) -> Tensor;
+
+    fn apply(&self, m: &Model, c: &Config, h: &Tensor) -> Tensor {
+        self.apply_calib(m, c, h, &CalibTaps::default())
+    }
 }
 
 /// Each row's top experts, and their weights.
@@ -520,10 +545,10 @@ fn route(c: &Config, router: &Linear, bias: &Vector, h: &Tensor) -> [Tensor; 2] 
 
 impl<E: ExpertSet> Routed for MoeOf<E> {
     /// Each row's top experts, weighted, plus the shared expert.
-    fn apply(&self, m: &Model, c: &Config, h: &Tensor) -> Tensor {
-        let [ids, gates] = route(c, &self.router, &self.router_bias, h);
-        let routed = self.experts.apply(m, h, [&ids, &gates]);
-        routed.add(&self.shared.eval(h))
+    fn apply_calib(&self, m: &Model, c: &Config, h: &Tensor, taps: &CalibTaps) -> Tensor {
+        let picks = route(c, &self.router, &self.router_bias, h);
+        let shared = || self.shared.eval_tapped(h);
+        routed_calib(m, &self.experts, h, picks, shared, taps)
     }
 }
 
@@ -542,6 +567,22 @@ pub fn program<R: Routed>(c: &Config) -> Graph {
     let [tokens, positions] = tokens(&m);
     let logits = forward(&m, c, &w, &tokens, &positions);
     m.finish([(Role::Logits, &logits)])
+}
+
+/// Forward graph with per-layer calibration Gram taps as outputs.
+pub fn calib_program<R: Routed>(c: &Config) -> Graph {
+    let m = Model::new(c.dims());
+    let w: Mla<R> = tessera_trace::declare(&m);
+    let [tokens, positions] = tokens(&m);
+    let pass = Pass {
+        m: &m,
+        c,
+        positions: &positions,
+        step: None,
+        calib: CalibTaps::on(),
+    };
+    let logits = pass.logits(&w, &tokens);
+    pass.calib.finish(&m, &logits)
 }
 
 /// One step entry: rows in, each row's likeliest token out.
@@ -563,6 +604,7 @@ pub fn stepper<R: Routed>(c: &Config) -> Graph {
         c,
         positions: &positions,
         step: Some((&slots, (0..c.stack.layers).map(cache).collect())),
+        calib: CalibTaps::default(),
     };
     let (logits, taps) = pass.logits_taps(&w, &tokens, &c.stack.taps);
     pick(&m, &logits, allowed.as_ref(), taps.as_ref())
@@ -592,6 +634,7 @@ pub(crate) fn step_layer<R: Routed>(
         c,
         positions,
         step: Some((slots, vec![cache])),
+        calib: CalibTaps::default(),
     };
     let read = match indexer {
         Some(ix) => Keys::Pick(ix),
