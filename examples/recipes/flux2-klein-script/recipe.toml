@@ -1,0 +1,15 @@
+# FLUX.2 klein 4B with a step script.
+name = "flux2-klein-script"
+about = "FLUX.2 klein 4B: pictures from a text prompt, with a step script"
+script = "identity.js"
+
+[weights]
+hf = "black-forest-labs/FLUX.2-klein-4B@e7b7dc27f91deacad38e78976d1f2b499d76a294"
+
+[config.pipeline]
+text_layers = [9, 18, 27]
+text_rows = 512
+steps = 4
+
+[serve]
+task = "image"

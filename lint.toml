@@ -72,7 +72,7 @@ hash_comment_files = ["*.toml", "*.yml", "*.yaml", "*.sh", ".githooks/*"]
 # File types the repository may hold, as `hash_comment_files` patterns.
 # The code is pure Rust, apart from GPU kernels.
 file_types = [
-    "*.rs", "*.metal", "*.cu", "*.cuh", "*.h", "*.kernel",
+    "*.rs", "*.metal", "*.cu", "*.cuh", "*.h", "*.kernel", "*.js",
     "*.toml", "*.lock", "*.md", "*.txt", "*.json", "*.yml", "*.yaml",
     "*.sh", ".githooks/*", ".gitignore", "LICENSE",
     "tools/inspect/src/page.css", "tools/inspect/src/pump.js", "tools/publish/npm/tesserax.js",

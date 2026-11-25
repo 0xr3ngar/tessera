@@ -61,6 +61,7 @@ tessera-recipe = { path = "frontend/recipe" }
 tessera-references = { path = "tools/references" }
 tessera-parity = { path = "tools/parity" }
 tessera-run = { path = "engine/plan/run" }
+tessera-script = { path = "frontend/script" }
 tessera-serve = { path = "frontend/serve" }
 tessera-sim = { path = "engine/plan/sim" }
 tessera-work = { path = "engine/gpu/work" }

@@ -68,6 +68,8 @@ pub struct Recipe {
     pub lower: Option<tessera_engine::Recipe>,
     /// A wasm module of lowering rules, relative to the recipe.
     pub module: Option<PathBuf>,
+    /// A step script, relative to the recipe.
+    pub script: Option<PathBuf>,
     /// Serve flags by name, with `_` for `-`.
     #[serde(default)]
     pub serve: toml::Table,
@@ -109,6 +111,12 @@ impl Recipe {
     pub fn module(&self) -> Option<PathBuf> {
         self.module.as_ref().map(|m| self.dir.join(m))
     }
+
+    /// The step script, if the recipe has one.
+    pub fn script(&self) -> Option<PathBuf> {
+        self.script.as_ref().map(|s| self.dir.join(s))
+    }
+
     /// The module's bytes, built first if it is a crate.
     pub fn module_bytes(&self, cache: Option<&Path>) -> Result<Option<Vec<u8>>, Error> {
         let Some(path) = self.module() else {

@@ -1,0 +1,17 @@
+[package]
+name = "tessera-script"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Operator scripts called with plain data and float arrays"
+
+[features]
+default = []
+# The QuickJS engine, through rquickjs. It builds C. Off by default.
+quickjs = ["dep:rquickjs"]
+
+[dependencies]
+rquickjs = { version = "0.14", optional = true }
+serde_json = "1"
+thiserror = "2"

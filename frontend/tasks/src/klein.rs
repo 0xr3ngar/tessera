@@ -3,7 +3,7 @@
 use crate::Error;
 use crate::api::{GenerateImage, Image, Sizes, Tokens};
 use crate::features::Features;
-use crate::flow::Flow;
+use crate::flow::{Flow, Hook, Scripted, euler};
 use crate::pictures::Pictures;
 use crate::worker::Worker;
 use std::collections::HashMap;
@@ -91,6 +91,8 @@ pub struct Klein {
     /// Pixels a side per latent token.
     patch: usize,
     pub steps: usize,
+    /// Runs around each velocity call.
+    pub hook: Option<Box<dyn Hook>>,
 }
 
 impl Klein {
@@ -130,6 +132,7 @@ impl Klein {
             largest,
             patch,
             steps: pipeline.steps,
+            hook: None,
         })
     }
 
@@ -146,12 +149,10 @@ impl Klein {
         }
         let text = self.features.encode(&[prompt])?.remove(0);
         let mut x = noise.to_vec();
-        for pair in sigmas(rows, self.steps).windows(2) {
-            let v = self.flow.velocity(&x, &text, side, pair[0])?;
-            x.iter_mut()
-                .zip(&v)
-                .for_each(|(x, v)| *x += (pair[1] - pair[0]) * v);
-        }
+        let hook = self.hook.as_mut().map(|h| h.as_mut() as &mut dyn Hook);
+        let flow = &mut self.flow;
+        let velocity = |x: &[f32], t| flow.velocity(x, &text, side, t);
+        euler(&mut x, &mut sigmas(rows, self.steps), side, hook, velocity)?;
         let pictures = match self.pictures.entry(side) {
             Entry::Occupied(e) => e.into_mut(),
             Entry::Vacant(e) => e.insert(Pictures::open(
@@ -166,16 +167,20 @@ impl Klein {
 }
 
 impl Worker<Klein> {
-    /// Opens klein on a new thread.
+    /// Opens klein on a new thread, with a step script.
     pub fn open(
         dir: PathBuf,
         settings: Settings,
         largest: usize,
         config: Overrides,
+        script: Option<PathBuf>,
         progress: Progress,
     ) -> Result<Self, Error> {
         Worker::spawn(move || {
-            let klein = Klein::open(dir, settings, largest, config, &progress)?;
+            // The script runtime is not `Send`, so it opens here.
+            let hook = script.as_deref().map(Scripted::open).transpose()?;
+            let mut klein = Klein::open(dir, settings, largest, config, &progress)?;
+            klein.hook = hook.map(|h| Box::new(h) as Box<dyn Hook>);
             eprintln!("klein loaded");
             Ok(klein)
         })

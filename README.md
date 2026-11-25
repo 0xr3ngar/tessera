@@ -105,6 +105,7 @@ for offline analysis.
 <tr><td>&emsp;<a href="frontend/eval">eval/</a></td><td>tessera-eval</td><td>Measures a recipe's model: batch speed, and parity with a reference</td></tr>
 <tr><td>&emsp;<a href="frontend/grammar">grammar/</a></td><td>tessera-grammar</td><td>Grammars that limit which tokens a decode step may pick</td></tr>
 <tr><td>&emsp;<a href="frontend/recipe">recipe/</a></td><td>tessera-recipe</td><td>A model, weights, and plan and serve settings, from disk or git</td></tr>
+<tr><td>&emsp;<a href="frontend/script">script/</a></td><td>tessera-script</td><td>Operator scripts called with plain data and float arrays</td></tr>
 <tr><td>&emsp;<a href="frontend/serve">serve/</a></td><td>tessera-serve</td><td>OpenAI-shaped HTTP routes over generation, chat and embedding</td></tr>
 <tr><td>&emsp;<a href="frontend/settings">settings/</a></td><td>tessera-frontend-settings</td><td>Settings read once from the environment, passed down</td></tr>
 <tr><td>&emsp;<a href="frontend/task-derive">task-derive/</a></td><td>tessera-task-derive</td><td>#[derive(Task)] for tesserax task and command arguments</td></tr>

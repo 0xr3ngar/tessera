@@ -12,11 +12,14 @@ cuda = ["tessera-engine/cuda"]
 rocm = ["tessera-engine/rocm"]
 # Answers held to a JSON format, through llguidance.
 guided = ["dep:tessera-grammar", "tessera-grammar/llguidance"]
+# Step scripts for the flow loop, through QuickJS. It builds C.
+script = ["tessera-script/quickjs"]
 
 [dependencies]
 tessera-bundle = { workspace = true }
 tessera-engine = { workspace = true }
 tessera-grammar = { workspace = true, optional = true }
+tessera-script = { workspace = true }
 tessera-task-derive = { workspace = true }
 serde_json = { version = "1", features = ["preserve_order"] }
 

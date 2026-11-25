@@ -226,6 +226,9 @@ impl Source {
             for (flag, dir) in r.extras(cache, token, &self.progress)? {
                 apply(&mut options, &flag, Some(dir.display().to_string()))?;
             }
+            if let Some(script) = r.script() {
+                apply(&mut options, "--script", Some(script.display().to_string()))?;
+            }
             for (flag, value) in r.flags() {
                 apply(&mut options, &flag, value)?;
             }

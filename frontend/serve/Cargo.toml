@@ -19,6 +19,8 @@ cuda = ["tessera-engine/cuda", "tessera-tasks/cuda"]
 rocm = ["tessera-engine/rocm", "tessera-tasks/rocm"]
 # `response_format` through llguidance. Needs `--guided` at start.
 guided = ["tessera-tasks/guided"]
+# Step scripts through QuickJS. It builds C. Off by default.
+script = ["tessera-tasks/script"]
 
 [dependencies]
 tessera-engine = { workspace = true }
