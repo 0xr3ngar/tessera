@@ -62,12 +62,16 @@ struct FieldSpec {
     #[serde(default)]
     content_args: ContentArgs,
     transform: Option<Value>,
+    /// Wraps a run of calls. Text between calls is dropped.
+    outer: Option<[String; 2]>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 struct ResponseTemplate {
     #[serde(default)]
     fields: BTreeMap<String, FieldSpec>,
+    /// Jinja that lists `tools` when the chat template does not.
+    tool_prompt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -197,6 +201,7 @@ struct BlockSpec {
     close: Vec<String>,
     body: Body,
     transform: Option<Value>,
+    outer: Option<[String; 2]>,
 }
 
 /// Compiled `response_template` from `tokenizer_config.json`.
@@ -205,6 +210,7 @@ pub struct ResponseParser {
     thinking: Option<BlockSpec>,
     tool_calls: Option<BlockSpec>,
     content_close: Vec<String>,
+    tool_prompt: Option<String>,
 }
 
 impl ResponseParser {
@@ -240,6 +246,11 @@ impl ResponseParser {
         Ok(written.then_some(parser))
     }
 
+    /// Jinja that lists `tools` in the system prompt, if any.
+    pub fn tool_prompt(&self) -> Option<&str> {
+        self.tool_prompt.as_deref()
+    }
+
     fn compile(template: ResponseTemplate) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let mut thinking = None;
         let mut tool_calls = None;
@@ -264,6 +275,7 @@ impl ResponseParser {
                 close,
                 body: Body::compile(spec.content.as_deref(), spec.content_args)?,
                 transform: spec.transform,
+                outer: spec.outer.filter(|[o, c]| !o.is_empty() && !c.is_empty()),
             };
             match name.as_str() {
                 "thinking" => thinking = Some(block),
@@ -275,6 +287,7 @@ impl ResponseParser {
             thinking,
             tool_calls,
             content_close,
+            tool_prompt: template.tool_prompt,
         })
     }
 
@@ -341,6 +354,7 @@ impl ResponseParser {
             parse_tools: parse_tools && self.tool_calls.is_some(),
             mode,
             opening: false,
+            calls: false,
             buf: String::new(),
             lead: false,
         }
@@ -369,6 +383,7 @@ enum Mode {
     Text,
     Thinking,
     ToolCall,
+    Calls,
     Closed,
 }
 
@@ -376,6 +391,7 @@ enum Mode {
 enum Hit {
     Thinking,
     ToolCall,
+    Calls,
     Close,
 }
 
@@ -386,6 +402,8 @@ pub struct ResponseStream<'a> {
     mode: Mode,
     /// `buf` starts with an unstripped pattern opener.
     opening: bool,
+    /// Inside an `outer` wrapper.
+    calls: bool,
     buf: String,
     /// Drops newlines that open the content after a thinking block.
     lead: bool,
@@ -403,6 +421,7 @@ impl<'a> ResponseStream<'a> {
                 Mode::Text => self.step_text(out),
                 Mode::Thinking => self.step_thinking(out),
                 Mode::ToolCall => self.step_tool(out),
+                Mode::Calls => self.step_calls(),
                 Mode::Closed => false,
             };
             if !moved {
@@ -436,7 +455,7 @@ impl<'a> ResponseStream<'a> {
         }
         match self.mode {
             Mode::Thinking => out.push(ResponseEvent::Reasoning(rest)),
-            Mode::Text | Mode::ToolCall => out.push(ResponseEvent::Content(rest)),
+            Mode::Text | Mode::ToolCall | Mode::Calls => out.push(ResponseEvent::Content(rest)),
             Mode::Closed => {}
         }
     }
@@ -463,6 +482,10 @@ impl<'a> ResponseStream<'a> {
                     Mode::Thinking
                 }
                 Hit::ToolCall => Mode::ToolCall,
+                Hit::Calls => {
+                    self.calls = true;
+                    Mode::Calls
+                }
                 Hit::Close => {
                     self.buf.clear();
                     Mode::Closed
@@ -478,6 +501,7 @@ impl<'a> ResponseStream<'a> {
             && let Some(t) = &self.parser.tool_calls
         {
             needles.extend(t.open.triggers());
+            needles.extend(t.outer.as_ref().map(|[o, _]| o.as_str()));
         }
         for c in &self.parser.content_close {
             needles.push(c.as_str());
@@ -548,7 +572,35 @@ impl<'a> ResponseStream<'a> {
             None => out.push(ResponseEvent::Content(self.buf[..raw_end].to_string())),
         }
         self.buf.drain(..raw_end);
-        self.mode = Mode::Text;
+        self.mode = match self.calls {
+            true => Mode::Calls,
+            false => Mode::Text,
+        };
+        true
+    }
+
+    fn step_calls(&mut self) -> bool {
+        let Some(spec) = &self.parser.tool_calls else {
+            self.mode = Mode::Text;
+            return true;
+        };
+        let open = spec.open.find(&self.buf).map(|(at, _)| at);
+        let close = spec
+            .outer
+            .as_ref()
+            .and_then(|[_, c]| Some((self.buf.find(c.as_str())?, c.len())));
+        match (open, close) {
+            (Some(at), c) if c.is_none_or(|(end, _)| at < end) => {
+                self.buf.drain(..at);
+                self.mode = Mode::ToolCall;
+            }
+            (_, Some((at, len))) => {
+                self.buf.drain(..at + len);
+                self.calls = false;
+                self.mode = Mode::Text;
+            }
+            _ => return false,
+        }
         true
     }
 
@@ -577,6 +629,16 @@ impl<'a> ResponseStream<'a> {
         {
             // Keep opener bytes for matching when the block closes.
             pick(at, 0, Hit::ToolCall);
+        }
+        if self.parse_tools
+            && let Some([open, _]) = self
+                .parser
+                .tool_calls
+                .as_ref()
+                .and_then(|t| t.outer.as_ref())
+            && let Some(at) = self.buf.find(open.as_str())
+        {
+            pick(at, open.len(), Hit::Calls);
         }
         if let Some((at, len)) = find_close(&self.buf, &self.parser.content_close) {
             pick(at, len, Hit::Close);

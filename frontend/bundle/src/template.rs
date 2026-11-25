@@ -6,6 +6,7 @@ use minijinja::{Environment, ErrorKind, Value};
 use minijinja_contrib::pycompat::unknown_method_callback;
 use serde::{Deserialize, Serialize};
 use serde_json::ser::{Formatter, PrettyFormatter};
+use std::borrow::Cow;
 use std::error::Error;
 use std::io;
 use std::path::Path;
@@ -35,7 +36,8 @@ pub struct ToolCall {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Message {
     pub role: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Null, not absent, when unset: templates test `is none`.
+    #[serde(default)]
     pub content: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
@@ -202,6 +204,7 @@ pub struct Template {
     env: Environment<'static>,
     bos_token: Option<String>,
     eos_token: Option<String>,
+    tool_prompt: bool,
 }
 
 impl Template {
@@ -239,7 +242,22 @@ impl Template {
             env,
             bos_token: None,
             eos_token: None,
+            tool_prompt: false,
         })
+    }
+
+    /// The end-of-sequence token text, if the config names one.
+    pub fn eos_token(&self) -> Option<&str> {
+        self.eos_token.as_deref()
+    }
+
+    /// Jinja that lists `tools` when the chat template does not.
+    pub fn with_tool_prompt(&mut self, prompt: &str) -> Result<(), minijinja::Error> {
+        if !self.mentions("tools") {
+            self.env.add_template_owned("tools", prompt.to_string())?;
+            self.tool_prompt = true;
+        }
+        Ok(())
     }
 
     /// Sets `bos_token` and `eos_token` for template rendering.
@@ -307,6 +325,24 @@ impl Template {
         messages: &[Message],
         options: &RenderOptions<'_>,
     ) -> Result<String, minijinja::Error> {
+        let messages = self.prepared(messages, options.tools)?;
+        match self.render_raw(&messages, options) {
+            Err(e) if e.kind() == minijinja::ErrorKind::InvalidOperation => {
+                // Some templates join arguments to text: retry with JSON text.
+                let Some(texts) = text_arguments(&messages) else {
+                    return Err(e);
+                };
+                self.render_raw(&texts, options)
+            }
+            other => other,
+        }
+    }
+
+    fn render_raw(
+        &self,
+        messages: &[Message],
+        options: &RenderOptions<'_>,
+    ) -> Result<String, minijinja::Error> {
         let template = self.env.get_template("chat")?;
         let mut shown = Vec::with_capacity(messages.len());
         for message in messages {
@@ -338,4 +374,47 @@ impl Template {
         }
         template.render(Value::from(ctx))
     }
+
+    /// `messages` with the tool prompt in the system message.
+    fn prepared<'m>(
+        &self,
+        messages: &'m [Message],
+        tools: &[serde_json::Value],
+    ) -> Result<Cow<'m, [Message]>, minijinja::Error> {
+        if tools.is_empty() || !self.tool_prompt {
+            return Ok(Cow::Borrowed(messages));
+        }
+        let tools = Value::from(Serde(tools));
+        let text = self
+            .env
+            .get_template("tools")?
+            .render(minijinja::context! { tools })?;
+        let mut out = messages.to_vec();
+        match out.first_mut() {
+            Some(first) if first.role == "system" => {
+                let content = first.content.get_or_insert_default();
+                content.push_str("\n\n");
+                content.push_str(&text);
+            }
+            _ => out.insert(0, Message::text("system", text)),
+        }
+        Ok(Cow::Owned(out))
+    }
+}
+
+/// `messages` with object tool-call arguments as JSON text, if any.
+fn text_arguments(messages: &[Message]) -> Option<Vec<Message>> {
+    let mut out = messages.to_vec();
+    let mut changed = false;
+    for call in out
+        .iter_mut()
+        .flat_map(|m| m.tool_calls.iter_mut().flatten())
+    {
+        let args = &mut call.function.arguments;
+        if !args.is_string() {
+            *args = serde_json::Value::String(args.to_string());
+            changed = true;
+        }
+    }
+    changed.then_some(out)
 }
