@@ -38,7 +38,10 @@ mod speculate;
 
 pub use batch_spec::BatchMtp;
 pub use dual::{DualSelector, DualSpeculate};
-pub use guide::{Allowed, FEW, Fault, Guide, Prefix};
+pub use guide::{
+    Allowed, Edit, FEW, Fault, Guide, Move, Penalties, Prefix, Program, Scoped, Stacked, Tally,
+    Term,
+};
 pub use kept::Totals;
 pub use model::Model;
 pub use mtp_draft::{MtpDrafter, MtpSpeculate};
