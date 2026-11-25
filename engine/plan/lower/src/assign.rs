@@ -66,6 +66,13 @@ impl Scratch {
         lo
     }
 
+    /// A range past every other, free or used.
+    fn fresh(&mut self, bytes: usize) -> usize {
+        let lo = self.size;
+        self.size += span(bytes);
+        lo
+    }
+
     /// Returns a range and coalesces adjacent holes.
     fn free(&mut self, start: usize, bytes: usize) {
         let mut lo = start;
@@ -110,6 +117,12 @@ pub fn assign(s: &Selected, order: &[usize]) -> Plan {
     for (v, _) in &s.outputs {
         last[v.0 as usize] = FOREVER;
     }
+    // A commit reads its step's inputs again.
+    for op in s.ops.iter().filter(|op| op.kernel.commit().is_some()) {
+        for v in &op.reads {
+            last[v.0 as usize] = FOREVER;
+        }
+    }
     let plan = Plan {
         id: Plan::fresh(),
         ranks: s.ranks,
@@ -132,6 +145,7 @@ pub fn assign(s: &Selected, order: &[usize]) -> Plan {
     for (at, &i) in order.iter().enumerate() {
         b.step(at, i);
     }
+    b.commits();
     for (v, shape) in &s.outputs {
         let (slot, shape) = (b.slot(*v), shape.clone());
         b.plan.outputs.push(Output { slot, shape });
@@ -292,6 +306,47 @@ impl Buffers<'_> {
         };
         self.slots[v.0 as usize] = Some(slot);
         slot
+    }
+
+    /// Gives each peeking step a spare, commit and promotion.
+    fn commits(&mut self) {
+        let mut promotes = Vec::new();
+        for at in 0..self.plan.steps.len() {
+            let Some(kernel) = self.plan.steps[at].kernel.commit() else {
+                continue;
+            };
+            let mut step = self.plan.steps[at].clone();
+            let state = *step.reads.last().expect("a kept state");
+            let zone = self.plan.zone(step.write.buffer);
+            let arena = self.scratch.get_mut(&zone).expect("written in scratch");
+            // Later forward steps must not reuse the spare.
+            let mut spare = state;
+            spare.buffer = arena.buffer;
+            spare.offset = arena.fresh(state.bytes());
+            self.plan.steps[at].also = vec![spare];
+            // A replay writes its outputs to scratch of its own.
+            step.write.offset = arena.alloc(step.write.bytes());
+            step.kernel = kernel;
+            // A scan stores only the lanes of slots it read.
+            let kept = self.plan.kept.iter().position(|(_, s)| *s == state);
+            let lanes = self.plan.kept_info[kept.expect("a kept state")].slots as usize;
+            let lane = |mut slot: Slot| {
+                slot.len /= lanes;
+                (slot.dims, slot.shape) = pack_shape(&[slot.len], slot.len);
+                slot
+            };
+            promotes.push(Step {
+                kernel: KernelRef::new(Map::copy(spare.form, state.form)),
+                reads: vec![lane(spare)],
+                write: lane(state),
+                covers: Vec::new(),
+                ..step.clone()
+            });
+            self.plan.steps.push(step);
+            self.plan.commits += 1;
+        }
+        self.plan.promotes = promotes.len();
+        self.plan.steps.extend(promotes);
     }
 
     fn free_scratch(&mut self, slot: Slot) {
