@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.4.5](https://github.com/kindlingai/tessera/compare/v0.4.4...v0.4.5) (2026-11-25)
+
+
+### Features
+
+* **cli:** add tesserax size ([#643](https://github.com/kindlingai/tessera/issues/643)) ([c3b10c7](https://github.com/kindlingai/tessera/commit/c3b10c7d60b24c846549cbf4728813ffd4b6b3ff))
+* **engine,serve:** add continuous-batching DFlash speculative decoding ([#656](https://github.com/kindlingai/tessera/issues/656)) ([2fa3db0](https://github.com/kindlingai/tessera/commit/2fa3db04d77053796071f987c3234e4b04d1cff6))
+* **engine,serve:** wire chunked prefill into speculative decoders ([#618](https://github.com/kindlingai/tessera/issues/618)) ([4fab0cf](https://github.com/kindlingai/tessera/commit/4fab0cf61f80736a07310c05a77022588b8bd0ab))
+* **engine:** apply guide logit edits on the device head ([#630](https://github.com/kindlingai/tessera/issues/630)) ([9a90ac3](https://github.com/kindlingai/tessera/commit/9a90ac3539cdfbeb03573702c762a338d339d46e))
+* **engine:** apply guides under solo speculative decoding ([#648](https://github.com/kindlingai/tessera/issues/648)) ([e530b97](https://github.com/kindlingai/tessera/commit/e530b97c03573fdd79a6db3cdf77dbc3026e15a9))
+* **engine:** clamp default prefill chunks to FAST_MAX_ROWS and time P2P sums ([#655](https://github.com/kindlingai/tessera/issues/655)) ([2704f63](https://github.com/kindlingai/tessera/commit/2704f6332ef26f8e428ee7357df9e7d79b2e261b))
+* **engine:** let guides edit logits, stack guides and apply penalties ([#621](https://github.com/kindlingai/tessera/issues/621)) ([8b285d6](https://github.com/kindlingai/tessera/commit/8b285d6af19d48248829bc95a07634a0fd78e4d4))
+* **engine:** verify recurrent state from one checkpoint under speculation ([#636](https://github.com/kindlingai/tessera/issues/636)) ([3b41e5c](https://github.com/kindlingai/tessera/commit/3b41e5cea7c5e70a0718e5776c43533bdbf76b12))
+* **lower:** add dtype rules by spot for recipes and --dtype ([#634](https://github.com/kindlingai/tessera/issues/634)) ([0b9ddef](https://github.com/kindlingai/tessera/commit/0b9ddef79eefd67a04b373d0ff67f44dc8782789))
+* **lower:** add kernel shape rules for recipes and --shape ([#638](https://github.com/kindlingai/tessera/issues/638)) ([04a13e4](https://github.com/kindlingai/tessera/commit/04a13e45b155fbe3c5593aebf8550c03907d1d5a))
+* **p2p:** add block-scaled FP8 wire transport for P2P all-reduce ([#650](https://github.com/kindlingai/tessera/issues/650)) ([7ebbd04](https://github.com/kindlingai/tessera/commit/7ebbd043455769ec861ce76e86aa62dcc60b2f7f))
+* report structured progress from downloads and model loads ([#619](https://github.com/kindlingai/tessera/issues/619)) ([8d8708e](https://github.com/kindlingai/tessera/commit/8d8708eba7d15f8dff24c514ba1c40681009dd58))
+* **serve:** accept formats and penalties under solo speculative decoding ([#652](https://github.com/kindlingai/tessera/issues/652)) ([0e5b5df](https://github.com/kindlingai/tessera/commit/0e5b5dfdfc52e4885499875229ed6de72bb3d34f))
+* **serve:** add --layers to keep only the first n layers ([#628](https://github.com/kindlingai/tessera/issues/628)) ([3753d52](https://github.com/kindlingai/tessera/commit/3753d52c10d107c9a56ecd381ada10c97aecdce2))
+* **serve:** add a sequence penalty against verbatim loops ([#657](https://github.com/kindlingai/tessera/issues/657)) ([d052993](https://github.com/kindlingai/tessera/commit/d052993d48f1d4e90447a5f5167e6ec24c2beb73))
+* **serve:** let scope moves match short token sequences ([#654](https://github.com/kindlingai/tessera/issues/654)) ([4cda636](https://github.com/kindlingai/tessera/commit/4cda6368e0239942d55ce260d8871e87d73a58cd))
+* **serve:** profile single requests with TESSERA_PROFILE=dynamic ([#627](https://github.com/kindlingai/tessera/issues/627)) ([1d21e9d](https://github.com/kindlingai/tessera/commit/1d21e9df4d1ff4989bb374e3df89e6a91f093a81))
+* **serve:** report load steps for klein and embed models ([#620](https://github.com/kindlingai/tessera/issues/620)) ([71b94cc](https://github.com/kindlingai/tessera/commit/71b94cc908373e659ca0fc8dd2815340ed1f99fb))
+* **serve:** scope logit penalties to answer, thinking and tool calls ([#647](https://github.com/kindlingai/tessera/issues/647)) ([9c8b96e](https://github.com/kindlingai/tessera/commit/9c8b96e35506095cabde8318cff146ad031c78a8))
+
+
+### Bug Fixes
+
+* **host:** read integer buffers with every bit in the lockstep executor ([#649](https://github.com/kindlingai/tessera/issues/649)) ([bc19bb1](https://github.com/kindlingai/tessera/commit/bc19bb1eec21456559bf0050b1c981975bc37b3b))
+* **p2p:** cap block threads at 512 with launch bounds to prevent register overflow ([#633](https://github.com/kindlingai/tessera/issues/633)) ([5fbedf1](https://github.com/kindlingai/tessera/commit/5fbedf160253eaea8f84765f28c03d53718d9992))
+* **serve:** refuse sampling under speculative decoding ([#624](https://github.com/kindlingai/tessera/issues/624)) ([4361586](https://github.com/kindlingai/tessera/commit/43615864d057201ea3a0899aeedef9e3a3bf3f9b))
+
+
+### Performance
+
+* **attend:** keep at least 4 K-splits for prefill MLA and GQA attention ([#637](https://github.com/kindlingai/tessera/issues/637)) ([56fa148](https://github.com/kindlingai/tessera/commit/56fa1484359ac5832be4636ab08ddd54136614dc))
+* **attend:** support paged KV in fast_mla_attend, fast_gqa_attend, and fast_indexer ([#651](https://github.com/kindlingai/tessera/issues/651)) ([aa09da1](https://github.com/kindlingai/tessera/commit/aa09da1ebd49fc64658063cd179ff7f28002f5ea))
+* **build:** fix fixture test timeouts for eg2 and klein flow ([#653](https://github.com/kindlingai/tessera/issues/653)) ([9fa34e2](https://github.com/kindlingai/tessera/commit/9fa34e226142758e3cff6eea635f68b9f3d8348a))
+* **device:** add 64x64 staged-X prefill kernel for MXFP8 matmul ([#639](https://github.com/kindlingai/tessera/issues/639)) ([cf0f441](https://github.com/kindlingai/tessera/commit/cf0f44129c8adef9da7eb441f56c4af3258b852b))
+* **device:** add Tensor-Core BF16 Lightning Indexer rule for CUDA ([#632](https://github.com/kindlingai/tessera/issues/632)) ([a8ad2e6](https://github.com/kindlingai/tessera/commit/a8ad2e69d1364dc2fe2dd6effe85605ac297a032))
+* **glm53-moe:** support 512 rows and 32-token NT=4 slots for prefill ([#641](https://github.com/kindlingai/tessera/issues/641)) ([d6ce02e](https://github.com/kindlingai/tessera/commit/d6ce02e71b11d9557b53177bb5f285da266e4407))
+* **glm53-moe:** tile fc1 and fc2 over 16-token dual slots for prefill ([#635](https://github.com/kindlingai/tessera/issues/635)) ([4944295](https://github.com/kindlingai/tessera/commit/494429597920f4c5093824be020ac41b8e90dad4))
+* **p2p:** add 16-byte wire transfers and 4-rank reduce-scatter/all-gather ([#626](https://github.com/kindlingai/tessera/issues/626)) ([4afc868](https://github.com/kindlingai/tessera/commit/4afc868145f1248da4a5226e9e2e3876213cc651))
+* **rules:** extend fast_mla_attend, block norm, and fast_mm to prefill batches ([#622](https://github.com/kindlingai/tessera/issues/622)) ([75e1e27](https://github.com/kindlingai/tessera/commit/75e1e2729d82a7f1b1f2276a91a23a7ff92c2bf8))
+
 ## [0.4.4](https://github.com/kindlingai/tessera/compare/v0.4.3...v0.4.4) (2026-11-25)
 
 
