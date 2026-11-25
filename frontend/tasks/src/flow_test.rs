@@ -54,12 +54,14 @@ fn hold_reaches_known() {
 #[cfg(feature = "script")]
 #[test]
 fn script_holds() {
-    let source = "let start;
+    let source = "let start, runs = 0;
 export function step(s) {
+  if (s.index == 0 && s.phase == 'before' && ++runs > 1) throw new Error('state kept');
   if (s.phase == 'before') { if (s.index == 0) start = s.latents.slice(); return; }
   for (const i of [0, 1, 2, 9, 10, 11]) s.velocity[i] = start[i] - 0.25;
 }";
     let script = tessera_script::Script::load("hold.js", source, Default::default());
     let mut script = crate::flow::Scripted::new(script.unwrap()).unwrap();
+    assert_eq!(mock(Some(&mut script)), mock(Some(&mut hold())));
     assert_eq!(mock(Some(&mut script)), mock(Some(&mut hold())));
 }

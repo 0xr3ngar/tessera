@@ -59,6 +59,8 @@ trait Engine {
 /// A loaded script. It stays on its loading thread.
 pub struct Script {
     engine: Box<dyn Engine>,
+    /// The name, source and limits that [`Script::reset`] loads.
+    from: (String, String, Limits),
 }
 
 impl Script {
@@ -79,6 +81,7 @@ impl Script {
             let engine = quickjs::Quick::load(name, source, limits)?;
             Ok(Self {
                 engine: Box::new(engine),
+                from: (name.into(), source.into(), limits),
             })
         }
         #[cfg(not(feature = "quickjs"))]
@@ -86,6 +89,13 @@ impl Script {
             let _ = (name, source, limits);
             Err(Error::Unsupported)
         }
+    }
+
+    /// Loads the module into a new runtime.
+    pub fn reset(&mut self) -> Result<(), Error> {
+        let (name, source, limits) = &self.from;
+        *self = Self::load(name, source, *limits)?;
+        Ok(())
     }
 
     /// Whether the script exports `function`.

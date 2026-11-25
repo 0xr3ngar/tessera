@@ -219,7 +219,8 @@ fn load(mut options: Options, slot: Slot) {
         step: Mutex::new(Some(step)),
         asks: settings.asks.clone(),
     };
-    let failed = task::pick(&options).and_then(|entry| (entry.open)(&load, settings));
+    let picked = task::pick(&options).and_then(|e| task::hooks(&options, e).map(|_| e));
+    let failed = picked.and_then(|entry| (entry.open)(&load, settings));
     if let Err(e) = failed {
         eprintln!("tesserax: {e}");
         std::process::exit(1);

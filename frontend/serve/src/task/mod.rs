@@ -226,3 +226,15 @@ pub(crate) fn pick(options: &Options) -> Result<&'static Entry, String> {
         "{class} is not a --task {task} pipeline. This server runs: {runs}"
     ))
 }
+
+/// Refuses `--script` unless `entry` owns that flag.
+pub(crate) fn hooks(options: &Options, entry: &Entry) -> Result<(), String> {
+    let takes = entry.flags.iter().any(|f| f.name == "--script");
+    match options.given.contains_key("--script") && !takes {
+        true => Err(format!(
+            "this {} pipeline runs no step scripts: remove --script or the recipe's script key",
+            entry.task
+        )),
+        false => Ok(()),
+    }
+}

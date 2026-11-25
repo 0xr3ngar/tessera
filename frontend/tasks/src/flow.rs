@@ -218,6 +218,10 @@ impl Scripted {
 
 impl Hook for Scripted {
     fn before(&mut self, step: &Step, latents: &mut [f32]) -> Result<(), Error> {
+        // Each picture starts with fresh script state.
+        if step.index == 0 {
+            self.0.reset()?;
+        }
         self.call("before", step, &mut [("latents", latents)])?;
         Ok(())
     }
