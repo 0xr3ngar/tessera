@@ -1,11 +1,13 @@
 //! The model's chat template, from `tokenizer_config.json`.
 
 use minijinja::syntax::SyntaxConfig;
-use minijinja::value::Serde;
+use minijinja::value::{Kwargs, Serde};
 use minijinja::{Environment, Value};
 use minijinja_contrib::pycompat::unknown_method_callback;
 use serde::{Deserialize, Serialize};
+use serde_json::ser::{Formatter, PrettyFormatter, Serializer};
 use std::error::Error;
+use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -56,6 +58,15 @@ impl Message {
     }
 }
 
+/// A message with `reasoning` also as `reasoning_content`.
+#[derive(Serialize)]
+struct Shown<'a> {
+    #[serde(flatten)]
+    message: &'a Message,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_content: Option<&'a str>,
+}
+
 /// Extra variables for rendering a chat prompt.
 #[derive(Clone, Debug, Default)]
 pub struct RenderOptions<'a> {
@@ -94,6 +105,63 @@ pub type Clock = Arc<dyn Fn() -> jiff::Zoned + Send + Sync>;
 fn strftime_now(clock: &Clock, format: &str) -> Result<String, minijinja::Error> {
     jiff::fmt::strtime::format(format, &clock())
         .map_err(|e| minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string()))
+}
+
+/// Python `json.dumps` spacing: `", "` between items, `": "` after keys.
+struct Spaced;
+
+impl Spaced {
+    fn item<W: ?Sized + io::Write>(w: &mut W, first: bool) -> io::Result<()> {
+        if first { Ok(()) } else { w.write_all(b", ") }
+    }
+}
+
+impl Formatter for Spaced {
+    fn begin_array_value<W: ?Sized + io::Write>(
+        &mut self,
+        w: &mut W,
+        first: bool,
+    ) -> io::Result<()> {
+        Self::item(w, first)
+    }
+
+    fn begin_object_key<W: ?Sized + io::Write>(
+        &mut self,
+        w: &mut W,
+        first: bool,
+    ) -> io::Result<()> {
+        Self::item(w, first)
+    }
+
+    fn begin_object_value<W: ?Sized + io::Write>(&mut self, w: &mut W) -> io::Result<()> {
+        w.write_all(b": ")
+    }
+}
+
+/// Hugging Face `tojson` output: Python spacing, keys in given order.
+fn tojson(value: &Value, indent: Option<usize>, args: Kwargs) -> Result<Value, minijinja::Error> {
+    let indent = match indent {
+        Some(n) => Some(n),
+        None => args.get("indent")?,
+    };
+    let fail = |e: serde_json::Error| {
+        minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string())
+    };
+    let json = serde_json::to_value(value).map_err(fail)?;
+    let mut out = Vec::new();
+    match indent {
+        Some(n) => {
+            let pad = vec![b' '; n];
+            let mut ser = Serializer::with_formatter(&mut out, PrettyFormatter::with_indent(&pad));
+            json.serialize(&mut ser).map_err(fail)?;
+        }
+        None => json
+            .serialize(&mut Serializer::with_formatter(&mut out, Spaced))
+            .map_err(fail)?,
+    }
+    Ok(Value::from_safe_string(
+        String::from_utf8_lossy(&out).into_owned(),
+    ))
 }
 
 /// Removes Hugging Face `generation` training-mask block tags.
@@ -142,6 +210,7 @@ impl Template {
         env.set_syntax(syntax);
         // Templates call Python string methods: split, strip, startswith.
         env.set_unknown_method_callback(unknown_method_callback);
+        env.add_filter("tojson", tojson);
         env.add_function("strftime_now", move |format: &str| {
             strftime_now(&clock, format)
         });
@@ -194,6 +263,13 @@ impl Template {
         })
     }
 
+    /// Whether the template source contains `text`.
+    pub fn mentions(&self, text: &str) -> bool {
+        self.env
+            .get_template("chat")
+            .is_ok_and(|t| t.source().contains(text))
+    }
+
     /// The prompt for `messages`, ready for the assistant's turn.
     pub fn render(&self, messages: &[Message], think: bool) -> Result<String, minijinja::Error> {
         self.render_with(messages, think, None)
@@ -221,7 +297,15 @@ impl Template {
         options: &RenderOptions<'_>,
     ) -> Result<String, minijinja::Error> {
         let template = self.env.get_template("chat")?;
-        let messages = Value::from(Serde(messages));
+        let mut shown = Vec::with_capacity(messages.len());
+        for message in messages {
+            let reasoning_content = message.reasoning.as_deref();
+            shown.push(Shown {
+                message,
+                reasoning_content,
+            });
+        }
+        let messages = Value::from(Serde(shown));
         let mut ctx = std::collections::BTreeMap::new();
         ctx.insert("messages", messages);
         ctx.insert("add_generation_prompt", Value::from(true));
