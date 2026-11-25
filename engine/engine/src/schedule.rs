@@ -151,6 +151,18 @@ impl Policy for Fair {
     }
 }
 
+impl Engine {
+    /// Device bytes the runner holds now.
+    pub fn bytes(&self) -> u64 {
+        self.runner.held().total()
+    }
+
+    /// Bytes the device reports. Zero when it reports none.
+    pub fn memory(&self) -> u64 {
+        self.runner.platform().memory
+    }
+}
+
 /// Answers a batch gave up when its engine closed.
 #[derive(Default)]
 pub struct Parked {

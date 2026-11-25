@@ -469,16 +469,6 @@ impl Engine {
         self.runner.device()
     }
 
-    /// Device bytes the runner holds now.
-    pub fn bytes(&self) -> u64 {
-        self.runner.held().total()
-    }
-
-    /// Bytes the device reports. Zero when it reports none.
-    pub fn memory(&self) -> u64 {
-        self.runner.platform().memory
-    }
-
     /// How often the plan in place launches each kernel.
     pub fn kernels(&self) -> BTreeMap<&'static str, usize> {
         let mut by = BTreeMap::new();
