@@ -14,6 +14,7 @@ const KERNEL: &str = include_str!("p2p/p2p.kernel");
 const ENTRY: &str = "tessera_p2p_sum";
 const GATHER_ENTRY: &str = "tessera_p2p_gather";
 const BF16_ENTRY: &str = "tessera_p2p_sum_bf16";
+const FP16_ENTRY: &str = "tessera_p2p_sum_fp16";
 
 /// Maximum ranks in one P2P group.
 const MAX_RANKS: usize = 8;
@@ -113,6 +114,7 @@ pub struct P2p<D: Device> {
     kernel: D::Kernel,
     gather_kernel: D::Kernel,
     bf16_kernel: D::Kernel,
+    fp16_kernel: D::Kernel,
     _peers: Peers<D>,
     _area: DeviceBuffer<D>,
     areas: DeviceBuffer<D>,
@@ -189,6 +191,7 @@ where
         let kernel = ctx.compile(&text, ENTRY)?;
         let gather_kernel = ctx.compile(&text, GATHER_ENTRY)?;
         let bf16_kernel = ctx.compile(&text, BF16_ENTRY)?;
+        let fp16_kernel = ctx.compile(&text, FP16_ENTRY)?;
 
         let area = DeviceBuffer::alloc(ctx, area_bytes(ranks))?;
         area.zero()?;
@@ -240,6 +243,7 @@ where
             kernel,
             gather_kernel,
             bf16_kernel,
+            fp16_kernel,
             _peers: peers,
             _area: area,
             areas,
@@ -267,7 +271,7 @@ where
         Ok(u64::from_ne_bytes(raw))
     }
 
-    fn launch_sum(&mut self, from: u64, to: u64, n: u32, bf16: bool) -> Result<(), Error> {
+    fn launch_sum(&mut self, from: u64, to: u64, n: u32, wire: DType) -> Result<(), Error> {
         if self.broken {
             return Err(Error::Plan("an earlier p2p sum failed".into()));
         }
@@ -287,9 +291,10 @@ where
         self.ctx.programmatic(false);
         let blocks = (grid, 1, 1);
         let threads = (self.threads, 1, 1);
-        let kernel = match bf16 {
-            true => &self.bf16_kernel,
-            false => &self.kernel,
+        let kernel = match wire {
+            DType::Bf16 => &self.bf16_kernel,
+            DType::F16 => &self.fp16_kernel,
+            _ => &self.kernel,
         };
         Ok(self.ctx.launch(kernel, blocks, threads, 0, &mut args)?)
     }
@@ -356,11 +361,9 @@ where
         len: usize,
         wire: DType,
     ) -> Result<(), tessera_run::Error> {
-        let bf16 = match wire {
-            DType::F32 => false,
-            DType::Bf16 => true,
-            other => return Err(tessera_run::Error::Wire(other)),
-        };
+        if !matches!(wire, DType::F32 | DType::Bf16 | DType::F16) {
+            return Err(tessera_run::Error::Wire(wire));
+        }
         if self.broken {
             return Err(tessera_run::Error::Sums(Box::new(Error::Plan(
                 "an earlier p2p sum failed".into(),
@@ -370,7 +373,7 @@ where
         if n == 0 {
             return Ok(());
         }
-        self.launch_sum(from, to, n, bf16)
+        self.launch_sum(from, to, n, wire)
             .map_err(|e| tessera_run::Error::Sums(Box::new(e)))
     }
 
