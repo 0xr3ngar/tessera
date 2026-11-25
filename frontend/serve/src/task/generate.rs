@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Instant;
 use tessera_bundle::Weights;
 use tessera_engine::progress::{Progress, Unit};
-use tessera_engine::turns::{Seated, Turn};
+use tessera_engine::turns::{Asker, Seated, Turn};
 use tessera_engine::{Batch, Engine, Fair, Graph, Parked, Pins, PleConfig, PleStore};
 use tessera_engine::{Recipe, Settings, Steps};
 use tessera_tasks::api::Score;
@@ -138,7 +138,7 @@ fn seated(
     load: &Load,
     generate: Generate,
     score: bool,
-    seat: Option<Seated>,
+    seat: Option<Asker>,
 ) -> mpsc::Receiver<Job> {
     let generate = Arc::new(generate);
     let (queue, jobs) = mpsc::channel::<Job>();
@@ -268,7 +268,7 @@ fn open(load: &Load, settings: Settings) -> Result<(), String> {
         stop: loaded.stop,
         sampling: true,
     };
-    let jobs = seated(load, generate, scores, Some(seat.clone()));
+    let jobs = seated(load, generate, scores, Some(seat.asker()));
     let mut parked = Parked::default();
     loop {
         let mut batch = Batch::resumed(&mut engine, Box::new(Fair), parked);

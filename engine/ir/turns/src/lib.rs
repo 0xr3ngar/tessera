@@ -1,6 +1,8 @@
 //! Which model steps next, and which leaves for another.
 
+use std::cell::Cell;
 use std::cmp::Reverse;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -68,6 +70,8 @@ struct Seat {
     /// When it last ran or loaded.
     last: f64,
     loads: u64,
+    /// Set while the seat must ask before each step.
+    stop: Arc<AtomicBool>,
 }
 
 impl Seat {
@@ -81,6 +85,11 @@ impl Seat {
 
     fn going(&self) -> bool {
         matches!(self.place, Place::Draining(_) | Place::Leaving)
+    }
+
+    /// Whether the seat can run a step now.
+    fn ready(&self) -> bool {
+        matches!(self.place, Place::In(_) | Place::Draining(_)) && self.wants()
     }
 }
 
@@ -129,6 +138,7 @@ impl Table {
             ran: 0,
             last: now,
             loads: 0,
+            stop: Arc::new(AtomicBool::new(true)),
         });
         self.seats.len() - 1
     }
@@ -236,13 +246,22 @@ impl Table {
             }
         }
         self.place(now);
+        let seats = &self.seats;
         if self.holder.is_none() {
-            let ready =
-                |s: &Seat| matches!(s.place, Place::In(_) | Place::Draining(_)) && s.wants();
-            let seats = &self.seats;
-            let next = (0..seats.len()).filter(|&i| ready(&seats[i]));
+            let next = (0..seats.len()).filter(|&i| seats[i].ready());
             self.holder = next.max_by_key(|&i| (seats[i].priority, Reverse(seats[i].ran)));
         }
+        // The holder steps alone until another seat is ready.
+        if let Some(at) = self.holder {
+            let others = (0..seats.len()).any(|i| i != at && seats[i].ready());
+            let stays = matches!(seats[at].place, Place::In(_));
+            seats[at].stop.store(others || !stays, Ordering::Release);
+        }
+    }
+
+    /// The flag that sends seat `at` back to the table.
+    pub fn stop(&self, at: usize) -> Arc<AtomicBool> {
+        self.seats[at].stop.clone()
     }
 
     /// The seat's turn, if it has one now.
@@ -348,10 +367,19 @@ impl Turns {
 
     /// A seat for a model of about `bytes`.
     pub fn seat(self: &Arc<Self>, name: &str, priority: u32, bytes: u64) -> Seated {
-        let at = self.change(false, |t, now| t.add(name, priority, bytes, now));
-        Seated {
+        let add = |t: &mut Table, now| {
+            let at = t.add(name, priority, bytes, now);
+            (at, t.stop(at))
+        };
+        let (at, stop) = self.change(false, add);
+        let asker = Asker {
             turns: self.clone(),
             at,
+        };
+        Seated {
+            asker,
+            stop,
+            kept: Cell::new(None),
         }
     }
 
@@ -360,46 +388,77 @@ impl Turns {
     }
 }
 
-/// One model's seat. Its thread calls all but `asked`.
+/// Tells a seat of new jobs, from any thread.
 #[derive(Clone)]
-pub struct Seated {
+pub struct Asker {
     turns: Arc<Turns>,
     at: usize,
 }
 
-impl Seated {
+impl Asker {
     /// A job entered the model's queue.
     pub fn asked(&self) {
         self.turns.change(false, |t, now| t.asked(self.at, now));
     }
+}
+
+/// A step's result: busy, answers in slots, device bytes.
+type Stepped = ((bool, usize), u64);
+
+/// One model's seat, for the model's thread.
+pub struct Seated {
+    asker: Asker,
+    stop: Arc<AtomicBool>,
+    /// A busy step the table has not seen yet.
+    kept: Cell<Option<Stepped>>,
+}
+
+impl Seated {
+    pub fn asker(&self) -> Asker {
+        self.asker.clone()
+    }
+
+    fn change<R>(&self, f: impl FnOnce(&mut Table, usize, f64) -> R) -> R {
+        let at = self.asker.at;
+        self.asker.turns.change(true, |t, now| f(t, at, now))
+    }
 
     /// Waits for the model's next turn.
     pub fn next(&self) -> Turn {
-        let mut table = self.turns.lock();
+        if let Some(step) = self.kept.take() {
+            // A busy holder steps again with no lock.
+            if !self.stop.load(Ordering::Acquire) {
+                return Turn::Step { admit: true };
+            }
+            self.change(|t, at, now| t.stepped(at, step.0, step.1, now));
+        }
+        let turns = &self.asker.turns;
+        let mut table = turns.lock();
         loop {
-            table.settle(self.turns.now());
-            if let Some(turn) = table.turn(self.at) {
+            table.settle(turns.now());
+            if let Some(turn) = table.turn(self.asker.at) {
                 return turn;
             }
-            let waited = self.turns.changed.wait_timeout(table, TICK);
+            let waited = turns.changed.wait_timeout(table, TICK);
             table = waited.unwrap_or_else(|e| e.into_inner()).0;
         }
     }
 
     /// The model ran its step.
     pub fn stepped(&self, state: (bool, usize), bytes: u64) {
-        (self.turns).change(true, |t, now| t.stepped(self.at, state, bytes, now));
+        match state.0 && !self.stop.load(Ordering::Acquire) {
+            true => self.kept.set(Some((state, bytes))),
+            false => self.change(|t, at, now| t.stepped(at, state, bytes, now)),
+        }
     }
 
     /// The weights loaded. The device has `memory` bytes.
     pub fn loaded(&self, bytes: u64, seconds: f64, memory: u64) {
-        (self.turns).change(true, |t, now| {
-            t.loaded(self.at, bytes, seconds, memory, now)
-        });
+        self.change(|t, at, now| t.loaded(at, bytes, seconds, memory, now));
     }
 
     /// The weights dropped.
     pub fn left(&self) {
-        self.turns.change(true, |t, now| t.left(self.at, now));
+        self.change(|t, at, now| t.left(at, now));
     }
 }

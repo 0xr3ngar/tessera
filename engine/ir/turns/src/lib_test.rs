@@ -1,4 +1,5 @@
-use crate::{Rules, Table, Turn};
+use crate::{Rules, Table, Turn, Turns};
+use std::sync::atomic::Ordering;
 
 fn table(budget: Option<u64>) -> Table {
     Table::new(Rules {
@@ -91,4 +92,47 @@ fn priority_takes_memory() {
     step(&mut t, a, true, 1, 2.0);
     t.asked(b, 2.0);
     step(&mut t, a, false, 1, 2.0);
+}
+
+#[test]
+fn lone_model_stays() {
+    let mut t = table(Some(100));
+    let a = t.add("a", 0, 60, 0.0);
+    load(&mut t, a, 1.0, 0.0);
+    t.asked(a, 0.0);
+    t.settle(0.0);
+    assert_eq!(t.turn(a), Some(Turn::Step { admit: true }));
+    let stop = t.stop(a);
+    assert!(!stop.load(Ordering::Acquire));
+    // A second model that asks sends the holder back.
+    let b = t.add("b", 0, 30, 1.0);
+    t.settle(1.0);
+    assert_eq!(t.turn(b), Some(Turn::Load));
+    t.loaded(b, 30, 1.0, 100, 1.0);
+    t.settle(1.0);
+    assert!(!stop.load(Ordering::Acquire));
+    t.asked(b, 2.0);
+    t.settle(2.0);
+    assert!(stop.load(Ordering::Acquire));
+}
+
+#[test]
+fn idle_seat_returns() {
+    let turns = Turns::new(Rules {
+        budget: Some(100),
+        learn: false,
+        quantum: 4.0,
+    });
+    let a = turns.seat("a", 0, 60);
+    assert_eq!(a.next(), Turn::Load);
+    a.loaded(60, 1.0, 0);
+    a.asker().asked();
+    let step = Turn::Step { admit: true };
+    assert_eq!(a.next(), step);
+    a.stepped((true, 1), 60);
+    assert_eq!(a.next(), step);
+    a.stepped((false, 0), 60);
+    // An idle seat asks the table again.
+    let _b = turns.seat("b", 0, 60);
+    assert_eq!(a.next(), Turn::Leave);
 }
