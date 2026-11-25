@@ -179,6 +179,76 @@ TESSERA_FN float round_bf16(float x) {
     return from_bits(u32(to_bf16(x)) << 16);
 }
 
+// Packs `lo` then `hi` as FP16, clamped to finite range.
+TESSERA_FN u32 to_fp16x2(float lo, float hi) {
+    lo = fminf(fmaxf(lo, -65504.0f), 65504.0f);
+    hi = fminf(fmaxf(hi, -65504.0f), 65504.0f);
+#if defined(TESSERA_CUDA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
+    u32 d;
+    asm("cvt.rn.f16x2.f32 %0, %1, %2;" : "=r"(d) : "f"(hi), "f"(lo));
+    return d;
+#else
+    u32 out = 0;
+    float v[2] = {lo, hi};
+    for (u32 k = 0; k < 2; k++) {
+        u32 b = __float_as_uint(v[k]);
+        u32 sign = (b >> 16) & 0x8000u;
+        int exp = int((b >> 23) & 0xFFu) - 112;
+        u32 mant = b & 0x7FFFFFu;
+        u32 h;
+        if (exp <= 0) {
+            if (exp < -10) {
+                h = sign;
+            } else {
+                mant |= 0x800000u;
+                u32 sh = u32(14 - exp);
+                u32 rnd = (1u << (sh - 1u)) - 1u + ((mant >> sh) & 1u);
+                h = sign | ((mant + rnd) >> sh);
+            }
+        } else {
+            u32 rnd = 0xFFFu + ((mant >> 13) & 1u);
+            mant += rnd;
+            if (mant & 0x800000u) {
+                mant = 0u;
+                exp += 1;
+            }
+            h = sign | (u32(exp) << 10) | (mant >> 13);
+        }
+        out |= (h & 0xFFFFu) << (16 * k);
+    }
+    return out;
+#endif
+}
+
+TESSERA_FN u16 to_fp16(float x) {
+    return static_cast<u16>(to_fp16x2(x, 0.0f));
+}
+
+// Widens one FP16 value to FP32.
+TESSERA_FN float from_fp16(u16 h) {
+#if defined(TESSERA_CUDA)
+    float f;
+    asm("cvt.f32.f16 %0, %1;" : "=f"(f) : "h"(h));
+    return f;
+#else
+    u32 sign = u32(h & 0x8000u) << 16;
+    u32 exp = (h >> 10) & 0x1Fu;
+    u32 mant = h & 0x3FFu;
+    if (exp == 0u) {
+        if (mant == 0u) return from_bits(sign);
+        float f = float(mant) * from_bits(0x33800000u);
+        return sign ? -f : f;
+    }
+    if (exp == 31u) return from_bits(sign | 0x7F800000u | (mant << 13));
+    return from_bits(sign | ((exp + 112u) << 23) | (mant << 13));
+#endif
+}
+
+// `x` rounded to FP16 and back.
+TESSERA_FN float round_fp16(float x) {
+    return from_fp16(to_fp16(x));
+}
+
 TESSERA_FN void block_sync() {
     __syncthreads();
 }

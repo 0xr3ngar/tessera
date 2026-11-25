@@ -172,9 +172,10 @@ fn numerics(op: &Op, n: Option<&Numerics>) -> Result<(), TypeError> {
     need(sums_ranks(op), ErrorKind::Numerics, || {
         format!("{op:?} sums on one rank but has a wire dtype")
     })?;
-    let carried = matches!(wire, DType::F32 | DType::Bf16) && wire.bytes() <= accumulate.bytes();
+    let carried =
+        matches!(wire, DType::F32 | DType::Bf16 | DType::F16) && wire.bytes() <= accumulate.bytes();
     need(carried, ErrorKind::Numerics, || {
-        format!("wire {wire:?} must be F32 or Bf16 and no wider than {accumulate:?}")
+        format!("wire {wire:?} must be F32, Bf16 or F16 and no wider than {accumulate:?}")
     })
 }
 
