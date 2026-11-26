@@ -111,7 +111,7 @@ fn step_splits_heads() {
 fn uneven_heads_stay_whole() {
     // Two KV heads cannot take three quarters and one.
     let g = stepper::<Norm, Swiglu>(&Config::toy(2, 8));
-    let sharded = step_ranks(&g, &Parts(vec![3, 1]));
+    let sharded = step_ranks(&g, &Parts::of(vec![3, 1]));
     // Per layer q, k, v and o stay whole.
     assert_eq!(sharded.whole.len(), 8);
     assert_eq!(

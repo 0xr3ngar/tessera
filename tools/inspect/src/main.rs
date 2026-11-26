@@ -125,7 +125,7 @@ fn run(args: &Args) -> Result<(), Box<dyn Error>> {
             (args.model.clone(), g)
         }
     };
-    let parts = tessera_graph::Parts(args.specs.iter().map(|s| s.part).collect());
+    let parts = tessera_graph::Parts::of(args.specs.iter().map(|s| s.part).collect());
     let model = Model::new(name, source, &parts)?;
     for w in &model.whole {
         let path = &model.source.weights[w.weight as usize].path;

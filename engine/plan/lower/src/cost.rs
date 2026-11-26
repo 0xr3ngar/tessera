@@ -42,6 +42,9 @@ pub struct Device {
     /// Each rank's weight of split axes. Empty means equal.
     #[serde(default)]
     pub parts: Vec<u32>,
+    /// Each rank's weight of routed sets. Empty means `parts`.
+    #[serde(default)]
+    pub sets: Vec<u32>,
     /// The rank this device lowers for.
     #[serde(default)]
     pub rank: u32,
@@ -155,6 +158,7 @@ impl Default for Device {
             cluster: Cluster::default(),
             ranks: Vec::new(),
             parts: Vec::new(),
+            sets: Vec::new(),
             rank: 0,
             platform: Platform::default(),
             timed: Timings::default(),
@@ -336,6 +340,12 @@ impl Device {
         self.changed()
     }
 
+    /// The same device, routed sets weighted by `sets`.
+    pub fn uneven_sets(mut self, sets: Vec<u32>) -> Self {
+        self.sets = sets;
+        self.changed()
+    }
+
     /// The same device, lowering for rank `rank`.
     pub fn as_rank(mut self, rank: u32) -> Self {
         self.rank = rank;
@@ -345,7 +355,7 @@ impl Device {
     /// How split axes divide among the ranks.
     pub fn division(&self) -> Parts {
         match self.parts.len() == self.ranks() {
-            true => Parts(self.parts.clone()),
+            true => Parts::of(self.parts.clone()).with_sets(self.sets.clone()),
             false => Parts::even(self.ranks()),
         }
     }

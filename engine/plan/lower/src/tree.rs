@@ -12,7 +12,7 @@ use crate::{Error, Size, Unsupported};
 use tessera_codegen::kept::Layout;
 use tessera_graph::{
     Composite, DType, DimExpr, DimName, Graph, Lower, NodeId, Op, Parts, Pin, Placement, Region,
-    Role, Shape, Stage, View,
+    Role, Shape, Stage, View, set_nodes,
 };
 
 /// Entry outputs a launch reads, one bit each.
@@ -95,6 +95,8 @@ pub struct Tree<'a> {
     pub config: Option<String>,
     /// How split axes divide, and which part this plan is.
     pub(crate) parts: Parts,
+    /// Per graph node: whether the routed sets' parts divide it.
+    sets: Vec<bool>,
     pub(crate) rank: u32,
     /// Per node: the part of a split weight loaded here.
     shares: Vec<Option<Share>>,
@@ -337,6 +339,7 @@ impl<'a> Tree<'a> {
             knobs: Knobs::default(),
             config: None,
             parts: parts.clone(),
+            sets: set_nodes(g),
             rank,
             shares: Vec::new(),
             at: Vec::new(),
@@ -363,8 +366,8 @@ impl<'a> Tree<'a> {
                 let a = axis as usize;
                 let whole = extents[a].most();
                 let fixed = extents[a] == Extent::Fixed(whole);
-                let Some((first, count)) = parts.part(whole, rank as usize).filter(|_| fixed)
-                else {
+                let part = parts.part_of(tree.sets[i], whole, rank as usize);
+                let Some((first, count)) = part.filter(|_| fixed) else {
                     let (shape, parts) = (n.ty.shape.clone(), parts.clone());
                     return Err(Size::Split {
                         axis: a,
@@ -627,10 +630,9 @@ impl<'a> Tree<'a> {
         else {
             return (0, width);
         };
-        let first = self
-            .parts
-            .part(whole, self.rank as usize)
-            .map_or(0, |(f, _)| f);
+        let set = self.sets[node.from.0 as usize];
+        let part = self.parts.part_of(set, whole, self.rank as usize);
+        let first = part.map_or(0, |(f, _)| f);
         (first, whole)
     }
 

@@ -105,7 +105,7 @@ fn whole_rows_stay_whole() {
 #[test]
 fn uneven_stays_whole() {
     // Six columns do not divide into four equal units.
-    let g = shard(&mlp(Stage::Act(Act::Silu)), &Parts(vec![3, 1])).unwrap();
+    let g = shard(&mlp(Stage::Act(Act::Silu)), &Parts::of(vec![3, 1])).unwrap();
     assert_eq!(placements(&g.graph), [Replicated, Replicated]);
     assert!(g.whole[0].why.contains("does not divide"), "{:?}", g.whole);
 }

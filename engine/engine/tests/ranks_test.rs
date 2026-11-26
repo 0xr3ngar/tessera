@@ -23,9 +23,12 @@ fn pair() -> [Sockets; 2] {
     ]
 }
 
+/// How two ranks share weights, and how experts split.
+type Shares = (Parts, bool);
+
 /// A faux-weight engine, a rank over `links` if any.
-fn engine(graph: fn() -> Graph, links: Option<[Sockets; 2]>, moe_tp: bool) -> Engine {
-    opened(graph, links, &Recipe::default(), 16, moe_tp)
+fn engine(graph: fn() -> Graph, links: Option<[Sockets; 2]>, shares: &Shares) -> Engine {
+    opened(graph, links, &Recipe::default(), 16, shares)
 }
 
 /// As `engine`, with a recipe and a context.
@@ -34,7 +37,7 @@ fn opened(
     links: Option<[Sockets; 2]>,
     recipe: &Recipe,
     context: usize,
-    moe_tp: bool,
+    (parts, moe_tp): &Shares,
 ) -> Engine {
     let settings = Settings {
         backend: Pick::Host,
@@ -46,7 +49,7 @@ fn opened(
     let stored: Vec<Weight> = stored.collect();
     let mut engine = match links {
         Some([sums, control]) => {
-            let place = Place::new(Cluster::two("a", "b"), Parts::even(2)).with_moe_tp(moe_tp);
+            let place = Place::new(Cluster::two("a", "b"), parts.clone()).with_moe_tp(*moe_tp);
             let control: Box<dyn Transport> = Box::new(control);
             Engine::open_ranked(g, context, (recipe, &settings), place, sums, control).unwrap()
         }
@@ -66,14 +69,20 @@ fn row(slot: u32, token: u32, position: u32) -> Row {
 
 /// Rank 0 leads, rank 1 follows on a thread.
 fn agree(graph: fn() -> Graph, moe_tp: bool) {
+    agree_as(graph, (Parts::even(2), moe_tp));
+}
+
+/// As `agree`, the ranks sharing as `shares`.
+fn agree_as(graph: fn() -> Graph, shares: Shares) {
     let ([sums, others], [control, told]) = (pair(), pair());
+    let theirs = shares.clone();
     let follower = std::thread::spawn(move || {
-        engine(graph, Some([others, told]), moe_tp)
+        engine(graph, Some([others, told]), &theirs)
             .follow()
             .unwrap();
     });
-    let mut lead = engine(graph, Some([sums, control]), moe_tp);
-    let mut alone = engine(graph, None, false);
+    let mut lead = engine(graph, Some([sums, control]), &shares);
+    let mut alone = engine(graph, None, &shares);
     let launches = [
         vec![row(1, 5, 0), row(1, 7, 1), row(0, 9, 0)],
         vec![row(0, 4, 1), row(1, 3, 2)],
@@ -107,6 +116,16 @@ fn ranks_match_one() {
         false,
     );
     agree(wide_glm53, true);
+}
+
+fn small_glm53() -> Graph {
+    mla::stepper::<mla::RotatedMoe>(&mla::Config::glm53_small())
+}
+
+#[test]
+fn ranks_split_sets() {
+    let parts = Parts::even(2).with_sets(vec![3, 1]);
+    agree_as(small_glm53, (parts, false));
 }
 
 /// Answers to a prompt, then two that continue it.
@@ -153,13 +172,15 @@ fn ranks_share_pages() {
     let graph = || stepper::<Norm, Swiglu>(&Config::toy(2, 64));
     let ([sums, others], [control, told]) = (pair(), pair());
     let theirs = recipe.clone();
+    let even: Shares = (Parts::even(2), false);
+    let follows = even.clone();
     let follower = std::thread::spawn(move || {
-        opened(graph, Some([others, told]), &theirs, 64, false)
+        opened(graph, Some([others, told]), &theirs, 64, &follows)
             .follow()
             .unwrap();
     });
-    let mut lead = opened(graph, Some([sums, control]), &recipe, 64, false);
-    let mut alone = opened(graph, None, &recipe, 64, false);
+    let mut lead = opened(graph, Some([sums, control]), &recipe, 64, &even);
+    let mut alone = opened(graph, None, &recipe, 64, &even);
     assert_eq!(continued(&mut lead), continued(&mut alone));
     lead.dismiss().unwrap();
     follower.join().unwrap();

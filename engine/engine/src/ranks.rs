@@ -59,6 +59,12 @@ impl Place {
         }
     }
 
+    /// Divides routed sets by `sets`. Empty: by the other parts.
+    pub fn with_sets(mut self, sets: Vec<u32>) -> Self {
+        self.parts = self.parts.with_sets(sets);
+        self
+    }
+
     /// Splits wide routed experts along inner width when `on`.
     pub fn with_moe_tp(mut self, on: bool) -> Self {
         self.moe_tp = on;
@@ -73,7 +79,7 @@ impl Place {
         };
         let parts = match parts.is_empty() {
             true => Parts::even(ranks),
-            false => Parts(parts),
+            false => Parts::of(parts),
         };
         Self::new(Cluster::mesh(ranks, kind), parts)
     }
@@ -92,7 +98,8 @@ impl Place {
         let ranks = self.parts.ranks() as u32;
         let device = device.zoned(self.cluster.clone());
         let device = device.ranked((0..ranks).collect());
-        device.uneven(self.parts.0.clone()).as_rank(self.rank)
+        let device = device.uneven(self.parts.0.clone());
+        device.uneven_sets(self.parts.1.clone()).as_rank(self.rank)
     }
 }
 

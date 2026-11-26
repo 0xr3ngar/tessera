@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use tessera_graph::{
     DType, DimExpr, DimName, Graph, Lower, Mask, Node, NodeId, Numerics, Op, Parts, PathSeg,
-    Placement, Row, Select, Shape, Size, Stage, View,
+    Placement, Row, Select, Shape, Size, Stage, View, set_nodes,
 };
 use tessera_mem::Tensor;
 
@@ -240,8 +240,20 @@ pub fn run_parts(
 
 /// Rank `r`'s part of a `whole` axis.
 fn part(parts: &Parts, axis: u32, whole: usize, r: usize) -> Result<(usize, usize), Error> {
-    parts.part(whole, r).ok_or_else(|| {
-        let msg = format!("axis {axis} of {whole} does not divide by {:?}", parts.0);
+    part_of(parts, false, axis, whole, r)
+}
+
+/// As `part`, for a routed set when `set`.
+fn part_of(
+    parts: &Parts,
+    set: bool,
+    axis: u32,
+    whole: usize,
+    r: usize,
+) -> Result<(usize, usize), Error> {
+    parts.part_of(set, whole, r).ok_or_else(|| {
+        let by = parts.weights(set);
+        let msg = format!("axis {axis} of {whole} does not divide by {by:?}");
         Error::Mismatch(msg)
     })
 }
@@ -257,14 +269,14 @@ fn weight(w: &Tensor) -> Result<Tensor, Error> {
 /// Rank `r`'s part of a weight. Whole ones are borrowed.
 fn share<'w>(
     w: &'w Tensor,
-    placement: Placement,
+    (placement, set): (Placement, bool),
     r: usize,
     parts: &Parts,
 ) -> Result<Cow<'w, Tensor>, Error> {
     let Placement::Split { axis } = placement else {
         return Ok(Cow::Borrowed(w));
     };
-    let (first, count) = part(parts, axis, w.shape[axis as usize], r)?;
+    let (first, count) = part_of(parts, set, axis, w.shape[axis as usize], r)?;
     Ok(Cow::Owned(slice(w, axis as usize, first, count)))
 }
 
@@ -342,11 +354,19 @@ fn run_on(
             sizes.learn(&Shape(vec![g.kept[i as usize].shape.0[1].clone()]), &total)?;
         }
     }
+    let sets = set_nodes(g);
+    // Per weight: whether the routed sets' parts divide it.
+    let mut set_weights = vec![false; g.weights.len()];
+    for (i, n) in g.nodes.iter().enumerate() {
+        if let Op::Weight(w) = n.op {
+            set_weights[w as usize] |= sets[i];
+        }
+    }
     let mut shares = Vec::with_capacity(ranks);
     for r in 0..ranks {
         let mut own = Vec::with_capacity(weights.len());
-        for (w, t) in g.weights.iter().zip(weights) {
-            own.push(share(t, w.ty.placement, r, parts)?);
+        for (i, (w, t)) in g.weights.iter().zip(weights).enumerate() {
+            own.push(share(t, (w.ty.placement, set_weights[i]), r, parts)?);
         }
         shares.push(own);
     }
@@ -377,8 +397,9 @@ fn run_on(
         let whole = sizes.shape(&n.ty.shape)?;
         let mut wants = vec![whole.clone(); ranks];
         if let Placement::Split { axis } = n.ty.placement {
+            let set = sets[i];
             for (r, want) in wants.iter_mut().enumerate() {
-                want[axis as usize] = part(parts, axis, whole[axis as usize], r)?.1;
+                want[axis as usize] = part_of(parts, set, axis, whole[axis as usize], r)?.1;
             }
         }
         let mut outs: Vec<Tensor> = Vec::with_capacity(ranks);
@@ -498,7 +519,8 @@ fn first_row(g: &Graph, n: &Node, sizes: &Sizes, parts: &Parts, r: usize) -> Res
             if matches!(n.op, Op::Select(Select::Gather))
                 && t.ty.placement == Placement::Split { axis: 0 } =>
         {
-            Ok(part(parts, 0, sizes.shape(&t.ty.shape)?[0], r)?.0)
+            let set = set_nodes(g)[n.args[0].0 as usize];
+            Ok(part_of(parts, set, 0, sizes.shape(&t.ty.shape)?[0], r)?.0)
         }
         _ => Ok(0),
     }

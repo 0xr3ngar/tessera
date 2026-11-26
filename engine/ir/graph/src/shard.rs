@@ -1,7 +1,7 @@
 //! Tensor parallel splits matmuls. Expert parallel splits sets.
 
 use crate::infer::{infer, poly};
-use crate::node::{Graph, Node, NodeId, Op, Row, Select};
+use crate::node::{Composite, Graph, Node, NodeId, Op, Row, Select};
 use crate::numerics::Numerics;
 use crate::parts::Parts;
 use crate::stages::Stage;
@@ -157,14 +157,16 @@ struct Fit<'a> {
 
 /// The first split `fit` cannot divide or share.
 fn misfit(g: &Graph, fit: &Fit) -> Option<String> {
-    for n in &g.nodes {
+    let sets = set_nodes(g);
+    for (i, n) in g.nodes.iter().enumerate() {
         let Placement::Split { axis } = n.ty.placement else {
             continue;
         };
-        let (shape, parts) = (&n.ty.shape, &fit.parts.0);
+        let set = sets[i];
+        let (shape, parts) = (&n.ty.shape, fit.parts.weights(set));
         let at = axis as usize;
         let whole = poly(&g.dims, &shape.0[at]).ok()?.as_const();
-        let Some(counts) = whole.and_then(|s| fit.parts.counts(s as usize)) else {
+        let Some(counts) = whole.and_then(|s| fit.parts.counts_of(set, s as usize)) else {
             return Some(format!(
                 "axis {axis} of {shape} does not divide by {parts:?}"
             ));
@@ -420,6 +422,51 @@ fn leave_region(g: &mut Graph, id: NodeId) {
             r.end = new;
         }
     }
+}
+
+/// Nodes the routed sets' parts divide.
+pub fn set_nodes(g: &Graph) -> Vec<bool> {
+    let mut mask = vec![false; g.nodes.len()];
+    for region in &g.regions {
+        if region.kind != Composite::Moe {
+            continue;
+        }
+        for slot in &mut mask[region.start.0 as usize..region.end.0 as usize] {
+            *slot = true;
+        }
+        for &input in &region.inputs {
+            // A weight, whole or through views.
+            let mut chain = vec![input];
+            let mut id = input;
+            while let Op::View(_) = &g.node(id).op {
+                id = g.node(id).args[0];
+                chain.push(id);
+            }
+            if matches!(g.node(id).op, Op::Weight(_)) {
+                for n in chain {
+                    mask[n.0 as usize] = true;
+                }
+            }
+        }
+    }
+    // A gathered matmul divides its weight's rows the same way.
+    for (i, n) in g.nodes.iter().enumerate() {
+        let gathers = matches!(&n.op, Op::Row(r) if r.0.contains(&Stage::AllGather));
+        if !gathers {
+            continue;
+        }
+        mask[i] = true;
+        let mut pending = vec![n.args[0]];
+        while let Some(id) = pending.pop() {
+            let node = g.node(id);
+            let split = matches!(node.ty.placement, Placement::Split { .. });
+            if !split || std::mem::replace(&mut mask[id.0 as usize], true) {
+                continue;
+            }
+            pending.extend(node.args.iter().copied());
+        }
+    }
+    mask
 }
 
 /// The node under any slices of `id`.

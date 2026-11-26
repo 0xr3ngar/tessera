@@ -10,7 +10,7 @@ use tessera_frontend_comm::{
 };
 
 /// The flags for `Ranks::flag`.
-pub const FLAGS: &str = "[--rank <n> --peers <ip:port>,... [--parts <a>,<b>,...] \
+pub const FLAGS: &str = "[--rank <n> --peers <ip:port>,... [--parts <a>,<b>,...] [--moe-parts <a>,<b>,...] \
 [--verbs <dev>[:<gid>],... | --ring <prev>,.../<next>,...] [--sums host|grid|p2p|whole] \
 [--sum-wire f32|bf16|f16|fp8] [--moe ep|tp]]";
 
@@ -32,6 +32,8 @@ pub struct Ranks {
     peers: Vec<SocketAddr>,
     /// Each rank's share of split weights. Empty: even shares.
     parts: Vec<u32>,
+    /// Each rank's share of routed experts. Empty: `parts`.
+    moe_parts: Vec<u32>,
     /// RDMA ports for the sums, after the ranks meet.
     fabric: Option<Fabric>,
     /// How sums run across ranks.
@@ -56,6 +58,10 @@ impl Ranks {
             "--parts" => {
                 let parts = value.split(',').map(|p| p.parse().ok());
                 self.parts = parts.collect::<Option<_>>()?;
+            }
+            "--moe-parts" => {
+                let parts = value.split(',').map(|p| p.parse().ok());
+                self.moe_parts = parts.collect::<Option<_>>()?;
             }
             "--sums" if value == "whole" => self.whole = true,
             "--sums" => self.sums = sums_flag(value)?,
@@ -149,6 +155,7 @@ impl Ranks {
                     Grids::Steps(g) => (None, Some(g)),
                 };
                 let place = (place.with_grid(sums_grid))
+                    .with_sets(self.moe_parts.clone())
                     .with_moe_tp(self.moe_tp)
                     .with_wire(self.sum_wire);
                 let opened =

@@ -305,7 +305,7 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     }
     let parts = match args.parts.is_empty() {
         true => tessera_graph::Parts::even(ranks),
-        false => tessera_graph::Parts(args.parts.clone()),
+        false => tessera_graph::Parts::of(args.parts.clone()),
     };
     let tessera_graph::Sharded {
         graph: sharded,

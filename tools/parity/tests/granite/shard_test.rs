@@ -53,7 +53,7 @@ fn quarters() -> Config {
 #[test]
 fn uneven_ranks() {
     let g = program::<(), Moe>(&quarters());
-    let parts = Parts(vec![3, 1]);
+    let parts = Parts::of(vec![3, 1]);
     let sharded = shard(&g, &parts)
         .unwrap()
         .graph
@@ -97,7 +97,7 @@ fn uneven_ranks() {
 /// Six KV heads on one rank, two on the other.
 #[test]
 fn uneven_step_heads() {
-    let sharded = step_ranks(&stepper::<(), Moe>(&quarters()), &Parts(vec![3, 1]));
+    let sharded = step_ranks(&stepper::<(), Moe>(&quarters()), &Parts::of(vec![3, 1]));
     assert_eq!(sharded.whole, []);
     let g = &sharded.graph;
     let placed = |p: Placement| g.weights.iter().filter(|w| w.ty.placement == p).count();

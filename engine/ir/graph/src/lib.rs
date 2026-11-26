@@ -27,7 +27,7 @@ pub use numerics::{Math, Numerics, Order, sums_ranks};
 pub use ops::OpFacts;
 pub use parts::Parts;
 pub use scalar::{Bf16, E2M1, E4M3, E8M0, F16};
-pub use shard::{Sharded, Shares, Whole, shard, shard_aligned, shard_mode};
+pub use shard::{Sharded, Shares, Whole, set_nodes, shard, shard_aligned, shard_mode};
 pub use stages::{Check, Facts, Lower, Pin, Place, STAGES, Stage, Takes};
 pub use trim::trim;
 pub use types::{DType, Placement, TensorType};
