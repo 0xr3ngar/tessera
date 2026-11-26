@@ -208,19 +208,71 @@ fn moe_nodes(g: &Graph) -> Vec<bool> {
 }
 
 /// Which nodes the outputs depend on.
-fn needed(g: &Graph, outputs: &[usize]) -> Vec<bool> {
+fn needed(g: &Graph, outputs: &[usize], absent: &[bool]) -> Vec<bool> {
     let mut needed = vec![false; g.nodes.len()];
     for &o in outputs {
         needed[o] = true;
     }
     for i in (0..g.nodes.len()).rev() {
         if needed[i] {
-            for a in &g.nodes[i].args {
+            // An absent value has no reads on this rank.
+            for a in g.nodes[i].args.iter().filter(|a| !absent[a.0 as usize]) {
                 needed[a.0 as usize] = true;
             }
         }
     }
     needed
+}
+
+/// Nodes this rank holds no part of.
+fn absent(
+    g: &Graph,
+    (sizes, upto): (&[(DimName, u64)], &[DimName]),
+    (parts, sets): (&Parts, &[bool]),
+    rank: u32,
+) -> Vec<bool> {
+    let mut absent = vec![false; g.nodes.len()];
+    if parts.ranks() <= 1 {
+        return absent;
+    }
+    for (i, n) in g.nodes.iter().enumerate() {
+        if let Placement::Split { axis } = n.ty.placement {
+            let extents = sized(g, sizes, upto, &n.ty.shape).ok();
+            let whole = extents.map(|e| e[axis as usize].most());
+            let part = whole.and_then(|w| parts.part_of(sets[i], w, rank as usize));
+            if matches!(part, Some((_, 0))) {
+                absent[i] = true;
+                continue;
+            }
+        }
+        absent[i] = match &n.op {
+            Op::Row(r) => row_absent(&r.0, &n.args, &absent),
+            _ => n.args.iter().any(|a| absent[a.0 as usize]),
+        };
+    }
+    absent
+}
+
+/// Whether a row over absent operands is absent.
+fn row_absent(stages: &[Stage], args: &[NodeId], absent: &[bool]) -> bool {
+    let Some((first, rest)) = args.split_first() else {
+        return false;
+    };
+    let mut rest = rest.iter();
+    let mut cur = absent[first.0 as usize];
+    for stage in stages {
+        let operand = match stage.operands() == 1 {
+            true => rest.next().map(|a| absent[a.0 as usize]),
+            false => None,
+        };
+        cur = match (stage, operand) {
+            (Stage::AllReduce | Stage::AllGather, _) => false,
+            (Stage::Add, Some(other)) => cur && other,
+            (_, Some(other)) => cur || other,
+            (_, None) => cur,
+        };
+    }
+    cur
 }
 
 /// Whether `ids` is a causal `top_k` covering every key.
@@ -323,7 +375,12 @@ impl<'a> Tree<'a> {
         };
         let wanted = e.outputs.iter().enumerate().filter(|(i, _)| wants.has(*i));
         let outputs: Vec<usize> = wanted.map(|(_, o)| o.node.0 as usize).collect();
-        let needed = needed(g, &outputs);
+        let sets = set_nodes(g);
+        let absent = absent(g, (sizes, upto), (parts, &sets), rank);
+        if let Some(&node) = outputs.iter().find(|o| absent[**o]) {
+            return Err(Unsupported::Unread { node }.into());
+        }
+        let needed = needed(g, &outputs, &absent);
         let roles = output_roles(g, entry);
         let in_moe = moe_nodes(g);
         let mut tree = Tree {
@@ -339,7 +396,7 @@ impl<'a> Tree<'a> {
             knobs: Knobs::default(),
             config: None,
             parts: parts.clone(),
-            sets: set_nodes(g),
+            sets,
             rank,
             shares: Vec::new(),
             at: Vec::new(),
@@ -389,9 +446,16 @@ impl<'a> Tree<'a> {
             let shape: Vec<usize> = extents.iter().map(Extent::most).collect();
             let from = NodeId(i as u32);
             let missing = || Error::from(Unsupported::Unread { node: i });
-            let args: Result<Vec<T>, Error> =
-                (n.args.iter().map(|a| at[a.0 as usize].ok_or_else(missing))).collect();
-            let args = args?;
+            let held: Vec<Option<T>> = n.args.iter().map(|a| at[a.0 as usize]).collect();
+            // A row drops its absent operands.
+            let lacks = n.args.iter().any(|a| absent[a.0 as usize]);
+            let args: Vec<T> = match lacks && matches!(n.op, Op::Row(_)) {
+                true => held.iter().flatten().copied().collect(),
+                false => {
+                    let all: Option<Vec<T>> = held.iter().copied().collect();
+                    all.ok_or_else(missing)?
+                }
+            };
             let form = match &n.op {
                 Op::Weight(w) => pins.form(&g.weights[*w as usize].path),
                 Op::Input { .. } => tessera_codegen::form::of(n.ty.dtype),
@@ -409,6 +473,11 @@ impl<'a> Tree<'a> {
                 }
                 .into());
             }
+            // Zeros for a sum with no part here.
+            let like = match lacks {
+                true => tree.like(&extents),
+                false => None,
+            };
             let rotated = |a: &NodeId| turned[a.0 as usize].is_some();
             let read = |(j, a): (usize, &NodeId)| rotated(a) && (n.op != Op::Matmul || j != 1);
             if n.args.iter().enumerate().any(read) {
@@ -450,7 +519,7 @@ impl<'a> Tree<'a> {
                 Op::Weight(w) => push(Term::Leaf(Home::Weight(*w)), args, form),
                 Op::Input { .. } => return Err(Unsupported::EntryInput.into()),
                 Op::Row(r) => {
-                    let (mut cur, mut rest) = (args[0], args[1..].iter());
+                    let (mut cur, mut rest) = (held[0], held[1..].iter());
                     // One rank holds the whole value already.
                     let crossing = |s: &Stage| s.facts().lower == Lower::Crossing;
                     let stages: Vec<&Stage> =
@@ -463,15 +532,31 @@ impl<'a> Tree<'a> {
                     for (idx, stage) in stages.into_iter().enumerate() {
                         let operand = (stage.operands() == 1).then(|| rest.next());
                         let operand = operand.flatten().copied();
-                        let args = [cur].into_iter().chain(operand).collect();
                         let stage_role = (idx == last).then_some(roles[i]).flatten();
                         let stage_form = match n.ty.dtype.is_float() {
                             true => pinned_form(pins, &n.op, Some(stage), stage_role, in_moe[i]),
                             false => tessera_codegen::form::of(n.ty.dtype),
                         };
-                        cur = push(Term::Stage(stage.clone()), args, stage_form);
+                        cur = match (cur, operand) {
+                            // This rank adds zeros to the sum.
+                            (None, _) if *stage == Stage::AllReduce => {
+                                let like = like.ok_or_else(missing)?;
+                                let zero = Term::Stage(Stage::Scale(0.0));
+                                let zeros = push(zero, vec![like], F32_FORM);
+                                Some(push(Term::Stage(stage.clone()), vec![zeros], stage_form))
+                            }
+                            (None, _) if *stage == Stage::AllGather => return Err(missing()),
+                            (None, Some(Some(other))) if *stage == Stage::Add => Some(other),
+                            (None, _) => None,
+                            (Some(c), Some(None)) if *stage == Stage::Add => Some(c),
+                            (Some(_), Some(None)) => None,
+                            (Some(c), operand) => {
+                                let args = [c].into_iter().chain(operand.flatten()).collect();
+                                Some(push(Term::Stage(stage.clone()), args, stage_form))
+                            }
+                        };
                     }
-                    cur
+                    cur.ok_or_else(missing)?
                 }
                 Op::Attend(a) if bypass => {
                     let mut plain = a.clone();
@@ -503,6 +588,22 @@ impl<'a> Tree<'a> {
     pub(crate) fn with_compute(mut self, compute: Compute) -> Self {
         self.compute = compute;
         self
+    }
+
+    /// The latest whole F32 value with these extents.
+    fn like(&self, extents: &[Extent]) -> Option<T> {
+        let whole = |n: &Node| {
+            let ty = &self.g.node(n.from).ty;
+            ty.placement == Placement::Replicated && ty.dtype.is_float()
+        };
+        let fits = |n: &Node| {
+            n.extents == extents
+                && n.form.name() == "f32"
+                && !matches!(n.term, Term::Leaf(_))
+                && whole(n)
+        };
+        let at = self.nodes.iter().rposition(fits)?;
+        Some(T(at as u32))
     }
 
     fn add(&mut self, node: Node, share: Option<Share>) -> T {

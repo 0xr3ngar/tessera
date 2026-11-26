@@ -128,6 +128,12 @@ fn ranks_split_sets() {
     agree_as(small_glm53, (parts, false));
 }
 
+#[test]
+fn rank_lacks_attention() {
+    let parts = Parts::of(vec![1, 0]).with_sets(vec![1, 1]);
+    agree_as(small_glm53, (parts, false));
+}
+
 /// Answers to a prompt, then two that continue it.
 fn continued(engine: &mut Engine) -> Vec<Vec<u32>> {
     let mut batch = Batch::new(engine, Box::new(Fair));
